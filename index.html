@@ -33,7 +33,7 @@
             <h2>Registro de Pedidos</h2>
             <div class="card">
                 <form id="form-pedido-principal">
-                    <input type="text" id="pedido-cliente" placeholder="Nome do Cliente" required>
+                    <input type="hidden" id="pedido-edit-id"> <input type="text" id="pedido-cliente" placeholder="Nome do Cliente" required>
                     <input type="text" id="pedido-cliente-telefone" placeholder="Telefone (Opcional)">
                     <input type="text" id="pedido-vendedor" placeholder="Nome do Vendedor" required>
                     <input type="text" id="pedido-cidade" placeholder="Cidade" required>
@@ -60,7 +60,9 @@
                 </div>
                  <h3>Itens do Pedido Atual</h3>
                 <div id="pedido-itens-carrinho" class="carrinho-container"></div>
-                <button type="button" id="btn-registrar-pedido">Registrar Pedido Completo</button>
+                <div id="pedido-botoes-acao" style="display: flex; gap: 1rem; margin-top: 1rem;">
+                    <button type="button" id="btn-registrar-pedido">Registrar Pedido Completo</button>
+                </div>
             </div>
             <div class="card">
                 <div class="table-header">

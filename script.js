@@ -20,6 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     let pedidoAtualItems = [];
     let receitaAtualIngredientes = [];
+    let originalItemsParaEdicao = [];
     let saveStatusTimeout;
     const chartInstances = {};
 
@@ -415,56 +416,125 @@ document.addEventListener('DOMContentLoaded', () => {
         pedidoAtualItems.splice(index, 1);
         renderPedidoCarrinho();
     };
-    document.getElementById('btn-registrar-pedido').addEventListener('click', async () => {
-        if (pedidoAtualItems.length === 0) {
-            alert('Adicione pelo menos uma pizza ao pedido.');
-            return;
+    
+    const BOTOES_ACAO = document.getElementById('pedido-botoes-acao');
+    const BTN_REGISTRAR = document.getElementById('btn-registrar-pedido');
+
+    const setupBotaoPedido = () => {
+        const editId = document.getElementById('pedido-edit-id').value;
+        if (editId) {
+            BTN_REGISTRAR.textContent = 'Salvar Alterações';
+            if (!document.getElementById('btn-cancelar-edicao')) {
+                const cancelButton = document.createElement('button');
+                cancelButton.type = 'button';
+                cancelButton.id = 'btn-cancelar-edicao';
+                cancelButton.className = 'remove-btn';
+                cancelButton.textContent = 'Cancelar Edição';
+                cancelButton.onclick = cancelEditPedido;
+                BOTOES_ACAO.appendChild(cancelButton);
+            }
+        } else {
+            BTN_REGISTRAR.textContent = 'Registrar Pedido Completo';
+            const cancelButton = document.getElementById('btn-cancelar-edicao');
+            if (cancelButton) {
+                cancelButton.remove();
+            }
         }
+    };
+    
+    BTN_REGISTRAR.addEventListener('click', async () => {
+        const editId = document.getElementById('pedido-edit-id').value;
+        if (editId) {
+            await salvarPedidoEditado(editId);
+        } else {
+            await registrarNovoPedido();
+        }
+    });
+
+    const registrarNovoPedido = async () => {
+        if (pedidoAtualItems.length === 0) { alert('Adicione pelo menos uma pizza ao pedido.'); return; }
         const cliente = document.getElementById('pedido-cliente').value;
         const vendedor = document.getElementById('pedido-vendedor').value;
         const cidade = document.getElementById('pedido-cidade').value;
         const pagamento = document.getElementById('pedido-pagamento').value;
-        if (!cliente || !pagamento || !vendedor || !cidade) {
-            alert('Preencha nome do cliente, vendedor, cidade e forma de pagamento.');
-            return;
-        }
-        const newPedido = {
-            id: `ped_${Date.now()}`,
-            cliente: cliente,
-            telefone: document.getElementById('pedido-cliente-telefone').value,
-            vendedor,
-            cidade,
-            pagamento,
-            data: new Date().toISOString(),
-            status: 'Pendente',
-            items: pedidoAtualItems.map(item => {
-                if (item.isCustom) return { ...item, custo: 0, preco: 0 };
-                const pizzaData = database.estoque.find(p => p.id === item.pizzaId);
-                const custo = pizzaData ? calculatePizzaCost(pizzaData.id) : 0;
-                const preco = pizzaData ? pizzaData.precoVenda : 0;
-                return { ...item, custo, preco };
-            })
-        };
+        if (!cliente || !pagamento || !vendedor || !cidade) { alert('Preencha nome do cliente, vendedor, cidade e forma de pagamento.'); return; }
+
+        const newPedido = { id: `ped_${Date.now()}`, cliente, telefone: document.getElementById('pedido-cliente-telefone').value, vendedor, cidade, pagamento, data: new Date().toISOString(), status: 'Pendente', items: pedidoAtualItems.map(item => { if (item.isCustom) return { ...item, custo: 0, preco: 0 }; const pizzaData = database.estoque.find(p => p.id === item.pizzaId); const custo = pizzaData ? calculatePizzaCost(pizzaData.id) : 0; const preco = pizzaData ? pizzaData.precoVenda : 0; return { ...item, custo, preco }; })};
         newPedido.valorTotal = newPedido.items.reduce((acc, item) => acc + (item.preco * item.qtd), 0);
         newPedido.custoTotal = newPedido.items.reduce((acc, item) => acc + (item.custo * item.qtd), 0);
         newPedido.lucro = newPedido.valorTotal - newPedido.custoTotal;
-        newPedido.items.forEach(item => {
-            if (!item.isCustom) {
-                const pizzaEstoque = database.estoque.find(p => p.id === item.pizzaId);
-                if (pizzaEstoque) {
-                    pizzaEstoque.qtd -= item.qtd;
-                    if(!pizzaEstoque.history) pizzaEstoque.history = [];
-                    pizzaEstoque.history.push({ type: 'sale', date: new Date().toISOString(), orderId: newPedido.id });
-                }
-            }
-        });
+        newPedido.items.forEach(item => { if (!item.isCustom) { const pizzaEstoque = database.estoque.find(p => p.id === item.pizzaId); if (pizzaEstoque) { pizzaEstoque.qtd -= item.qtd; if(!pizzaEstoque.history) pizzaEstoque.history = []; pizzaEstoque.history.push({ type: 'sale', date: new Date().toISOString(), orderId: newPedido.id }); } }});
+        
         database.pedidos.push(newPedido);
         pedidoAtualItems = [];
         document.getElementById('form-pedido-principal').reset();
         document.getElementById('pedido-itens-carrinho').innerHTML = '';
         await saveDataOnline();
         renderAll();
-    });
+    };
+
+    const salvarPedidoEditado = async (editId) => {
+        const pedidoIndex = database.pedidos.findIndex(p => p.id === editId);
+        if (pedidoIndex === -1) { alert("Erro: Pedido não encontrado para edição."); return; }
+        
+        const originalItems = originalItemsParaEdicao;
+        originalItems.forEach(item => {
+            if (!item.isCustom) {
+                const pizzaEstoque = database.estoque.find(p => p.id === item.pizzaId);
+                if (pizzaEstoque) {
+                    pizzaEstoque.qtd += item.qtd;
+                    if (!pizzaEstoque.history) pizzaEstoque.history = [];
+                    pizzaEstoque.history.push({ type: 'edit_return', date: new Date().toISOString(), orderId: editId });
+                }
+            }
+        });
+
+        const updatedPedido = database.pedidos[pedidoIndex];
+        updatedPedido.cliente = document.getElementById('pedido-cliente').value;
+        updatedPedido.telefone = document.getElementById('pedido-cliente-telefone').value;
+        updatedPedido.vendedor = document.getElementById('pedido-vendedor').value;
+        updatedPedido.cidade = document.getElementById('pedido-cidade').value;
+        updatedPedido.pagamento = document.getElementById('pedido-pagamento').value;
+        updatedPedido.items = pedidoAtualItems.map(item => { if (item.isCustom) return { ...item, custo: 0, preco: 0 }; const pizzaData = database.estoque.find(p => p.id === item.pizzaId); const custo = pizzaData ? calculatePizzaCost(pizzaData.id) : 0; const preco = pizzaData ? pizzaData.precoVenda : 0; return { ...item, custo, preco }; });
+        
+        updatedPedido.valorTotal = updatedPedido.items.reduce((acc, item) => acc + (item.preco * item.qtd), 0);
+        updatedPedido.custoTotal = updatedPedido.items.reduce((acc, item) => acc + (item.custo * item.qtd), 0);
+        updatedPedido.lucro = updatedPedido.valorTotal - updatedPedido.custoTotal;
+        
+        updatedPedido.items.forEach(item => { if (!item.isCustom) { const pizzaEstoque = database.estoque.find(p => p.id === item.pizzaId); if (pizzaEstoque) { pizzaEstoque.qtd -= item.qtd; if(!pizzaEstoque.history) pizzaEstoque.history = []; pizzaEstoque.history.push({ type: 'sale_after_edit', date: new Date().toISOString(), orderId: editId }); } } });
+        
+        await saveDataOnline();
+        cancelEditPedido(); 
+    };
+
+    window.editPedido = (id) => {
+        const pedido = database.pedidos.find(p => p.id === id);
+        if(!pedido || pedido.status !== 'Pendente') { alert('Apenas pedidos pendentes podem ser editados.'); return; }
+        
+        document.getElementById('pedido-edit-id').value = id;
+        document.getElementById('pedido-cliente').value = pedido.cliente;
+        document.getElementById('pedido-cliente-telefone').value = pedido.telefone;
+        document.getElementById('pedido-vendedor').value = pedido.vendedor;
+        document.getElementById('pedido-cidade').value = pedido.cidade;
+        document.getElementById('pedido-pagamento').value = pedido.pagamento;
+        
+        pedidoAtualItems = JSON.parse(JSON.stringify(pedido.items));
+        originalItemsParaEdicao = JSON.parse(JSON.stringify(pedido.items));
+        renderPedidoCarrinho();
+        setupBotaoPedido();
+        document.querySelector('[data-tab="pedidos"]').scrollIntoView();
+    };
+
+    const cancelEditPedido = () => {
+        document.getElementById('form-pedido-principal').reset();
+        document.getElementById('pedido-edit-id').value = '';
+        pedidoAtualItems = [];
+        originalItemsParaEdicao = [];
+        renderPedidoCarrinho();
+        setupBotaoPedido();
+        renderAll();
+    };
+
     const renderPedidos = () => {
         const searchTerm = document.getElementById('search-pedidos').value.toLowerCase();
         const tbody = document.getElementById('tabela-pedidos').querySelector('tbody');
@@ -481,7 +551,7 @@ document.addEventListener('DOMContentLoaded', () => {
         filteredData.sort((a,b) => new Date(b.data) - new Date(a.data)).forEach(p => {
             const row = tbody.insertRow();
             const itemsHtml = p.items.map(i => `<li class="${i.isCustom?'item-pedido-outro':''}">${i.qtd}x ${i.pizzaNome}</li>`).join('');
-            let acoesHtml = `${p.status==='Pendente'?`<button class="action-btn complete-btn" onclick="concluirPedido('${p.id}')">Concluir</button>`:''}<button class="action-btn remove-btn" onclick="removerPedido('${p.id}')">Remover</button>`;
+            let acoesHtml = `${p.status==='Pendente'?`<button class="action-btn edit-btn" onclick="editPedido('${p.id}')">Editar</button><button class="action-btn complete-btn" onclick="concluirPedido('${p.id}')">Concluir</button>`:''}<button class="action-btn remove-btn" onclick="removerPedido('${p.id}')">Remover</button>`;
             row.innerHTML = `<td data-label="Cliente">${p.cliente}</b><br><small>${p.telefone||"N/A"}</small></td><td data-label="Itens"><ul style="padding-left:15px;margin:0">${itemsHtml}</ul></td><td data-label="Detalhes"><small>Vend.: ${p.vendedor}<br>Cid.: ${p.cidade}<br>Pag.: ${p.pagamento}</small></td><td data-label="Valores"><b>Total: ${formatCurrency(p.valorTotal)}</b><br><small>Custo: ${formatCurrency(p.custoTotal)}</small><br><b style="color:${p.lucro>=0?"green":"red"}">${p.lucro>=0?"+":""}${formatCurrency(p.lucro)}</b></td><td data-label="Status"><span class="status-${p.status.toLowerCase()}">${p.status}</span></td><td data-label="Ações">${acoesHtml}</td>`;
         });
     };
@@ -638,7 +708,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const renderVendasPorVendedorChart=(t)=>{const e=t.reduce((t,e)=>{if(e.vendedor)t[e.vendedor]=(t[e.vendedor]||0)+e.valorTotal;return t},{}),a=Object.keys(e).sort((t,a)=>e[a]-e[t]),r=a.map(t=>e[t]),o=document.getElementById("vendasPorVendedorChart").getContext("2d");chartInstances.vendedor=new Chart(o,{type:"bar",data:{labels:a,datasets:[{label:"Total Vendido",data:r,backgroundColor:"#487eb0"}]},options:{responsive:!0,scales:{y:{ticks:{callback:t=>formatCurrency(t)}}}}})};
     const renderPizzasMaisVendidasChart=(t)=>{const e=t.flatMap(t=>t.items).reduce((t,e)=>{return e.isCustom?t:(t[e.pizzaNome]=(t[e.pizzaNome]||0)+e.qtd,t)},{}),a=Object.keys(e).sort((t,a)=>e[a]-e[t]),r=a.map(t=>e[t]),o=document.getElementById("pizzasMaisVendidasChart").getContext("2d");chartInstances.vendas=new Chart(o,{type:"pie",data:{labels:a,datasets:[{data:r,backgroundColor:["#e74c3c","#3498db","#f1c40f","#2ecc71","#9b59b6","#1abc9c"]}]},options:{responsive:!0,plugins:{legend:{position:"top"}}}})};
     const renderVendasPorDiaChart=(t)=>{const e=t.reduce((t,e)=>{const a=new Date(e.data).toLocaleDateString("pt-BR");return t[a]=(t[a]||0)+e.valorTotal,t},{}),a=Object.keys(e).sort((t,a)=>new Date(t.split("/").reverse().join("-"))-new Date(a.split("/").reverse().join("-"))),r=a.map(t=>e[t]),o=document.getElementById("vendasPorDiaChart").getContext("2d");chartInstances.dia=new Chart(o,{type:"line",data:{labels:a,datasets:[{label:"Receita por Dia",data:r,borderColor:"#2c3e50",tension:.1,fill:!1}]},options:{responsive:!0,scales:{y:{ticks:{callback:t=>formatCurrency(t)}}}}})};
-
 
     document.querySelectorAll('.date-filter').forEach(btn => {
         btn.addEventListener('click', () => {
