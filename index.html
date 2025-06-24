@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestão Sasse's Pizza</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <div id="loader" class="loader-container">
+        <div class="loader-spinner"></div>
+    </div>
+
+    <header>
+        <h1>Sasse's Pizza</h1>
+        <p>Sistema de Gestão</p>
+    </header>
+
+    <nav>
+        <button class="tab-link active" data-tab="pedidos">Pedidos</button>
+        <button class="tab-link" data-tab="estoque">Estoque de Pizzas</button>
+        <button class="tab-link" data-tab="receitas">Receitas</button>
+        <button class="tab-link" data-tab="ingredientes">Ingredientes</button>
+        <button class="tab-link" data-tab="graficos">Dashboard</button>
+    </nav>
+
+    <main>
+        <div id="pedidos" class="tab-content active">
+            <h2>Registro de Pedidos</h2>
+            <div class="card">
+                <form id="form-pedido-principal">
+                    <input type="text" id="pedido-cliente" placeholder="Nome do Cliente" required>
+                    <input type="text" id="pedido-cliente-telefone" placeholder="Telefone (Opcional)">
+                    <input type="text" id="pedido-vendedor" placeholder="Nome do Vendedor" required>
+                    <input type="text" id="pedido-cidade" placeholder="Cidade" required>
+                    <select id="pedido-pagamento" required>
+                        <option value="">Forma de Pagamento</option>
+                        <option value="Dinheiro">Dinheiro</option>
+                        <option value="Cartão de Crédito">Cartão de Crédito</option>
+                        <option value="Cartão de Débito">Cartão de Débito</option>
+                        <option value="Pix">Pix</option>
+                    </select>
+                </form>
+                <hr>
+                <div id="form-item-pedido">
+                    <select id="item-pizza" required>
+                        <option value="">Selecione a Pizza...</option>
+                    </select>
+                    <input type="text" id="item-pizza-outro-nome" class="hidden" placeholder="Nome da nova pizza">
+                    <select id="item-pizza-outro-tamanho" class="hidden">
+                        <option value="P">Pequena</option>
+                        <option value="G">Grande</option>
+                    </select>
+                    <input type="number" id="item-qtd" placeholder="Qtd" required min="1">
+                    <button type="button" id="btn-add-item-pedido">Adicionar Pizza ao Pedido</button>
+                </div>
+                 <h3>Itens do Pedido Atual</h3>
+                <div id="pedido-itens-carrinho" class="carrinho-container"></div>
+                <button type="button" id="btn-registrar-pedido">Registrar Pedido Completo</button>
+            </div>
+            <div class="card">
+                <div class="table-header">
+                    <h3>Histórico de Pedidos</h3>
+                    <input type="text" id="search-pedidos" class="search-input" placeholder="Buscar por cliente, telefone ou pizza...">
+                    <button id="export-pedidos">Baixar Excel</button>
+                </div>
+                <div class="table-container">
+                    <table id="tabela-pedidos">
+                        <thead>
+                            <tr>
+                                <th>Cliente (Telefone)</th>
+                                <th>Itens do Pedido</th>
+                                <th>Detalhes (Vendedor/Cidade)</th>
+                                <th>Valores</th>
+                                <th>Status</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="estoque" class="tab-content">
+            <h2>Estoque de Pizzas Prontas</h2>
+            <div class="card">
+                <form id="form-estoque">
+                    <input type="hidden" id="estoque-id">
+                    <input type="text" id="estoque-nome" placeholder="Sabor da Pizza" required>
+                     <select id="estoque-tamanho" required>
+                        <option value="">Tamanho</option>
+                        <option value="P">Pequena</option>
+                        <option value="G">Grande</option>
+                    </select>
+                    <input type="number" id="estoque-qtd" placeholder="Quantidade em Estoque" required min="0">
+                    <input type="number" id="estoque-preco-venda" placeholder="Preço de Venda (R$)" required min="0" step="0.01">
+                    <button type="submit">Adicionar/Atualizar Pizza</button>
+                </form>
+            </div>
+            <div class="card">
+                 <div class="table-header">
+                    <h3>Pizzas em Estoque</h3>
+                    <input type="text" id="search-estoque" class="search-input" placeholder="Buscar pizza...">
+                    <button id="export-estoque">Baixar Excel</button>
+                </div>
+                <div class="table-container">
+                    <table id="tabela-estoque">
+                        <thead>
+                            <tr>
+                                <th>Sabor da Pizza</th>
+                                <th>Tamanho</th>
+                                <th>Qtd.</th>
+                                <th>Custo Produção</th>
+                                <th>Preço Venda</th>
+                                <th>Lucro Bruto</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="receitas" class="tab-content">
+            <h2>Gestão de Receitas</h2>
+            <div class="card">
+                <h3>Criar / Editar Receita</h3>
+                <form id="form-receita">
+                    <select id="receita-pizza-select" required>
+                        <option value="">Selecione a Pizza para definir a receita</option>
+                    </select>
+                    <button type="button" id="btn-salvar-receita">Salvar Receita</button>
+                </form>
+                <hr>
+                <div id="form-add-ingrediente-receita">
+                     <select id="receita-ingrediente-select" required><option value="">Selecione o ingrediente</option></select>
+                     <input type="number" id="receita-ingrediente-qtd" placeholder="Qtd (ex: 0.150 para 150g)" step="0.001" min="0">
+                     <button type="button" id="btn-add-ingrediente-receita">Adicionar Ingrediente</button>
+                </div>
+                <h4>Ingredientes da Receita:</h4>
+                <div id="receita-ingredientes-list"></div>
+            </div>
+             <div class="card">
+                 <div class="table-header">
+                    <h3>Receitas Salvas</h3>
+                    <input type="text" id="search-receitas" class="search-input" placeholder="Buscar receita...">
+                    <button id="export-receitas">Baixar Excel</button>
+                </div>
+                <div class="table-container">
+                    <table id="tabela-receitas">
+                        <thead>
+                            <tr>
+                                <th>Pizza</th>
+                                <th>Ingredientes da Receita</th>
+                                <th>Custo Total Calculado</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="ingredientes" class="tab-content">
+            <h2>Gestão de Ingredientes</h2>
+            <div class="card">
+                <form id="form-ingrediente">
+                    <input type="hidden" id="ingrediente-id">
+                    <input type="text" id="ingrediente-nome" placeholder="Nome do Ingrediente" required>
+                    <input type="number" id="ingrediente-qtd" placeholder="Qtd em Estoque (un./kg)" required min="0" step="0.001">
+                    <input type="number" id="ingrediente-custo" placeholder="Preço de Custo (R$ por un./kg)" required min="0" step="0.01">
+                    <input type="number" id="ingrediente-estoque-minimo" placeholder="Estoque Mínimo" required min="0" step="0.001">
+                    <button type="submit">Adicionar/Atualizar</button>
+                </form>
+            </div>
+            <div class="card">
+                <div class="table-header">
+                    <h3>Lista de Ingredientes</h3>
+                    <input type="text" id="search-ingredientes" class="search-input" placeholder="Buscar ingrediente...">
+                    <button id="export-ingredientes">Baixar Excel</button>
+                </div>
+                <div class="table-container">
+                    <table id="tabela-ingredientes">
+                        <thead>
+                            <tr>
+                                <th>Nome</th>
+                                <th>Qtd. em Estoque</th>
+                                <th>Estoque Mínimo</th>
+                                <th>Custo (p/ Unidade)</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="graficos" class="tab-content">
+            <h2>Dashboard de Vendas</h2>
+            <div class="card">
+                <div class="dashboard-filters">
+                    <button class="date-filter active" data-range="all">Tudo</button>
+                    <button class="date-filter" data-range="today">Hoje</button>
+                    <button class="date-filter" data-range="week">Esta Semana</button>
+                    <button class="date-filter" data-range="month">Este Mês</button>
+                </div>
+            </div>
+            <div class="charts-container">
+                <div class="card chart-card">
+                    <h3>Balanço Financeiro (Receita x Custo)</h3>
+                    <canvas id="balancoChart"></canvas>
+                </div>
+                 <div class="card chart-card">
+                    <h3>Pizzas Mais Lucrativas</h3>
+                    <canvas id="pizzasMaisLucrativasChart"></canvas>
+                </div>
+                <div class="card chart-card">
+                    <h3>Vendas por Vendedor</h3>
+                    <canvas id="vendasPorVendedorChart"></canvas>
+                </div>
+                <div class="card chart-card">
+                    <h3>Pizzas Mais Vendidas (Quantidade)</h3>
+                    <canvas id="pizzasMaisVendidasChart"></canvas>
+                </div>
+                 <div class="card chart-card full-width">
+                    <h3>Vendas por Dia</h3>
+                    <canvas id="vendasPorDiaChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div id="modal-assimilar" class="modal">
+        <div class="modal-content">
+            <span class="close-button" onclick="closeModal('modal-assimilar')">&times;</span>
+            <h2>Assimilar Pedido "Outro"</h2>
+            <p>Selecione um pedido pendente para vincular a esta pizza:</p>
+            <div id="assimilar-lista-pedidos"></div>
+        </div>
+    </div>
+
+    <div id="save-status"></div>
+
+    <footer>
+        <p>&copy; 2025 Sasse's Pizza</p>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
