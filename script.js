@@ -11,7 +11,8 @@ document.addEventListener('DOMContentLoaded', () => {
         ingredientes: [],
         receitas: [],
         estoque: [],
-        pedidos: []
+        pedidos: [],
+        clientes: []
     };
 
     let pedidoAtualItems = [];
@@ -59,7 +60,8 @@ document.addEventListener('DOMContentLoaded', () => {
             database.estoque = estoque || [];
             database.receitas = receitas || [];
             database.pedidos = pedidos || [];
-
+            
+            processCustomerData();
             renderAll();
         } catch (error) {
             console.error("Erro ao carregar dados do Supabase:", error);
@@ -115,29 +117,29 @@ document.addEventListener('DOMContentLoaded', () => {
         renderEstoque();
         renderReceitas();
         renderPedidos();
+        renderClientesReport();
         renderDashboard(document.querySelector('.date-filter.active')?.dataset.range || 'all');
-        checkAvisos();
     };
 
     const populateSelects = () => {
         const pizzaEstoqueSelect = document.getElementById('item-pizza');
         const pizzaReceitaSelect = document.getElementById('receita-pizza-select');
         const ingredienteReceitaSelect = document.getElementById('receita-ingrediente-select');
+        const producaoPizzaSelect = document.getElementById('producao-pizza-select');
 
         pizzaEstoqueSelect.innerHTML = '<option value="">Selecione a Pizza...</option>';
+        producaoPizzaSelect.innerHTML = '<option value="">Selecione a Pizza a Produzir...</option>';
+        pizzaReceitaSelect.innerHTML = '<option value="">Selecione a Pizza para definir a receita</option>';
+        
         database.estoque.forEach(p => {
             const label = p.tamanho ? `${p.nome} (${p.tamanho})` : p.nome;
             if (p.qtd > 0) {
                 pizzaEstoqueSelect.innerHTML += `<option value="${p.id}">${label} (Estoque: ${p.qtd})</option>`;
             }
-        });
-        pizzaEstoqueSelect.innerHTML += '<option value="outro">Outro...</option>';
-
-        pizzaReceitaSelect.innerHTML = '<option value="">Selecione a Pizza para definir a receita</option>';
-        database.estoque.forEach(p => {
-            const label = p.tamanho ? `${p.nome} (${p.tamanho})` : p.nome;
+            producaoPizzaSelect.innerHTML += `<option value="${p.id}">${label}</option>`;
             pizzaReceitaSelect.innerHTML += `<option value="${p.id}">${label}</option>`;
         });
+        pizzaEstoqueSelect.innerHTML += '<option value="outro">Outro...</option>';
 
         ingredienteReceitaSelect.innerHTML = '<option value="">Selecione o ingrediente</option>';
         database.ingredientes.forEach(i => ingredienteReceitaSelect.innerHTML += `<option value="${i.id}">${i.nome}</option>`);
@@ -678,7 +680,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const row = tbody.insertRow();
             const itemsHtml = p.items.map(i => `<li class="${i.isCustom?'item-pedido-outro':''}">${i.qtd}x ${i.pizzaNome}</li>`).join('');
             let acoesHtml = `${p.status==='Pendente'?`<button class="action-btn edit-btn" onclick="editPedido('${p.id}')">Editar</button><button class="action-btn complete-btn" onclick="concluirPedido('${p.id}')">Concluir</button>`:''}<button class="action-btn remove-btn" onclick="removerPedido('${p.id}')">Remover</button>`;
-            row.innerHTML = `<td data-label="Cliente">${p.cliente}</b><br><small>${p.telefone||"N/A"}</small></td><td data-label="Itens"><ul style="padding-left:15px;margin:0">${itemsHtml}</ul></td><td data-label="Detalhes"><small>Vend.: ${p.vendedor}<br>Cid.: ${p.cidade}<br>Pag.: ${p.pagamento}</small></td><td data-label="Valores"><b>Total: ${formatCurrency(p.valorTotal)}</b><br><small>Custo: ${formatCurrency(p.custoTotal)}</small><br><b style="color:${p.lucro>=0?"green":"red"}">${p.lucro>=0?"+":""}${formatCurrency(p.lucro)}</b></td><td data-label="Status"><span class="status-${p.status.toLowerCase()}">${p.status}</span></td><td data-label="Ações">${acoesHtml}</td>`;
+            row.innerHTML = `<td data-label="Cliente">${p.cliente}</b><br><small>${p.telefone||"N/A"}</small></td><td data-label="Itens"><ul style="padding-left:15px;margin:0">${itemsHtml}</ul></td><td data-label="Detalhes"><small>Vend.: ${p.vendedor}<br>Cid.: ${p.cidade}<br>Pag.: ${p.pagamento}</small></td><td data-label="Valores"><b>Total: ${formatCurrency(p.valorTotal)}</b><br><small class="admin-only">Custo: ${formatCurrency(p.custoTotal)}</small><br><b class="admin-only" style="color:${p.lucro>=0?"green":"red"}">${p.lucro>=0?"+":""}${formatCurrency(p.lucro)}</b></td><td data-label="Status"><span class="status-${p.status.toLowerCase()}">${p.status}</span></td><td data-label="Ações">${acoesHtml}</td>`;
         });
     };
 
@@ -707,9 +709,6 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     document.getElementById('search-pedidos').addEventListener('input', renderPedidos);
-
-    const checkAvisos = () => {};
-    window.closeModal = (modalId) => { document.getElementById(modalId).style.display = 'none'; };
 
     const getFilteredPedidos = (filterRange = 'all') => {
         const now = new Date();
@@ -786,6 +785,151 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
         exportToExcel(flatData, 'sasses_pedidos_detalhado');
+    });
+    
+    // Funções das novas funcionalidades
+    const processCustomerData = () => {
+        const customerMap = new Map();
+        database.pedidos.forEach(pedido => {
+            const key = `${pedido.cliente.toLowerCase()}|${pedido.cidade.toLowerCase()}`;
+            if (!customerMap.has(key)) {
+                customerMap.set(key, {
+                    nome: pedido.cliente,
+                    telefone: pedido.telefone,
+                    cidade: pedido.cidade,
+                    numPedidos: 0,
+                    totalGasto: 0,
+                    ultimoPedido: new Date(0)
+                });
+            }
+            const customer = customerMap.get(key);
+            customer.numPedidos++;
+            customer.totalGasto += Number(pedido.valorTotal);
+            const dataPedido = new Date(pedido.data);
+            if(dataPedido > customer.ultimoPedido) {
+                customer.ultimoPedido = dataPedido;
+                customer.telefone = pedido.telefone;
+            }
+        });
+        database.clientes = Array.from(customerMap.values());
+        
+        const datalist = document.getElementById('clientes-list');
+        datalist.innerHTML = '';
+        database.clientes.forEach(cliente => {
+            datalist.innerHTML += `<option value="${cliente.nome}">`;
+        });
+    };
+    
+    const renderClientesReport = () => {
+        const searchTerm = document.getElementById('search-clientes').value.toLowerCase();
+        const tbody = document.getElementById('tabela-clientes').querySelector('tbody');
+        tbody.innerHTML = '';
+
+        const filteredData = database.clientes.filter(c => c.nome.toLowerCase().includes(searchTerm) || c.cidade.toLowerCase().includes(searchTerm));
+
+        filteredData.sort((a,b) => b.totalGasto - a.totalGasto);
+
+        filteredData.forEach(c => {
+            const row = tbody.insertRow();
+            row.innerHTML = `
+                <td data-label="Nome do Cliente">${c.nome}</td>
+                <td data-label="Telefone">${c.telefone || 'N/A'}</td>
+                <td data-label="Cidade">${c.cidade}</td>
+                <td data-label="Nº de Pedidos">${c.numPedidos}</td>
+                <td data-label="Total Gasto">${formatCurrency(c.totalGasto)}</td>
+                <td data-label="Último Pedido">${c.ultimoPedido.toLocaleDateString('pt-BR')}</td>
+            `;
+        });
+    };
+
+    document.getElementById('search-clientes').addEventListener('input', renderClientesReport);
+    
+    document.getElementById('pedido-cliente').addEventListener('input', (e) => {
+        const nome = e.target.value;
+        const cliente = database.clientes.find(c => c.nome.toLowerCase() === nome.toLowerCase());
+        if(cliente) {
+            document.getElementById('pedido-cliente-telefone').value = cliente.telefone || '';
+            document.getElementById('pedido-cidade').value = cliente.cidade || '';
+        }
+    });
+
+    document.getElementById('btn-lista-compras').addEventListener('click', () => {
+        const itemsBaixos = database.ingredientes.filter(i => i.qtd < i.estoqueMinimo);
+        const container = document.getElementById('lista-compras-content');
+
+        if(itemsBaixos.length === 0) {
+            container.innerHTML = '<p>Ótima notícia! Nenhum ingrediente está com estoque baixo.</p>';
+        } else {
+            let tableHtml = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Ingrediente</th>
+                            <th>Estoque Atual</th>
+                            <th>Estoque Mínimo</th>
+                            <th>Comprar (sugestão)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            itemsBaixos.forEach(item => {
+                const comprar = (item.estoqueMinimo - item.qtd).toFixed(3);
+                tableHtml += `
+                    <tr>
+                        <td>${item.nome}</td>
+                        <td>${item.qtd.toFixed(3)}</td>
+                        <td>${item.estoqueMinimo.toFixed(3)}</td>
+                        <td><b>${comprar}</b></td>
+                    </tr>
+                `;
+            });
+            tableHtml += '</tbody></table>';
+            container.innerHTML = tableHtml;
+        }
+        document.getElementById('modal-lista-compras').style.display = 'block';
+    });
+    
+    window.closeModal = (modalId) => {
+        document.getElementById(modalId).style.display = 'none';
+    };
+    
+    document.getElementById('btn-print-lista').addEventListener('click', () => {
+        window.print();
+    });
+    
+    document.getElementById('form-producao').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const pizzaId = document.getElementById('producao-pizza-select').value;
+        const quantidade = parseInt(document.getElementById('producao-qtd').value);
+
+        if(!pizzaId || !quantidade || quantidade < 1) {
+            alert('Por favor, selecione uma pizza e informe uma quantidade válida.');
+            return;
+        }
+        
+        if(!confirm(`Confirma a produção de ${quantidade}x ${database.estoque.find(p=>p.id === pizzaId).nome}? Isso dará baixa nos ingredientes.`)) {
+            return;
+        }
+
+        showLoader();
+        const { data, error } = await supabaseClient.rpc('realizar_producao', {
+            p_pizza_id: pizzaId,
+            p_quantidade: quantidade
+        });
+
+        if (error) {
+            const friendlyMessage = error.message.replace(/ESTOQUE_INSUFICIENTE: |RECEITA_NAO_ENCONTRADA/g, match => {
+                if (match === 'RECEITA_NAO_ENCONTRADA') return 'Receita não encontrada para esta pizza.';
+                return 'Estoque insuficiente para: ';
+            });
+            alert(`Erro ao registrar produção: ${friendlyMessage}`);
+        } else {
+            showSaveStatus(data);
+            await loadDataFromSupabase();
+        }
+        
+        e.target.reset();
+        hideLoader();
     });
     
     loadDataFromSupabase();

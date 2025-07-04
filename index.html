@@ -23,6 +23,7 @@
 
     <nav>
         <button class="tab-link active" data-tab="pedidos">Pedidos</button>
+        <button class="tab-link admin-only" data-tab="clientes">Clientes</button>
         <button class="tab-link admin-only" data-tab="estoque">Estoque de Pizzas</button>
         <button class="tab-link admin-only" data-tab="receitas">Receitas</button>
         <button class="tab-link admin-only" data-tab="ingredientes">Ingredientes</button>
@@ -34,10 +35,12 @@
             <h2>Registro de Pedidos</h2>
             <div class="card">
                 <form id="form-pedido-principal">
-                    <input type="hidden" id="pedido-edit-id"> <input type="text" id="pedido-cliente" placeholder="Nome do Cliente" required>
+                    <input type="hidden" id="pedido-edit-id"> 
+                    <input type="text" id="pedido-cliente" placeholder="Nome do Cliente" required list="clientes-list">
+                    <datalist id="clientes-list"></datalist>
                     <input type="text" id="pedido-cliente-telefone" placeholder="Telefone (Opcional)">
-                    <input type="text" id="pedido-vendedor" placeholder="Nome do Vendedor" required>
                     <input type="text" id="pedido-cidade" placeholder="Cidade" required>
+                    <input type="text" id="pedido-vendedor" placeholder="Nome do Vendedor" required>
                     <select id="pedido-pagamento" required>
                         <option value="">Forma de Pagamento</option>
                         <option value="Dinheiro">Dinheiro</option>
@@ -68,7 +71,7 @@
             <div class="card">
                 <div class="table-header">
                     <h3>Histórico de Pedidos</h3>
-                    <input type="text" id="search-pedidos" class="search-input" placeholder="Buscar por cliente, telefone ou pizza...">
+                    <input type="search" id="search-pedidos" class="search-input" placeholder="Buscar por cliente, telefone ou pizza...">
                     <button id="export-pedidos">Baixar Excel</button>
                 </div>
                 <div class="table-container">
@@ -88,10 +91,46 @@
                 </div>
             </div>
         </div>
-		
+
+        <div id="clientes" class="tab-content">
+             <h2>Relatório de Clientes</h2>
+              <div class="card">
+                <div class="table-header">
+                    <h3>Clientes Registrados</h3>
+                    <input type="search" id="search-clientes" class="search-input" placeholder="Buscar cliente...">
+                </div>
+                <div class="table-container">
+                    <table id="tabela-clientes">
+                        <thead>
+                            <tr>
+                                <th>Nome do Cliente</th>
+                                <th>Telefone</th>
+                                <th>Cidade</th>
+                                <th>Nº de Pedidos</th>
+                                <th>Total Gasto</th>
+                                <th>Último Pedido</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
         <div id="estoque" class="tab-content">
             <h2>Estoque de Pizzas Prontas</h2>
             <div class="card">
+                 <h3>Registrar Produção</h3>
+                 <form id="form-producao">
+                    <select id="producao-pizza-select" required>
+                        <option value="">Selecione a Pizza a Produzir...</option>
+                    </select>
+                    <input type="number" id="producao-qtd" placeholder="Quantidade" required min="1">
+                    <button type="submit">Produzir</button>
+                 </form>
+            </div>
+            <div class="card">
+                <h3>Adicionar / Editar Tipo de Pizza</h3>
                 <form id="form-estoque">
                     <input type="hidden" id="estoque-id">
                     <input type="text" id="estoque-nome" placeholder="Sabor da Pizza" required>
@@ -108,7 +147,7 @@
             <div class="card">
                  <div class="table-header">
                     <h3>Pizzas em Estoque</h3>
-                    <input type="text" id="search-estoque" class="search-input" placeholder="Buscar pizza...">
+                    <input type="search" id="search-estoque" class="search-input" placeholder="Buscar pizza...">
                     <button id="export-estoque">Baixar Excel</button>
                 </div>
                 <div class="table-container">
@@ -152,7 +191,7 @@
              <div class="card">
                  <div class="table-header">
                     <h3>Receitas Salvas</h3>
-                    <input type="text" id="search-receitas" class="search-input" placeholder="Buscar receita...">
+                    <input type="search" id="search-receitas" class="search-input" placeholder="Buscar receita...">
                     <button id="export-receitas">Baixar Excel</button>
                 </div>
                 <div class="table-container">
@@ -186,7 +225,8 @@
             <div class="card">
                 <div class="table-header">
                     <h3>Lista de Ingredientes</h3>
-                    <input type="text" id="search-ingredientes" class="search-input" placeholder="Buscar ingrediente...">
+                    <input type="search" id="search-ingredientes" class="search-input" placeholder="Buscar ingrediente...">
+                    <button id="btn-lista-compras">Gerar Lista de Compras</button>
                     <button id="export-ingredientes">Baixar Excel</button>
                 </div>
                 <div class="table-container">
@@ -241,12 +281,13 @@
         </div>
     </main>
 
-    <div id="modal-assimilar" class="modal">
+    <div id="modal-lista-compras" class="modal">
         <div class="modal-content">
-            <span class="close-button" onclick="closeModal('modal-assimilar')">&times;</span>
-            <h2>Assimilar Pedido "Outro"</h2>
-            <p>Selecione um pedido pendente para vincular a esta pizza:</p>
-            <div id="assimilar-lista-pedidos"></div>
+            <span class="close-button" onclick="closeModal('modal-lista-compras')">&times;</span>
+            <h2>Lista de Compras Sugerida</h2>
+            <p>Itens que estão abaixo do estoque mínimo.</p>
+            <div id="lista-compras-content"></div>
+            <button id="btn-print-lista" class="action-btn">Imprimir Lista</button>
         </div>
     </div>
 
