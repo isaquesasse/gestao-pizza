@@ -68,6 +68,32 @@ document.addEventListener('DOMContentLoaded', () => {
             hideLoader();
         }
     };
+    
+    const toggleAdminView = () => {
+        const body = document.body;
+        const btn = document.getElementById('btn-admin-view');
+        
+        if (body.classList.contains('admin-mode')) {
+            body.classList.remove('admin-mode');
+            btn.textContent = 'Visão ADM';
+            
+            const activeTabIsAdminOnly = document.querySelector('.tab-link.active.admin-only');
+            if (activeTabIsAdminOnly) {
+                document.querySelector('.tab-link[data-tab="pedidos"]').click();
+            }
+
+        } else {
+            const password = prompt('Digite a senha de administrador:');
+            if (password === 'sasse') {
+                body.classList.add('admin-mode');
+                btn.textContent = 'Sair da Visão ADM';
+            } else if (password) {
+                alert('Senha incorreta!');
+            }
+        }
+    };
+
+    document.getElementById('btn-admin-view').addEventListener('click', toggleAdminView);
 
     const formatCurrency = (value) => {
         if (isNaN(value) || value === null) value = 0;
@@ -139,8 +165,11 @@ document.addEventListener('DOMContentLoaded', () => {
         filteredData.forEach(item => {
             const row = tbody.insertRow();
             if (item.qtd < item.estoqueMinimo) row.classList.add('low-stock');
-            row.innerHTML = `<td data-label="Nome">${item.nome}</td><td data-label="Qtd. em Estoque">${(item.qtd || 0).toFixed(3)}</td><td data-label="Estoque Mínimo">${(item.estoqueMinimo || 0).toFixed(3)}</td><td data-label="Custo (p/ Unidade)">${formatCurrency(item.custo)}</td><td data-label="Ações"><button class="action-btn edit-btn" onclick="editIngrediente('${item.id}')">Editar</button><button class="action-btn remove-btn" onclick="removeIngrediente('${item.id}')">Remover</button></td>`;
+            row.innerHTML = `<td data-label="Nome">${item.nome}</td><td data-label="Qtd. em Estoque">${(item.qtd || 0).toFixed(3)}</td><td data-label="Estoque Mínimo">${(item.estoqueMinimo || 0).toFixed(3)}</td><td data-label="Custo (p/ Unidade)" class="admin-only">${formatCurrency(item.custo)}</td><td data-label="Ações"><button class="action-btn edit-btn" onclick="editIngrediente('${item.id}')">Editar</button><button class="action-btn remove-btn" onclick="removeIngrediente('${item.id}')">Remover</button></td>`;
         });
+        
+        const thCusto = document.querySelector('#tabela-ingredientes th:nth-child(4)');
+        if(thCusto) thCusto.classList.add('admin-only');
     };
 
     document.getElementById('form-ingrediente').addEventListener('submit', async e => {
@@ -209,7 +238,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const lucro = item.precoVenda - custo;
             const row = tbody.insertRow();
             const saleIndicator = item.history && item.history.some(h => h.type === 'sale') ? '<span class="stock-sale-indicator">↓</span>' : '';
-            row.innerHTML = `<td data-label="Sabor da Pizza">${item.nome}</td><td data-label="Tamanho">${item.tamanho||"N/A"}</td><td data-label="Qtd.">${item.qtd} ${saleIndicator}</td><td data-label="Custo Produção">${formatCurrency(custo)}</td><td data-label="Preço Venda">${formatCurrency(item.precoVenda)}</td><td data-label="Lucro Bruto" style="color:${lucro>=0?"green":"red"};font-weight:bold;">${formatCurrency(lucro)}</td><td data-label="Ações"><button class="action-btn edit-btn" onclick="editEstoque('${item.id}')">Editar</button><button class="action-btn remove-btn" onclick="removeEstoque('${item.id}')">Remover</button></td>`;
+            row.innerHTML = `<td data-label="Sabor da Pizza">${item.nome}</td><td data-label="Tamanho">${item.tamanho||"N/A"}</td><td data-label="Qtd.">${item.qtd} ${saleIndicator}</td><td data-label="Custo Produção" class="admin-only">${formatCurrency(custo)}</td><td data-label="Preço Venda">${formatCurrency(item.precoVenda)}</td><td data-label="Lucro Bruto" class="admin-only" style="color:${lucro>=0?"green":"red"};font-weight:bold;">${formatCurrency(lucro)}</td><td data-label="Ações"><button class="action-btn edit-btn" onclick="editEstoque('${item.id}')">Editar</button><button class="action-btn remove-btn" onclick="removeEstoque('${item.id}')">Remover</button></td>`;
         });
     };
 
@@ -303,7 +332,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }).join(', ') || 'Sem ingredientes';
             const custoTotal = calculatePizzaCost(pizza.id);
             const row = tbody.insertRow();
-            row.innerHTML = `<td data-label="Pizza">${pizza.nome} (${pizza.tamanho||''})</td><td data-label="Ingredientes"><small>${ingredientesList}</small></td><td data-label="Custo Total">${formatCurrency(custoTotal)}</td><td data-label="Ações"><button class="action-btn edit-btn" onclick="editReceita('${receita.pizzaId}')">Editar</button><button class="action-btn remove-btn" onclick="removeReceita('${receita.pizzaId}')">Remover</button></td>`;
+            row.innerHTML = `<td data-label="Pizza">${pizza.nome} (${pizza.tamanho||''})</td><td data-label="Ingredientes"><small>${ingredientesList}</small></td><td data-label="Custo Total" class="admin-only">${formatCurrency(custoTotal)}</td><td data-label="Ações"><button class="action-btn edit-btn" onclick="editReceita('${receita.pizzaId}')">Editar</button><button class="action-btn remove-btn" onclick="removeReceita('${receita.pizzaId}')">Remover</button></td>`;
         });
     };
 

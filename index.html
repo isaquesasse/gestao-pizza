@@ -18,14 +18,15 @@
     <header>
         <h1>Sasse's Pizza</h1>
         <p>Sistema de Gestão</p>
+        <button id="btn-admin-view">Visão ADM</button>
     </header>
 
     <nav>
         <button class="tab-link active" data-tab="pedidos">Pedidos</button>
-        <button class="tab-link" data-tab="estoque">Estoque de Pizzas</button>
-        <button class="tab-link" data-tab="receitas">Receitas</button>
-        <button class="tab-link" data-tab="ingredientes">Ingredientes</button>
-        <button class="tab-link" data-tab="graficos">Dashboard</button>
+        <button class="tab-link admin-only" data-tab="estoque">Estoque de Pizzas</button>
+        <button class="tab-link admin-only" data-tab="receitas">Receitas</button>
+        <button class="tab-link admin-only" data-tab="ingredientes">Ingredientes</button>
+        <button class="tab-link admin-only" data-tab="graficos">Dashboard</button>
     </nav>
 
     <main>
@@ -87,7 +88,7 @@
                 </div>
             </div>
         </div>
-
+		
         <div id="estoque" class="tab-content">
             <h2>Estoque de Pizzas Prontas</h2>
             <div class="card">
@@ -117,9 +118,9 @@
                                 <th>Sabor da Pizza</th>
                                 <th>Tamanho</th>
                                 <th>Qtd.</th>
-                                <th>Custo Produção</th>
+                                <th class="admin-only">Custo Produção</th>
                                 <th>Preço Venda</th>
-                                <th>Lucro Bruto</th>
+                                <th class="admin-only">Lucro Bruto</th>
                                 <th>Ações</th>
                             </tr>
                         </thead>
@@ -160,7 +161,7 @@
                             <tr>
                                 <th>Pizza</th>
                                 <th>Ingredientes da Receita</th>
-                                <th>Custo Total Calculado</th>
+                                <th class="admin-only">Custo Total Calculado</th>
                                 <th>Ações</th>
                             </tr>
                         </thead>
@@ -193,9 +194,9 @@
                         <thead>
                             <tr>
                                 <th>Nome</th>
-                                <th>Qatd. em Estoque</th>
+                                <th>Qtd. em Estoque</th>
                                 <th>Estoque Mínimo</th>
-                                <th>Custo (p/ Unidade)</th>
+                                <th class="admin-only">Custo (p/ Unidade)</th>
                                 <th>Ações</th>
                             </tr>
                         </thead>
