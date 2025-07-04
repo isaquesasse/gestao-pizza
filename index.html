@@ -27,6 +27,7 @@
         <button class="tab-link admin-only" data-tab="estoque">Estoque de Pizzas</button>
         <button class="tab-link admin-only" data-tab="receitas">Receitas</button>
         <button class="tab-link admin-only" data-tab="ingredientes">Ingredientes</button>
+        <button class="tab-link admin-only" data-tab="simulador">Simulador</button>
         <button class="tab-link admin-only" data-tab="graficos">Dashboard</button>
     </nav>
 
@@ -35,7 +36,7 @@
             <h2>Registro de Pedidos</h2>
             <div class="card">
                 <form id="form-pedido-principal">
-                    <input type="hidden" id="pedido-edit-id"> 
+                    <input type="hidden" id="pedido-edit-id">
                     <input type="text" id="pedido-cliente" placeholder="Nome do Cliente" required list="clientes-list">
                     <datalist id="clientes-list"></datalist>
                     <input type="text" id="pedido-cliente-telefone" placeholder="Telefone (Opcional)">
@@ -60,12 +61,12 @@
                         <option value="G">Grande</option>
                     </select>
                     <input type="number" id="item-qtd" placeholder="Qtd" required min="1">
-                    <button type="button" id="btn-add-item-pedido">Adicionar Pizza ao Pedido</button>
+                    <button type="button" id="btn-add-item-pedido">Adicionar</button>
                 </div>
                  <h3>Itens do Pedido Atual</h3>
                 <div id="pedido-itens-carrinho" class="carrinho-container"></div>
                 <div id="pedido-botoes-acao" style="display: flex; gap: 1rem; margin-top: 1rem;">
-                    <button type="button" id="btn-registrar-pedido">Registrar Pedido Completo</button>
+                    <button type="button" id="btn-registrar-pedido">Registrar Pedido </button>
                 </div>
             </div>
             <div class="card">
@@ -238,6 +239,39 @@
                                 <th>Estoque Mínimo</th>
                                 <th class="admin-only">Custo (p/ Unidade)</th>
                                 <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="simulador" class="tab-content">
+            <h2>Simulador de Preços e Lucratividade</h2>
+            <div class="card">
+                <h3>Painel de Simulação</h3>
+                <form id="form-simulador">
+                    <select id="simulador-ingrediente-select" required>
+                        <option value="">Selecione um ingrediente...</option>
+                    </select>
+                    <input type="number" id="simulador-novo-custo" placeholder="Novo Custo (R$)" required min="0" step="0.01">
+                    <button type="submit">Simular</button>
+                    <button type="button" id="btn-reset-simulador">Resetar</button>
+                </form>
+            </div>
+            <div class="card">
+                <h3>Resultados da Simulação</h3>
+                <div class="table-container">
+                    <table id="tabela-simulador">
+                        <thead>
+                            <tr>
+                                <th>Pizza</th>
+                                <th>Custo Original</th>
+                                <th>Custo Simulado</th>
+                                <th>Lucro Original</th>
+                                <th>Lucro Simulado</th>
+                                <th>Variação Lucro</th>
                             </tr>
                         </thead>
                         <tbody></tbody>
