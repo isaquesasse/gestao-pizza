@@ -15,6 +15,14 @@ document.addEventListener('DOMContentLoaded', () => {
         clientes: []
     };
 
+    let sortState = {
+        pedidos: { column: 'data', direction: 'desc'},
+        clientes: { column: 'totalGasto', direction: 'desc' },
+        estoque: { column: 'nome', direction: 'asc' },
+        ingredientes: { column: 'nome', direction: 'asc' },
+        demanda: { column: 'quantidade', direction: 'desc' },
+    };
+
     let pedidoAtualItems = [];
     let receitaAtualIngredientes = [];
     let originalItemsParaEdicao = [];
@@ -112,6 +120,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderPedidos();
         renderClientesReport();
         renderSimulator();
+        renderProductionDemand();
         renderDashboard(document.querySelector('.date-filter.active')?.dataset.range || 'all');
     };
 
@@ -129,9 +138,8 @@ document.addEventListener('DOMContentLoaded', () => {
         
         database.estoque.forEach(p => {
             const label = p.tamanho ? `${p.nome} (${p.tamanho})` : p.nome;
-            if (p.qtd > 0) {
-                pizzaEstoqueSelect.innerHTML += `<option value="${p.id}">${label} (Estoque: ${p.qtd})</option>`;
-            }
+            const stockStyle = (p.qtd <= 0) ? 'style="color: red;"' : '';
+            pizzaEstoqueSelect.innerHTML += `<option value="${p.id}" ${stockStyle}>${label} (Estoque: ${p.qtd})</option>`;
             producaoPizzaSelect.innerHTML += `<option value="${p.id}">${label}</option>`;
             pizzaReceitaSelect.innerHTML += `<option value="${p.id}">${label}</option>`;
         });
@@ -156,21 +164,27 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // ... Gestão de Ingredientes
     const renderIngredientes = () => {
         const searchTerm = document.getElementById('search-ingredientes').value.toLowerCase();
+        let filteredData = database.ingredientes.filter(item => (item.nome || '').toLowerCase().includes(searchTerm));
+
+        const { column, direction } = sortState.ingredientes;
+        filteredData.sort((a, b) => {
+            const valA = a[column] ?? '';
+            const valB = b[column] ?? '';
+            if (typeof valA === 'number') return valA - valB;
+            return valA.localeCompare(valB);
+        });
+        if (direction === 'desc') filteredData.reverse();
+
         const tbody = document.getElementById('tabela-ingredientes').querySelector('tbody');
         tbody.innerHTML = '';
-        const filteredData = database.ingredientes.filter(item => (item.nome || '').toLowerCase().includes(searchTerm));
-
         filteredData.forEach(item => {
             const row = tbody.insertRow();
             if (item.qtd < item.estoqueMinimo) row.classList.add('low-stock');
             row.innerHTML = `<td data-label="Nome">${item.nome}</td><td data-label="Qtd. em Estoque">${(item.qtd || 0).toFixed(3)}</td><td data-label="Estoque Mínimo">${(item.estoqueMinimo || 0).toFixed(3)}</td><td data-label="Custo (p/ Unidade)" class="admin-only">${formatCurrency(item.custo)}</td><td data-label="Ações"><button class="action-btn edit-btn" onclick="editIngrediente('${item.id}')">Editar</button><button class="action-btn remove-btn" onclick="removeIngrediente('${item.id}')">Remover</button></td>`;
         });
-        
-        const thCusto = document.querySelector('#tabela-ingredientes thead th:nth-child(4)');
-        if(thCusto) thCusto.classList.add('admin-only');
+        updateSortHeaders('tabela-ingredientes', column, direction);
     };
 
     document.getElementById('form-ingrediente').addEventListener('submit', async e => {
@@ -228,21 +242,38 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('search-ingredientes').addEventListener('input', renderIngredientes);
 
-    // ... Gestão de Estoque
     const renderEstoque = () => {
         const searchTerm = document.getElementById('search-estoque').value.toLowerCase();
+        let filteredData = database.estoque.filter(item => (item.nome || '').toLowerCase().includes(searchTerm));
+        
+        const { column, direction } = sortState.estoque;
+        filteredData.sort((a, b) => {
+            let valA, valB;
+            if (column === 'custo' || column === 'lucro') {
+                const custoA = calculatePizzaCost(a.id);
+                const custoB = calculatePizzaCost(b.id);
+                valA = column === 'custo' ? custoA : a.precoVenda - custoA;
+                valB = column === 'custo' ? custoB : b.precoVenda - custoB;
+            } else {
+                valA = a[column] ?? '';
+                valB = b[column] ?? '';
+            }
+
+            if (typeof valA === 'number') return valA - valB;
+            return valA.localeCompare(valB);
+        });
+        if (direction === 'desc') filteredData.reverse();
+
         const tbody = document.getElementById('tabela-estoque').querySelector('tbody');
         tbody.innerHTML = '';
-        const filteredData = database.estoque.filter(item => (item.nome || '').toLowerCase().includes(searchTerm));
-
         filteredData.forEach(item => {
             const custo = calculatePizzaCost(item.id);
             const lucro = item.precoVenda - custo;
             const row = tbody.insertRow();
             if(item.qtd < 0) row.classList.add('low-stock');
-            const saleIndicator = item.history && item.history.some(h => h.type === 'sale') ? '<span class="stock-sale-indicator">↓</span>' : '';
-            row.innerHTML = `<td data-label="Sabor da Pizza">${item.nome}</td><td data-label="Tamanho">${item.tamanho||"N/A"}</td><td data-label="Qtd.">${item.qtd} ${saleIndicator}</td><td data-label="Custo Produção" class="admin-only">${formatCurrency(custo)}</td><td data-label="Preço Venda">${formatCurrency(item.precoVenda)}</td><td data-label="Lucro Bruto" class="admin-only" style="color:${lucro>=0?"green":"red"};font-weight:bold;">${formatCurrency(lucro)}</td><td data-label="Ações"><button class="action-btn edit-btn" onclick="editEstoque('${item.id}')">Editar</button><button class="action-btn remove-btn" onclick="removeEstoque('${item.id}')">Remover</button></td>`;
+            row.innerHTML = `<td data-label="Sabor da Pizza">${item.nome}</td><td data-label="Tamanho">${item.tamanho||"N/A"}</td><td data-label="Qtd.">${item.qtd}</td><td data-label="Custo Produção" class="admin-only">${formatCurrency(custo)}</td><td data-label="Preço Venda">${formatCurrency(item.precoVenda)}</td><td data-label="Lucro Bruto" class="admin-only" style="color:${lucro>=0?"green":"red"};font-weight:bold;">${formatCurrency(lucro)}</td><td data-label="Ações"><button class="action-btn edit-btn" onclick="editEstoque('${item.id}')">Editar</button><button class="action-btn remove-btn" onclick="removeEstoque('${item.id}')">Remover</button></td>`;
         });
+        updateSortHeaders('tabela-estoque', column, direction);
     };
 
     document.getElementById('form-estoque').addEventListener('submit', async e => {
@@ -258,12 +289,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let error;
         if (id) {
-            const existingPizza = database.estoque.find(p => p.id === id);
-            pizzaData.history = existingPizza.history || [];
-            pizzaData.history.push({ type: 'manual_edit', date: new Date().toISOString() });
             ({ error } = await supabaseClient.from('estoque').update(pizzaData).eq('id', id));
         } else {
-            pizzaData.history = [{ type: 'manual_add', date: new Date().toISOString() }];
             ({ error } = await supabaseClient.from('estoque').insert(pizzaData));
         }
 
@@ -304,7 +331,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('search-estoque').addEventListener('input', renderEstoque);
 
-    // ... Gestão de Receitas
     const renderReceitaIngredientesList = () => {
         const container = document.getElementById('receita-ingredientes-list');
         container.innerHTML = '';
@@ -413,7 +439,6 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     document.getElementById('search-receitas').addEventListener('input', renderReceitas);
 
-    // ... Gestão de Pedidos (Atualizado)
     const renderPedidoCarrinho = () => {
         const container = document.getElementById('pedido-itens-carrinho');
         container.innerHTML = '';
@@ -446,7 +471,7 @@ document.addEventListener('DOMContentLoaded', () => {
             alert('Selecione uma pizza e informe uma quantidade válida.');
             return;
         }
-        let pizzaNome, isCustom = false;
+        let pizzaNome, isCustom = false, preco = 0;
         if (pizzaId === 'outro') {
             pizzaNome = document.getElementById('item-pizza-outro-nome').value.trim();
             if (!pizzaNome) {
@@ -459,8 +484,9 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             const pizzaData = database.estoque.find(p => p.id === pizzaId);
             pizzaNome = pizzaData.tamanho ? `${pizzaData.nome} (${pizzaData.tamanho})` : pizzaData.nome;
+            preco = pizzaData.precoVenda;
         }
-        pedidoAtualItems.push({ pizzaId, pizzaNome, qtd, isCustom });
+        pedidoAtualItems.push({ pizzaId, pizzaNome, qtd, isCustom, preco });
         renderPedidoCarrinho();
         pizzaSelect.value = '';
         document.getElementById('item-qtd').value = '';
@@ -491,7 +517,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 BOTOES_ACAO.appendChild(cancelButton);
             }
         } else {
-            BTN_REGISTRAR.textContent = 'Registrar Pedido Completo';
+            BTN_REGISTRAR.textContent = 'Registrar Pedido';
             const cancelButton = document.getElementById('btn-cancelar-edicao');
             if (cancelButton) {
                 cancelButton.remove();
@@ -526,11 +552,9 @@ document.addEventListener('DOMContentLoaded', () => {
             data: new Date().toISOString(),
             status: 'Pendente',
             items: pedidoAtualItems.map(item => {
-                if (item.isCustom) return { ...item, custo: 0, preco: 0 };
-                const pizzaData = database.estoque.find(p => p.id === item.pizzaId);
-                const custo = pizzaData ? calculatePizzaCost(pizzaData.id) : 0;
-                const preco = pizzaData ? pizzaData.precoVenda : 0;
-                return { ...item, custo, preco };
+                if (item.isCustom) return { ...item, custo: 0 };
+                const custo = calculatePizzaCost(item.pizzaId);
+                return { ...item, custo };
             })
         };
         newPedidoData.valorTotal = newPedidoData.items.reduce((acc, item) => acc + (item.preco * item.qtd), 0);
@@ -554,7 +578,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const salvarPedidoEditado = async (editId) => {
         showLoader();
-        // Lógica para salvar edição (simplificada para focar nas novas features)
         const updatedPedido = {
              cliente: document.getElementById('pedido-cliente').value,
              telefone: document.getElementById('pedido-cliente-telefone').value,
@@ -623,14 +646,24 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const renderPedidos = () => {
         const searchTerm = document.getElementById('search-pedidos').value.toLowerCase();
-        const tbody = document.getElementById('tabela-pedidos').querySelector('tbody');
-        tbody.innerHTML = '';
-        const filteredData = database.pedidos.filter(p => {
+        let filteredData = database.pedidos.filter(p => {
             if (!searchTerm) return true;
             const search = searchTerm.trim();
             return (p.cliente || '').toLowerCase().includes(search) || (p.telefone || '').toLowerCase().includes(search) || p.items.some(i => (i.pizzaNome || '').toLowerCase().includes(search));
         });
+        
+        const { column, direction } = sortState.pedidos;
+        filteredData.sort((a, b) => {
+            const valA = a[column] ?? '';
+            const valB = b[column] ?? '';
+            if (column === 'data') return new Date(valA) - new Date(valB);
+            if (typeof valA === 'number') return valA - valB;
+            return valA.localeCompare(valB);
+        });
+        if (direction === 'desc') filteredData.reverse();
 
+        const tbody = document.getElementById('tabela-pedidos').querySelector('tbody');
+        tbody.innerHTML = '';
         filteredData.forEach(p => {
             const row = tbody.insertRow();
             const itemsHtml = p.items.map(i => `<li class="${i.isCustom?'item-pedido-outro':''}">${i.qtd}x ${i.pizzaNome}</li>`).join('');
@@ -649,6 +682,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td data-label="Ações">${renderActionButtons(p)}</td>
             `;
         });
+        updateSortHeaders('tabela-pedidos', column, direction);
     };
 
     window.iniciarPreparo = async (id) => {
@@ -664,21 +698,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const pedido = database.pedidos.find(p => p.id === id);
         if (!pedido) { hideLoader(); return; }
 
-        // Baixa no estoque
         const stockUpdates = [];
         for (const item of pedido.items) {
             if (!item.isCustom) {
                 const pizzaEstoque = database.estoque.find(p => p.id === item.pizzaId);
                 if (pizzaEstoque) {
                     const newQty = pizzaEstoque.qtd - item.qtd;
-                    const newHistory = [...(pizzaEstoque.history || []), { type: 'sale', date: new Date().toISOString(), orderId: pedido.id }];
-                    stockUpdates.push(supabaseClient.from('estoque').update({ qtd: newQty, history: newHistory }).eq('id', item.pizzaId));
+                    stockUpdates.push(supabaseClient.from('estoque').update({ qtd: newQty }).eq('id', item.pizzaId));
                 }
             }
         }
         await Promise.all(stockUpdates);
 
-        // Atualiza status do pedido
         const { error } = await supabaseClient.from('pedidos').update({ status: 'Pronta para Entrega' }).eq('id', id);
         if (error) alert('Erro: ' + error.message);
         
@@ -708,7 +739,6 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     document.getElementById('search-pedidos').addEventListener('input', renderPedidos);
 
-    // ... Dashboard
     const getFilteredPedidos = (filterRange = 'all') => {
         const now = new Date();
         const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -786,7 +816,6 @@ document.addEventListener('DOMContentLoaded', () => {
         exportToExcel(flatData, 'sasses_pedidos_detalhado');
     });
     
-    // Funções das Novas Funcionalidades
     const processCustomerData = () => {
         const customerMap = new Map();
         database.pedidos.forEach(pedido => {
@@ -814,12 +843,20 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const renderClientesReport = () => {
         const searchTerm = document.getElementById('search-clientes').value.toLowerCase();
+        let filteredData = database.clientes.filter(c => c.nome.toLowerCase().includes(searchTerm) || (c.cidade || '').toLowerCase().includes(searchTerm));
+
+        const { column, direction } = sortState.clientes;
+        filteredData.sort((a, b) => {
+            const valA = a[column] ?? '';
+            const valB = b[column] ?? '';
+            if (column === 'ultimoPedido') return new Date(valA) - new Date(valB);
+            if (typeof valA === 'number') return valA - valB;
+            return valA.localeCompare(valB);
+        });
+        if (direction === 'desc') filteredData.reverse();
+
         const tbody = document.getElementById('tabela-clientes').querySelector('tbody');
         tbody.innerHTML = '';
-
-        const filteredData = database.clientes.filter(c => c.nome.toLowerCase().includes(searchTerm) || (c.cidade || '').toLowerCase().includes(searchTerm));
-        filteredData.sort((a,b) => b.totalGasto - a.totalGasto);
-
         filteredData.forEach(c => {
             const row = tbody.insertRow();
             row.innerHTML = `
@@ -831,6 +868,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td data-label="Último Pedido">${c.ultimoPedido > new Date(0) ? c.ultimoPedido.toLocaleDateString('pt-BR') : 'N/A'}</td>
             `;
         });
+        updateSortHeaders('tabela-clientes', column, direction);
     };
 
     document.getElementById('search-clientes').addEventListener('input', renderClientesReport);
@@ -954,6 +992,155 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-reset-simulador').addEventListener('click', () => {
         document.getElementById('form-simulador').reset();
         renderSimulator();
+    });
+
+    const renderProductionDemand = () => {
+        const tbody = document.getElementById('tabela-demanda-producao').querySelector('tbody');
+        const demandMap = new Map();
+
+        database.pedidos
+            .filter(p => p.status === 'Pendente' || p.status === 'Em Preparo')
+            .forEach(p => {
+                p.items.forEach(item => {
+                    demandMap.set(item.pizzaNome, (demandMap.get(item.pizzaNome) || 0) + item.qtd);
+                });
+            });
+
+        let demandArray = Array.from(demandMap, ([sabor, quantidade]) => ({ sabor, quantidade }));
+        
+        const { column, direction } = sortState.demanda;
+        demandArray.sort((a,b) => {
+            const valA = a[column];
+            const valB = b[column];
+            if (typeof valA === 'number') return valA - valB;
+            return valA.localeCompare(valB);
+        });
+        if(direction === 'desc') demandArray.reverse();
+
+        tbody.innerHTML = '';
+        if(demandArray.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="2" style="text-align: center;">Nenhuma demanda de produção no momento.</td></tr>';
+            return;
+        }
+
+        demandArray.forEach(({ sabor, quantidade }) => {
+            const row = tbody.insertRow();
+            row.innerHTML = `
+                <td data-label="Sabor da Pizza">${sabor}</td>
+                <td data-label="Quantidade a Produzir">${quantidade}x</td>
+            `;
+        });
+        updateSortHeaders('tabela-demanda-producao', column, direction);
+    };
+
+    document.getElementById('export-demanda').addEventListener('click', () => {
+        const demand = {};
+        database.pedidos
+            .filter(p => p.status === 'Pendente' || p.status === 'Em Preparo')
+            .forEach(p => {
+                p.items.forEach(item => {
+                    demand[item.pizzaNome] = (demand[item.pizzaNome] || 0) + item.qtd;
+                });
+            });
+        
+        const dataForExcel = Object.entries(demand).map(([Sabor, Quantidade]) => ({ Sabor, Quantidade }));
+        exportToExcel(dataForExcel, 'demanda_de_producao');
+    });
+
+    const handleSort = (tableKey, column) => {
+        const state = sortState[tableKey];
+        if (state.column === column) {
+            state.direction = state.direction === 'asc' ? 'desc' : 'asc';
+        } else {
+            state.column = column;
+            state.direction = 'asc';
+        }
+        
+        switch(tableKey) {
+            case 'pedidos': renderPedidos(); break;
+            case 'clientes': renderClientesReport(); break;
+            case 'estoque': renderEstoque(); break;
+            case 'ingredientes': renderIngredientes(); break;
+            case 'demanda': renderProductionDemand(); break;
+        }
+    };
+    
+    const updateSortHeaders = (tableId, column, direction) => {
+        const table = document.getElementById(tableId);
+        if(!table) return;
+
+        table.querySelectorAll('thead th[data-sort-by]').forEach(th => {
+            th.classList.remove('sort-asc', 'sort-desc');
+            if (th.dataset.sortBy === column) {
+                th.classList.add(direction === 'asc' ? 'sort-asc' : 'sort-desc');
+            }
+        });
+    };
+    
+    const reconcileAllOrders = async () => {
+        showLoader();
+        const updates = [];
+        let updatedItemCount = 0;
+
+        const stockMap = new Map();
+        database.estoque.forEach(p => {
+            const fullName = `${p.nome} (${p.tamanho})`.toLowerCase();
+            stockMap.set(fullName, p);
+        });
+
+        for (const pedido of database.pedidos) {
+            let orderNeedsUpdate = false;
+            for (const item of pedido.items) {
+                if (item.isCustom) {
+                    const stockItem = stockMap.get(item.pizzaNome.toLowerCase());
+                    if (stockItem) {
+                        item.isCustom = false;
+                        item.pizzaId = stockItem.id;
+                        item.preco = stockItem.precoVenda;
+                        item.custo = calculatePizzaCost(stockItem.id);
+                        orderNeedsUpdate = true;
+                        updatedItemCount++;
+                    }
+                }
+            }
+
+            if (orderNeedsUpdate) {
+                pedido.custoTotal = pedido.items.reduce((acc, i) => acc + (i.custo * i.qtd), 0);
+                pedido.valorTotal = pedido.items.reduce((acc, i) => acc + (i.preco * i.qtd), 0);
+                pedido.lucro = pedido.valorTotal - pedido.custoTotal;
+                const { id, ...dataToUpdate } = pedido;
+                updates.push(supabaseClient.from('pedidos').update(dataToUpdate).eq('id', id));
+            }
+        }
+
+        if (updates.length > 0) {
+            try {
+                await Promise.all(updates);
+                showSaveStatus(`${updatedItemCount} item(s) em ${updates.length} pedido(s) foram sincronizados!`);
+                await loadDataFromSupabase();
+            } catch (error) {
+                console.error("Erro ao sincronizar pedidos:", error);
+                alert("Ocorreu um erro ao atualizar os pedidos antigos.");
+            }
+        } else {
+            showSaveStatus('Nenhum pedido "Outro" para sincronizar foi encontrado.');
+        }
+        hideLoader();
+    };
+
+    document.getElementById('btn-reconcile-all').addEventListener('click', reconcileAllOrders);
+
+    ['tabela-estoque', 'tabela-ingredientes', 'tabela-clientes', 'tabela-pedidos', 'tabela-demanda-producao'].forEach(id => {
+        const table = document.getElementById(id);
+        if(table) {
+            table.querySelector('thead').addEventListener('click', e => {
+                const header = e.target.closest('th');
+                if (header && header.dataset.sortBy) {
+                    const tableKey = id.replace('tabela-', '').replace('-producao', '');
+                    handleSort(tableKey, header.dataset.sortBy);
+                }
+            });
+        }
     });
 
     loadDataFromSupabase();
