@@ -27,52 +27,76 @@
         <button class="tab-link admin-only" data-tab="estoque">Estoque de Pizzas</button>
         <button class="tab-link admin-only" data-tab="receitas">Receitas</button>
         <button class="tab-link admin-only" data-tab="ingredientes">Ingredientes</button>
-        <button class="tab-link admin-only" data-tab="simulador">Simulador</button>
         <button class="tab-link admin-only" data-tab="graficos">Dashboard</button>
     </nav>
 
     <main>
         <div id="pedidos" class="tab-content active">
-            <h2>Registro de Pedidos</h2>
-            <div class="card">
-                <form id="form-pedido-principal">
-                    <input type="hidden" id="pedido-edit-id">
-                    <input type="text" id="pedido-cliente" placeholder="Nome do Cliente" required list="clientes-list">
-                    <datalist id="clientes-list"></datalist>
-                    <input type="text" id="pedido-cliente-telefone" placeholder="Telefone (Opcional)">
-                    <input type="text" id="pedido-cidade" placeholder="Cidade" required>
-                    <input type="text" id="pedido-vendedor" placeholder="Nome do Vendedor" required>
-                    <select id="pedido-pagamento" required>
-                        <option value="">Forma de Pagamento</option>
-                        <option value="Dinheiro">Dinheiro</option>
-                        <option value="Cartão de Crédito">Cartão de Crédito</option>
-                        <option value="Cartão de Débito">Cartão de Débito</option>
-                        <option value="Pix">Pix</option>
-                    </select>
-                </form>
-                <hr>
-                <div id="form-item-pedido">
-                    <select id="item-pizza" required>
-                        <option value="">Selecione a Pizza...</option>
-                    </select>
-                    <input type="text" id="item-pizza-outro-nome" class="hidden" placeholder="Nome da nova pizza">
-                    <select id="item-pizza-outro-tamanho" class="hidden">
-                        <option value="P">Pequena</option>
-                        <option value="G">Grande</option>
-                    </select>
-                    <input type="number" id="item-qtd" placeholder="Qtd" required min="1">
-                    <button type="button" id="btn-add-item-pedido">Adicionar</button>
+            <div class="grid-container">
+                <div class="grid-col">
+                    <h2>Registro de Pedidos</h2>
+                    <div class="card">
+                        <form id="form-pedido-principal">
+                            <input type="hidden" id="pedido-edit-id">
+                            <input type="text" id="pedido-cliente" placeholder="Nome do Cliente" required list="clientes-list">
+                            <datalist id="clientes-list"></datalist>
+                            <input type="text" id="pedido-cliente-telefone" placeholder="Telefone (Opcional)">
+                            <input type="text" id="pedido-cidade" placeholder="Cidade" required>
+                            <input type="text" id="pedido-vendedor" placeholder="Nome do Vendedor" required>
+                            <select id="pedido-pagamento" required>
+                                <option value="">Forma de Pagamento</option>
+                                <option value="Dinheiro">Dinheiro</option>
+                                <option value="Cartão de Crédito">Cartão de Crédito</option>
+                                <option value="Cartão de Débito">Cartão de Débito</option>
+                                <option value="Pix">Pix</option>
+                            </select>
+                            <select id="pedido-semana-entrega" required title="Semana de Entrega">
+                                <option value="">Selecione a Semana de Entrega</option>
+                            </select>
+                        </form>
+                        <hr>
+                        <div id="form-item-pedido">
+                            <select id="item-pizza" required>
+                                <option value="">Selecione a Pizza...</option>
+                            </select>
+                            <input type="text" id="item-pizza-outro-nome" class="hidden" placeholder="Nome da nova pizza">
+                            <select id="item-pizza-outro-tamanho" class="hidden">
+                                <option value="P">Pequena</option>
+                                <option value="G">Grande</option>
+                            </select>
+                            <input type="number" id="item-qtd" placeholder="Qtd" required min="1" value="1">
+                            <button type="button" id="btn-add-item-pedido">Adicionar</button>
+                        </div>
+                         <h3>Itens do Pedido Atual</h3>
+                        <div id="pedido-itens-carrinho" class="carrinho-container"></div>
+                        <div class="resumo-pedido">
+                            <span>Total Calculado: <b id="total-calculado-pedido">R$ 0,00</b></span>
+                            <input type="number" id="valor-final-pedido" placeholder="Valor Final (com desconto)" step="0.01">
+                        </div>
+                        <div id="pedido-botoes-acao" style="display: flex; gap: 1rem; margin-top: 1rem;">
+                            <button type="button" id="btn-registrar-pedido">Registrar Pedido</button>
+                        </div>
+                    </div>
                 </div>
-                 <h3>Itens do Pedido Atual</h3>
-                <div id="pedido-itens-carrinho" class="carrinho-container"></div>
-                <div id="pedido-botoes-acao" style="display: flex; gap: 1rem; margin-top: 1rem;">
-                    <button type="button" id="btn-registrar-pedido">Registrar Pedido</button>
+                <div class="grid-col">
+                    <h2>Calendário de Massas</h2>
+                    <div id="calendario-container" class="card">
+                    </div>
                 </div>
             </div>
+
             <div class="card">
                 <div class="table-header">
                     <h3>Histórico de Pedidos</h3>
-                    <input type="search" id="search-pedidos" class="search-input" placeholder="Buscar por cliente, telefone ou pizza...">
+                    <div class="filters-container">
+                        <input type="search" id="search-pedidos" class="search-input" placeholder="Buscar por cliente...">
+                        <select id="filter-vendedor"><option value="">Todos Vendedores</option></select>
+                        <select id="filter-status"><option value="">Todos Status</option>
+                            <option value="Pendente">Pendente</option>
+                            <option value="Pronto">Pronto</option>
+                            <option value="Concluído">Concluído</option>
+                        </select>
+                    </div>
                     <button id="export-pedidos">Baixar Excel</button>
                 </div>
                 <div class="table-container">
@@ -80,9 +104,10 @@
                         <thead>
                             <tr>
                                 <th data-sort-by="cliente">Cliente (Telefone)</th>
+                                <th data-sort-by="dataEntrega">Semana Entrega</th>
                                 <th>Itens do Pedido</th>
                                 <th data-sort-by="vendedor">Detalhes (Vendedor/Cidade)</th>
-                                <th data-sort-by="valorTotal">Valores</th>
+                                <th data-sort-by="valorFinal">Valores</th>
                                 <th data-sort-by="status">Status</th>
                                 <th>Ações</th>
                             </tr>
@@ -107,12 +132,11 @@
                                 <th data-sort-by="nome">Nome do Cliente</th>
                                 <th data-sort-by="telefone">Telefone</th>
                                 <th data-sort-by="cidade">Cidade</th>
-                                <th data-sort-by="numPedidos">Nº de Pedidos</th>
-                                <th data-sort-by="totalGasto">Total Gasto</th>
-                                <th data-sort-by="ultimoPedido">Último Pedido</th>
+                                <th>Ações</th>
                             </tr>
                         </thead>
-                        <tbody></tbody>
+                        <tbody>
+                        </tbody>
                     </table>
                 </div>
             </div>
@@ -122,7 +146,7 @@
             <h2>Estoque de Pizzas Prontas</h2>
             <div class="card">
                 <h3>Ferramentas de Estoque</h3>
-                <div class="form-producao-container" style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: center;">
+                <div class="form-producao-container">
                      <form id="form-producao" style="flex: 2; min-width: 300px;">
                         <select id="producao-pizza-select" required>
                             <option value="">Selecione a Pizza a Produzir...</option>
@@ -130,11 +154,10 @@
                         <input type="number" id="producao-qtd" placeholder="Quantidade" required min="1">
                         <button type="submit">Produzir</button>
                      </form>
-                     <button id="btn-reconcile-all" class="action-btn" style="flex: 1; background-color: var(--warning-color); color: var(--primary-color);">Sincronizar Pedidos 'Outros'</button>
                 </div>
             </div>
             <div class="card">
-                <h3>Adicionar / Editar Tipo de Pizza</h3>
+                <h3>Adicionar Nova Pizza ao Cardápio</h3>
                 <form id="form-estoque">
                     <input type="hidden" id="estoque-id">
                     <input type="text" id="estoque-nome" placeholder="Sabor da Pizza" required>
@@ -143,9 +166,9 @@
                         <option value="P">Pequena</option>
                         <option value="G">Grande</option>
                     </select>
-                    <input type="number" id="estoque-qtd" placeholder="Quantidade em Estoque" required min="0">
+                    <input type="number" id="estoque-qtd" placeholder="Quantidade Inicial" required min="0">
                     <input type="number" id="estoque-preco-venda" placeholder="Preço de Venda (R$)" required min="0" step="0.01">
-                    <button type="submit">Adicionar/Atualizar Pizza</button>
+                    <button type="submit">Adicionar Pizza</button>
                 </form>
             </div>
             <div class="card">
@@ -217,13 +240,14 @@
         <div id="ingredientes" class="tab-content">
             <h2>Gestão de Ingredientes</h2>
             <div class="card">
+                <h3>Adicionar Novo Ingrediente</h3>
                 <form id="form-ingrediente">
                     <input type="hidden" id="ingrediente-id">
                     <input type="text" id="ingrediente-nome" placeholder="Nome do Ingrediente" required>
                     <input type="number" id="ingrediente-qtd" placeholder="Qtd em Estoque (un./kg)" required min="0" step="0.001">
                     <input type="number" id="ingrediente-custo" placeholder="Preço de Custo (R$ por un./kg)" required min="0" step="0.01">
                     <input type="number" id="ingrediente-estoque-minimo" placeholder="Estoque Mínimo" required min="0" step="0.001">
-                    <button type="submit">Adicionar/Atualizar</button>
+                    <button type="submit">Adicionar Ingrediente</button>
                 </form>
             </div>
             <div class="card">
@@ -250,44 +274,19 @@
             </div>
         </div>
 
-        <div id="simulador" class="tab-content">
-            <h2>Simulador de Preços e Lucratividade</h2>
-            <div class="card">
-                <h3>Painel de Simulação</h3>
-                <form id="form-simulador">
-                    <select id="simulador-ingrediente-select" required>
-                        <option value="">Selecione um ingrediente...</option>
-                    </select>
-                    <input type="number" id="simulador-novo-custo" placeholder="Novo Custo (R$)" required min="0" step="0.01">
-                    <button type="submit">Simular</button>
-                    <button type="button" id="btn-reset-simulador">Resetar</button>
-                </form>
-            </div>
-            <div class="card">
-                <h3>Resultados da Simulação</h3>
-                <div class="table-container">
-                    <table id="tabela-simulador">
-                        <thead>
-                            <tr>
-                                <th>Pizza</th>
-                                <th>Custo Original</th>
-                                <th>Custo Simulado</th>
-                                <th>Lucro Original</th>
-                                <th>Lucro Simulado</th>
-                                <th>Variação Lucro</th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
         <div id="graficos" class="tab-content">
             <h2>Dashboard</h2>
             <div class="card full-width">
                 <div class="table-header">
                     <h3>Demanda de Produção (Pedidos Pendentes)</h3>
+                    <div class="filters-container">
+                        <label for="filter-demanda-tamanho">Tamanho:</label>
+                        <select id="filter-demanda-tamanho">
+                            <option value="">Todos</option>
+                            <option value="P">Pequena (P)</option>
+                            <option value="G">Grande (G)</option>
+                        </select>
+                    </div>
                     <button id="export-demanda">Baixar Excel</button>
                 </div>
                 <div class="table-container">
@@ -296,6 +295,7 @@
                             <tr>
                                 <th data-sort-by="sabor">Sabor da Pizza</th>
                                 <th data-sort-by="quantidade">Quantidade a Produzir</th>
+                                <th data-sort-by="estoqueAtual">Estoque Atual</th>
                             </tr>
                         </thead>
                         <tbody></tbody>
@@ -334,6 +334,23 @@
             </div>
         </div>
     </main>
+
+    <div id="edit-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-button" onclick="closeModal('edit-modal')">&times;</span>
+            <h2 id="edit-modal-title">Editar Item</h2>
+            <div id="edit-modal-content"></div>
+        </div>
+    </div>
+
+    <div id="history-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-button" onclick="closeModal('history-modal')">&times;</span>
+            <h2 id="history-modal-title">Histórico de Pedidos</h2>
+            <div id="history-modal-content" class="table-container">
+            </div>
+        </div>
+    </div>
 
     <div id="modal-lista-compras" class="modal">
         <div class="modal-content">
