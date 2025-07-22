@@ -145,6 +145,7 @@ document.addEventListener('DOMContentLoaded', () => {
         populateClienteDatalist();
         populateFilterDropdowns();
         renderDashboard(document.querySelector('.date-filter.active')?.dataset.range || 'all');
+        renderEstoqueResumido();
     };
 
     const populateSelects = (selectElementId) => {
@@ -461,13 +462,36 @@ document.addEventListener('DOMContentLoaded', () => {
     window.updatePedidoStatus = async (id, newStatus) => {
         if (!confirm(`Tem certeza que deseja alterar o status para "${newStatus}"?`)) return;
         showLoader();
-        const { error } = await supabaseClient.from('pedidos').update({ status: newStatus }).eq('id', id);
-        hideLoader();
-        if (error) {
-            showSaveStatus(`Erro ao atualizar status: ${error.message}`, false);
-        } else {
+
+        try {
+            if (newStatus === 'Pronto') {
+                const pedido = database.pedidos.find(p => p.id === id);
+                if (pedido) {
+                    const stockUpdates = [];
+                    for (const item of pedido.items) {
+                        if (!item.isCustom) {
+                            const pizzaEstoque = database.estoque.find(p => p.id === item.pizzaId);
+                            if(pizzaEstoque) {
+                                stockUpdates.push({ id: item.pizzaId, newQty: pizzaEstoque.qtd - item.qtd });
+                            }
+                        }
+                    }
+                     await Promise.all(stockUpdates.map(upd => 
+                        supabaseClient.from('estoque').update({ qtd: upd.newQty }).eq('id', upd.id)
+                    ));
+                }
+            }
+
+            const { error: statusError } = await supabaseClient.from('pedidos').update({ status: newStatus }).eq('id', id);
+            if (statusError) throw statusError;
+
             showSaveStatus('Status do pedido atualizado!');
             await loadDataFromSupabase();
+
+        } catch (error) {
+             showSaveStatus(`Erro ao atualizar status: ${error.message}`, false);
+        } finally {
+            hideLoader();
         }
     };
 
@@ -579,37 +603,17 @@ document.addEventListener('DOMContentLoaded', () => {
             valorFinal: valorFinal
         };
 
-        const stockUpdates = [];
-        for (const item of newPedidoData.items) {
-            if (!item.isCustom) {
-                const pizzaEstoque = database.estoque.find(p => p.id === item.pizzaId);
-                stockUpdates.push({ id: item.pizzaId, newQty: pizzaEstoque.qtd - item.qtd });
-            }
-        }
-        
-        const { data: pedidoSalvo, error: insertError } = await supabaseClient.from('pedidos').insert(newPedidoData).select().single();
+        const { error: insertError } = await supabaseClient.from('pedidos').insert(newPedidoData).select().single();
 
         if (insertError) {
             showSaveStatus('Erro ao registrar pedido: ' + insertError.message, false);
-            hideLoader();
-            return;
-        }
-
-        try {
-            await Promise.all(stockUpdates.map(upd => 
-                supabaseClient.from('estoque').update({ qtd: upd.newQty }).eq('id', upd.id)
-            ));
-            
+        } else {
             showSaveStatus('Pedido registrado com sucesso!');
             resetFormPedido();
             await loadDataFromSupabase();
-
-        } catch (stockError) {
-            showSaveStatus(`Pedido salvo, mas erro ao dar baixa no estoque: ${stockError.message}. Reconcilie manualmente.`, false);
-            await supabaseClient.from('pedidos').update({ status: 'ERRO_ESTOQUE' }).eq('id', pedidoSalvo.id);
-        } finally {
-            hideLoader();
         }
+        
+        hideLoader();
     };
     
     const resetFormPedido = () => {
@@ -625,11 +629,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const pedido = database.pedidos.find(p => p.id === id);
         if (!pedido) return;
 
-        if (confirm(`Tem certeza que deseja remover o pedido de ${pedido.cliente}? \nATENÇÃO: Esta ação irá retornar os itens ao estoque.`)) {
+        if (confirm(`Tem certeza que deseja remover o pedido de ${pedido.cliente}? \nATENÇÃO: Itens em estoque serão retornados se o pedido já estava "Pronto" ou "Concluído".`)) {
             showLoader();
             
             const stockUpdates = [];
-            if (pedido.status !== 'Concluído') {
+            if (pedido.status === 'Pronto' || pedido.status === 'Concluído') {
                 for (const item of pedido.items) {
                     if (!item.isCustom) {
                         const pizzaEstoque = database.estoque.find(p => p.id === item.pizzaId);
@@ -644,11 +648,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const { error: deleteError } = await supabaseClient.from('pedidos').delete().eq('id', id);
                 if (deleteError) throw deleteError;
 
-                await Promise.all(stockUpdates.map(upd => 
-                    supabaseClient.from('estoque').update({ qtd: upd.newQty }).eq('id', upd.id)
-                ));
+                if(stockUpdates.length > 0) {
+                    await Promise.all(stockUpdates.map(upd => 
+                        supabaseClient.from('estoque').update({ qtd: upd.newQty }).eq('id', upd.id)
+                    ));
+                }
 
-                showSaveStatus('Pedido removido e estoque atualizado.');
+                showSaveStatus('Pedido removido e estoque reconciliado.');
                 await loadDataFromSupabase();
 
             } catch (error) {
@@ -744,7 +750,11 @@ document.addEventListener('DOMContentLoaded', () => {
                                 return;
                             }
                             const key = pizzaEstoque.id;
-                            const existing = demandMap.get(key) || { sabor: `${pizzaEstoque.nome} (${pizzaEstoque.tamanho})`, quantidade: 0, estoqueAtual: pizzaEstoque.qtd };
+                            const existing = demandMap.get(key) || { 
+                                sabor: `${pizzaEstoque.nome} (${pizzaEstoque.tamanho})`, 
+                                quantidade: 0, 
+                                estoqueAtual: pizzaEstoque.qtd 
+                            };
                             existing.quantidade += item.qtd;
                             demandMap.set(key, existing);
                         }
@@ -756,30 +766,68 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const { column, direction } = sortState.demanda;
         demandArray.sort((a,b) => {
-            const valA = a[column];
-            const valB = b[column];
-            if (typeof valA === 'number') return valA - valB;
-            return valA.localeCompare(valB);
+             const valA = a[column];
+             const valB = b[column];
+             if (column === 'saldo') {
+                 const saldoA = a.estoqueAtual - a.quantidade;
+                 const saldoB = b.estoqueAtual - b.quantidade;
+                 return saldoA - saldoB;
+             }
+             if (typeof valA === 'number') return valA - valB;
+             return (valA || '').localeCompare(valB || '');
         });
+
         if(direction === 'desc') demandArray.reverse();
 
         tbody.innerHTML = '';
         if(demandArray.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="3" style="text-align: center;">Nenhuma demanda de produção no momento.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;">Nenhuma demanda de produção no momento.</td></tr>';
             return;
         }
 
         demandArray.forEach(({ sabor, quantidade, estoqueAtual }) => {
             const row = tbody.insertRow();
-            const estoqueClass = estoqueAtual < quantidade ? 'low-stock' : '';
+            const saldo = estoqueAtual - quantidade;
+            
+            let saldoDisplay;
+            if (saldo < 0) {
+                saldoDisplay = `<b style="color:var(--danger-color);">Faltam ${-saldo}</b>`;
+            } else {
+                saldoDisplay = saldo;
+            }
+
             row.innerHTML = `
                 <td data-label="Sabor da Pizza">${sabor}</td>
                 <td data-label="Quantidade a Produzir">${quantidade}x</td>
-                <td data-label="Estoque Atual" class="${estoqueClass}">${estoqueAtual}</td>
+                <td data-label="Estoque Atual">${estoqueAtual}</td>
+                <td data-label="Saldo Final">${saldoDisplay}</td>
             `;
         });
         updateSortHeaders('tabela-demanda-producao', column, direction);
     };
+
+    const renderEstoqueResumido = () => {
+        const tbody = document.getElementById('tabela-estoque-resumido')?.querySelector('tbody');
+        if (!tbody) return;
+
+        tbody.innerHTML = '';
+        const pizzasEmEstoque = database.estoque.filter(p => p.qtd > 0);
+
+        if (pizzasEmEstoque.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" style="text-align: center;">Nenhuma pizza em estoque.</td></tr>';
+            return;
+        }
+
+        pizzasEmEstoque.forEach(p => {
+            const row = tbody.insertRow();
+            row.innerHTML = `
+                <td data-label="Sabor">${p.nome}</td>
+                <td data-label="Tamanho">${p.tamanho}</td>
+                <td data-label="Qtd. em Estoque">${p.qtd}</td>
+            `;
+        });
+    };
+
 
     document.getElementById('pedido-cliente').addEventListener('input', (e) => {
         const nome = e.target.value;
@@ -972,9 +1020,29 @@ document.addEventListener('DOMContentLoaded', () => {
         filteredData.forEach(item => {
             const custo = calculatePizzaCost(item.id);
             const lucro = item.precoVenda - custo;
+
+            let pedidosPendentes = 0;
+            database.pedidos
+                .filter(p => p.status === 'Pendente')
+                .forEach(p => {
+                    p.items.forEach(pedidoItem => {
+                        if (pedidoItem.pizzaId === item.id) {
+                            pedidosPendentes += pedidoItem.qtd;
+                        }
+                    });
+                });
+
             const row = tbody.insertRow();
             if(item.qtd <= 0) row.classList.add('low-stock');
-            row.innerHTML = `<td data-label="Sabor da Pizza">${item.nome}</td><td data-label="Tamanho">${item.tamanho||"N/A"}</td><td data-label="Qtd.">${item.qtd}</td><td data-label="Custo Produção" class="admin-only">${formatCurrency(custo)}</td><td data-label="Preço Venda">${formatCurrency(item.precoVenda)}</td><td data-label="Lucro Bruto" class="admin-only" style="color:${lucro>=0?"green":"red"};font-weight:bold;">${formatCurrency(lucro)}</td><td data-label="Ações"><button class="action-btn edit-btn" onclick="window.editEstoque('${item.id}')">Editar</button><button class="action-btn remove-btn" onclick="window.removeEstoque('${item.id}')">Remover</button></td>`;
+            row.innerHTML = `
+                <td data-label="Sabor da Pizza">${item.nome}</td>
+                <td data-label="Tamanho">${item.tamanho||"N/A"}</td>
+                <td data-label="Qtd.">${item.qtd}</td>
+                <td data-label="PDS. (Pedidos)">${pedidosPendentes > 0 ? pedidosPendentes : ''}</td>
+                <td data-label="Custo Produção" class="admin-only">${formatCurrency(custo)}</td>
+                <td data-label="Preço Venda">${formatCurrency(item.precoVenda)}</td>
+                <td data-label="Lucro Bruto" class="admin-only" style="color:${lucro>=0?"green":"red"};font-weight:bold;">${formatCurrency(lucro)}</td>
+                <td data-label="Ações"><button class="action-btn edit-btn" onclick="window.editEstoque('${item.id}')">Editar</button><button class="action-btn remove-btn" onclick="window.removeEstoque('${item.id}')">Remover</button></td>`;
         });
         updateSortHeaders('tabela-estoque', column, direction);
     };
@@ -1462,46 +1530,9 @@ document.addEventListener('DOMContentLoaded', () => {
             valorFinal: isNaN(valorFinal) ? valorCalculado : valorFinal,
         };
 
-        const stockUpdates = [];
-
-        for (const item of originalPedido.items) {
-            if (!item.isCustom) {
-                const pizzaEstoque = database.estoque.find(p => p.id === item.pizzaId);
-                if(pizzaEstoque) {
-                    stockUpdates.push({ id: item.pizzaId, change: item.qtd });
-                }
-            }
-        }
-
-        for (const item of updatedPedidoData.items) {
-            if (!item.isCustom) {
-                 const pizzaEstoque = database.estoque.find(p => p.id === item.pizzaId);
-                if(pizzaEstoque) {
-                    stockUpdates.push({ id: item.pizzaId, change: -item.qtd });
-                }
-            }
-        }
-        
-        const finalStockUpdates = new Map();
-        for(const update of stockUpdates) {
-            const existing = finalStockUpdates.get(update.id) || 0;
-            finalStockUpdates.set(update.id, existing + update.change);
-        }
-
         try {
             const { error: updateError } = await supabaseClient.from('pedidos').update(updatedPedidoData).eq('id', originalPedido.id);
             if (updateError) throw updateError;
-            
-            const stockUpdatePromises = [];
-            finalStockUpdates.forEach((change, id) => {
-                 const pizzaEstoque = database.estoque.find(p => p.id === id);
-                 if(pizzaEstoque) {
-                    stockUpdatePromises.push(
-                        supabaseClient.from('estoque').update({ qtd: pizzaEstoque.qtd + change }).eq('id', id)
-                    );
-                 }
-            });
-            await Promise.all(stockUpdatePromises);
             
             showSaveStatus('Pedido atualizado com sucesso!');
             closeModal('edit-modal');
