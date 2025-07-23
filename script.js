@@ -100,8 +100,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     
+    // CORREÇÃO APLICADA AQUI
     const syncClientsFromOrders = async () => {
-        const existingClientKeys = new Set(database.clientes.map(c => `${c.nome.toLowerCase()}|${c.cidade.toLowerCase()}`));
+        const existingClientKeys = new Set(database.clientes.map(c => `${(c.nome || '').toLowerCase()}|${(c.cidade || '').toLowerCase()}`));
         const newClientsMap = new Map();
 
         database.pedidos.forEach(pedido => {
@@ -117,16 +118,21 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        const clientsToUpsert = Array.from(newClientsMap.values());
+        const clientsToInsert = Array.from(newClientsMap.values());
 
-        if (clientsToUpsert.length > 0) {
-            console.log(`Sincronizando ${clientsToUpsert.length} novo(s) cliente(s)...`);
-            const { data, error } = await supabaseClient.from('clientes').upsert(clientsToUpsert, { onConflict: 'nome,cidade' }).select();
+        if (clientsToInsert.length > 0) {
+            console.log(`Sincronizando ${clientsToInsert.length} novo(s) cliente(s)...`);
+            // A função 'upsert' com 'onConflict' foi trocada por 'insert',
+            // pois a regra de conflito (constraint) foi removida do banco de dados.
+            // A lógica de verificação de duplicatas já é feita no código acima.
+            const { data, error } = await supabaseClient.from('clientes').insert(clientsToInsert).select();
+            
             if (error) {
                 console.error('Erro ao sincronizar clientes:', error);
                 showSaveStatus('Erro ao sincronizar clientes antigos.', false);
             }
             if (data) {
+                // Adiciona os novos clientes à base de dados local para evitar recarregar a página
                 database.clientes = [...database.clientes, ...data];
             }
         }
@@ -145,7 +151,6 @@ document.addEventListener('DOMContentLoaded', () => {
         populateClienteDatalist();
         populateFilterDropdowns();
         renderDashboard(document.querySelector('.date-filter.active')?.dataset.range || 'all');
-        renderEstoqueResumido();
     };
 
     const populateSelects = (selectElementId) => {
@@ -462,36 +467,13 @@ document.addEventListener('DOMContentLoaded', () => {
     window.updatePedidoStatus = async (id, newStatus) => {
         if (!confirm(`Tem certeza que deseja alterar o status para "${newStatus}"?`)) return;
         showLoader();
-
-        try {
-            if (newStatus === 'Pronto') {
-                const pedido = database.pedidos.find(p => p.id === id);
-                if (pedido) {
-                    const stockUpdates = [];
-                    for (const item of pedido.items) {
-                        if (!item.isCustom) {
-                            const pizzaEstoque = database.estoque.find(p => p.id === item.pizzaId);
-                            if(pizzaEstoque) {
-                                stockUpdates.push({ id: item.pizzaId, newQty: pizzaEstoque.qtd - item.qtd });
-                            }
-                        }
-                    }
-                     await Promise.all(stockUpdates.map(upd => 
-                        supabaseClient.from('estoque').update({ qtd: upd.newQty }).eq('id', upd.id)
-                    ));
-                }
-            }
-
-            const { error: statusError } = await supabaseClient.from('pedidos').update({ status: newStatus }).eq('id', id);
-            if (statusError) throw statusError;
-
+        const { error } = await supabaseClient.from('pedidos').update({ status: newStatus }).eq('id', id);
+        hideLoader();
+        if (error) {
+            showSaveStatus(`Erro ao atualizar status: ${error.message}`, false);
+        } else {
             showSaveStatus('Status do pedido atualizado!');
             await loadDataFromSupabase();
-
-        } catch (error) {
-             showSaveStatus(`Erro ao atualizar status: ${error.message}`, false);
-        } finally {
-            hideLoader();
         }
     };
 
@@ -603,17 +585,37 @@ document.addEventListener('DOMContentLoaded', () => {
             valorFinal: valorFinal
         };
 
-        const { error: insertError } = await supabaseClient.from('pedidos').insert(newPedidoData).select().single();
+        const stockUpdates = [];
+        for (const item of newPedidoData.items) {
+            if (!item.isCustom) {
+                const pizzaEstoque = database.estoque.find(p => p.id === item.pizzaId);
+                stockUpdates.push({ id: item.pizzaId, newQty: pizzaEstoque.qtd - item.qtd });
+            }
+        }
+        
+        const { data: pedidoSalvo, error: insertError } = await supabaseClient.from('pedidos').insert(newPedidoData).select().single();
 
         if (insertError) {
             showSaveStatus('Erro ao registrar pedido: ' + insertError.message, false);
-        } else {
+            hideLoader();
+            return;
+        }
+
+        try {
+            await Promise.all(stockUpdates.map(upd => 
+                supabaseClient.from('estoque').update({ qtd: upd.newQty }).eq('id', upd.id)
+            ));
+            
             showSaveStatus('Pedido registrado com sucesso!');
             resetFormPedido();
             await loadDataFromSupabase();
+
+        } catch (stockError) {
+            showSaveStatus(`Pedido salvo, mas erro ao dar baixa no estoque: ${stockError.message}. Reconcilie manualmente.`, false);
+            await supabaseClient.from('pedidos').update({ status: 'ERRO_ESTOQUE' }).eq('id', pedidoSalvo.id);
+        } finally {
+            hideLoader();
         }
-        
-        hideLoader();
     };
     
     const resetFormPedido = () => {
@@ -629,11 +631,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const pedido = database.pedidos.find(p => p.id === id);
         if (!pedido) return;
 
-        if (confirm(`Tem certeza que deseja remover o pedido de ${pedido.cliente}? \nATENÇÃO: Itens em estoque serão retornados se o pedido já estava "Pronto" ou "Concluído".`)) {
+        if (confirm(`Tem certeza que deseja remover o pedido de ${pedido.cliente}? \nATENÇÃO: Esta ação irá retornar os itens ao estoque.`)) {
             showLoader();
             
             const stockUpdates = [];
-            if (pedido.status === 'Pronto' || pedido.status === 'Concluído') {
+            if (pedido.status !== 'Concluído') {
                 for (const item of pedido.items) {
                     if (!item.isCustom) {
                         const pizzaEstoque = database.estoque.find(p => p.id === item.pizzaId);
@@ -648,13 +650,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const { error: deleteError } = await supabaseClient.from('pedidos').delete().eq('id', id);
                 if (deleteError) throw deleteError;
 
-                if(stockUpdates.length > 0) {
-                    await Promise.all(stockUpdates.map(upd => 
-                        supabaseClient.from('estoque').update({ qtd: upd.newQty }).eq('id', upd.id)
-                    ));
-                }
+                await Promise.all(stockUpdates.map(upd => 
+                    supabaseClient.from('estoque').update({ qtd: upd.newQty }).eq('id', upd.id)
+                ));
 
-                showSaveStatus('Pedido removido e estoque reconciliado.');
+                showSaveStatus('Pedido removido e estoque atualizado.');
                 await loadDataFromSupabase();
 
             } catch (error) {
@@ -750,11 +750,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 return;
                             }
                             const key = pizzaEstoque.id;
-                            const existing = demandMap.get(key) || { 
-                                sabor: `${pizzaEstoque.nome} (${pizzaEstoque.tamanho})`, 
-                                quantidade: 0, 
-                                estoqueAtual: pizzaEstoque.qtd 
-                            };
+                            const existing = demandMap.get(key) || { sabor: `${pizzaEstoque.nome} (${pizzaEstoque.tamanho})`, quantidade: 0, estoqueAtual: pizzaEstoque.qtd };
                             existing.quantidade += item.qtd;
                             demandMap.set(key, existing);
                         }
@@ -766,68 +762,30 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const { column, direction } = sortState.demanda;
         demandArray.sort((a,b) => {
-             const valA = a[column];
-             const valB = b[column];
-             if (column === 'saldo') {
-                 const saldoA = a.estoqueAtual - a.quantidade;
-                 const saldoB = b.estoqueAtual - b.quantidade;
-                 return saldoA - saldoB;
-             }
-             if (typeof valA === 'number') return valA - valB;
-             return (valA || '').localeCompare(valB || '');
+            const valA = a[column];
+            const valB = b[column];
+            if (typeof valA === 'number') return valA - valB;
+            return valA.localeCompare(valB);
         });
-
         if(direction === 'desc') demandArray.reverse();
 
         tbody.innerHTML = '';
         if(demandArray.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;">Nenhuma demanda de produção no momento.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="3" style="text-align: center;">Nenhuma demanda de produção no momento.</td></tr>';
             return;
         }
 
         demandArray.forEach(({ sabor, quantidade, estoqueAtual }) => {
             const row = tbody.insertRow();
-            const saldo = estoqueAtual - quantidade;
-            
-            let saldoDisplay;
-            if (saldo < 0) {
-                saldoDisplay = `<b style="color:var(--danger-color);">Faltam ${-saldo}</b>`;
-            } else {
-                saldoDisplay = saldo;
-            }
-
+            const estoqueClass = estoqueAtual < quantidade ? 'low-stock' : '';
             row.innerHTML = `
                 <td data-label="Sabor da Pizza">${sabor}</td>
                 <td data-label="Quantidade a Produzir">${quantidade}x</td>
-                <td data-label="Estoque Atual">${estoqueAtual}</td>
-                <td data-label="Saldo Final">${saldoDisplay}</td>
+                <td data-label="Estoque Atual" class="${estoqueClass}">${estoqueAtual}</td>
             `;
         });
         updateSortHeaders('tabela-demanda-producao', column, direction);
     };
-
-    const renderEstoqueResumido = () => {
-        const tbody = document.getElementById('tabela-estoque-resumido')?.querySelector('tbody');
-        if (!tbody) return;
-
-        tbody.innerHTML = '';
-        const pizzasEmEstoque = database.estoque.filter(p => p.qtd > 0);
-
-        if (pizzasEmEstoque.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="3" style="text-align: center;">Nenhuma pizza em estoque.</td></tr>';
-            return;
-        }
-
-        pizzasEmEstoque.forEach(p => {
-            const row = tbody.insertRow();
-            row.innerHTML = `
-                <td data-label="Sabor">${p.nome}</td>
-                <td data-label="Tamanho">${p.tamanho}</td>
-                <td data-label="Qtd. em Estoque">${p.qtd}</td>
-            `;
-        });
-    };
-
 
     document.getElementById('pedido-cliente').addEventListener('input', (e) => {
         const nome = e.target.value;
@@ -944,38 +902,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const item = database.ingredientes.find(i => i.id === id);
         if (!item) return;
 
-        const formHTML = `
-            <form id="edit-ingrediente-form">
-                <div class="form-group"><label>Nome</label><input type="text" name="nome" value="${item.nome}" required></div>
-                <div class="form-group"><label>Quantidade</label><input type="number" name="qtd" value="${item.qtd}" step="0.001" required></div>
-                <div class="form-group"><label>Custo</label><input type="number" name="custo" value="${item.custo}" step="0.01" required></div>
-                <div class="form-group"><label>Estoque Mínimo</label><input type="number" name="estoqueMinimo" value="${item.estoqueMinimo}" step="0.001" required></div>
-                <button type="submit">Salvar</button>
-            </form>
-        `;
-
-        openModal('edit-modal', 'Editar Ingrediente', formHTML, () => {
-             document.getElementById('edit-ingrediente-form').onsubmit = async (e) => {
-                e.preventDefault();
-                const formData = new FormData(e.target);
-                const updatedData = {
-                    nome: formData.get('nome'),
-                    qtd: parseFloat(formData.get('qtd')),
-                    custo: parseFloat(formData.get('custo')),
-                    estoqueMinimo: parseFloat(formData.get('estoqueMinimo')),
-                };
-                showLoader();
-                const { error } = await supabaseClient.from('ingredientes').update(updatedData).eq('id', id);
-                hideLoader();
-                if (error) {
-                    showSaveStatus('Erro ao atualizar: ' + error.message, false);
-                } else {
-                    showSaveStatus('Ingrediente salvo!');
-                    await loadDataFromSupabase();
-                    closeModal('edit-modal');
-                }
-            };
-        });
+        document.getElementById('ingrediente-id').value = item.id;
+        document.getElementById('ingrediente-nome').value = item.nome;
+        document.getElementById('ingrediente-qtd').value = item.qtd;
+        document.getElementById('ingrediente-custo').value = item.custo;
+        document.getElementById('ingrediente-estoque-minimo').value = item.estoqueMinimo;
     };
 
     window.removeIngrediente = async id => {
@@ -1020,29 +951,9 @@ document.addEventListener('DOMContentLoaded', () => {
         filteredData.forEach(item => {
             const custo = calculatePizzaCost(item.id);
             const lucro = item.precoVenda - custo;
-
-            let pedidosPendentes = 0;
-            database.pedidos
-                .filter(p => p.status === 'Pendente')
-                .forEach(p => {
-                    p.items.forEach(pedidoItem => {
-                        if (pedidoItem.pizzaId === item.id) {
-                            pedidosPendentes += pedidoItem.qtd;
-                        }
-                    });
-                });
-
             const row = tbody.insertRow();
             if(item.qtd <= 0) row.classList.add('low-stock');
-            row.innerHTML = `
-                <td data-label="Sabor da Pizza">${item.nome}</td>
-                <td data-label="Tamanho">${item.tamanho||"N/A"}</td>
-                <td data-label="Qtd.">${item.qtd}</td>
-                <td data-label="PDS. (Pedidos)">${pedidosPendentes > 0 ? pedidosPendentes : ''}</td>
-                <td data-label="Custo Produção" class="admin-only">${formatCurrency(custo)}</td>
-                <td data-label="Preço Venda">${formatCurrency(item.precoVenda)}</td>
-                <td data-label="Lucro Bruto" class="admin-only" style="color:${lucro>=0?"green":"red"};font-weight:bold;">${formatCurrency(lucro)}</td>
-                <td data-label="Ações"><button class="action-btn edit-btn" onclick="window.editEstoque('${item.id}')">Editar</button><button class="action-btn remove-btn" onclick="window.removeEstoque('${item.id}')">Remover</button></td>`;
+            row.innerHTML = `<td data-label="Sabor da Pizza">${item.nome}</td><td data-label="Tamanho">${item.tamanho||"N/A"}</td><td data-label="Qtd.">${item.qtd}</td><td data-label="Custo Produção" class="admin-only">${formatCurrency(custo)}</td><td data-label="Preço Venda">${formatCurrency(item.precoVenda)}</td><td data-label="Lucro Bruto" class="admin-only" style="color:${lucro>=0?"green":"red"};font-weight:bold;">${formatCurrency(lucro)}</td><td data-label="Ações"><button class="action-btn edit-btn" onclick="window.editEstoque('${item.id}')">Editar</button><button class="action-btn remove-btn" onclick="window.removeEstoque('${item.id}')">Remover</button></td>`;
         });
         updateSortHeaders('tabela-estoque', column, direction);
     };
@@ -1079,43 +990,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const item = database.estoque.find(p => p.id === id);
         if (!item) return;
 
-        const formHTML = `
-            <form id="edit-estoque-form">
-                <div class="form-group"><label>Sabor da Pizza</label><input type="text" name="nome" value="${item.nome}" required></div>
-                <div class="form-group"><label>Tamanho</label>
-                    <select name="tamanho" required>
-                        <option value="P" ${item.tamanho === 'P' ? 'selected' : ''}>Pequena</option>
-                        <option value="G" ${item.tamanho === 'G' ? 'selected' : ''}>Grande</option>
-                    </select>
-                </div>
-                <div class="form-group"><label>Quantidade</label><input type="number" name="qtd" value="${item.qtd}" required></div>
-                <div class="form-group"><label>Preço de Venda</label><input type="number" name="precoVenda" value="${item.precoVenda}" step="0.01" required></div>
-                <button type="submit">Salvar</button>
-            </form>
-        `;
-
-        openModal('edit-modal', 'Editar Pizza', formHTML, () => {
-            document.getElementById('edit-estoque-form').onsubmit = async (e) => {
-                e.preventDefault();
-                const formData = new FormData(e.target);
-                const updatedData = {
-                    nome: formData.get('nome'),
-                    tamanho: formData.get('tamanho'),
-                    qtd: parseInt(formData.get('qtd')),
-                    precoVenda: parseFloat(formData.get('precoVenda')),
-                };
-                showLoader();
-                const { error } = await supabaseClient.from('estoque').update(updatedData).eq('id', id);
-                hideLoader();
-                if (error) {
-                    showSaveStatus('Erro ao atualizar: ' + error.message, false);
-                } else {
-                    showSaveStatus('Pizza salva!');
-                    await loadDataFromSupabase();
-                    closeModal('edit-modal');
-                }
-            };
-        });
+        document.getElementById('estoque-id').value = item.id;
+        document.getElementById('estoque-nome').value = item.nome;
+        document.getElementById('estoque-tamanho').value = item.tamanho;
+        document.getElementById('estoque-qtd').value = item.qtd;
+        document.getElementById('estoque-preco-venda').value = item.precoVenda;
     };
 
     window.removeEstoque = async id => {
@@ -1530,9 +1409,46 @@ document.addEventListener('DOMContentLoaded', () => {
             valorFinal: isNaN(valorFinal) ? valorCalculado : valorFinal,
         };
 
+        const stockUpdates = [];
+
+        for (const item of originalPedido.items) {
+            if (!item.isCustom) {
+                const pizzaEstoque = database.estoque.find(p => p.id === item.pizzaId);
+                if(pizzaEstoque) {
+                    stockUpdates.push({ id: item.pizzaId, change: item.qtd });
+                }
+            }
+        }
+
+        for (const item of updatedPedidoData.items) {
+            if (!item.isCustom) {
+                 const pizzaEstoque = database.estoque.find(p => p.id === item.pizzaId);
+                if(pizzaEstoque) {
+                    stockUpdates.push({ id: item.pizzaId, change: -item.qtd });
+                }
+            }
+        }
+        
+        const finalStockUpdates = new Map();
+        for(const update of stockUpdates) {
+            const existing = finalStockUpdates.get(update.id) || 0;
+            finalStockUpdates.set(update.id, existing + update.change);
+        }
+
         try {
             const { error: updateError } = await supabaseClient.from('pedidos').update(updatedPedidoData).eq('id', originalPedido.id);
             if (updateError) throw updateError;
+            
+            const stockUpdatePromises = [];
+            finalStockUpdates.forEach((change, id) => {
+                 const pizzaEstoque = database.estoque.find(p => p.id === id);
+                 if(pizzaEstoque) {
+                    stockUpdatePromises.push(
+                        supabaseClient.from('estoque').update({ qtd: pizzaEstoque.qtd + change }).eq('id', id)
+                    );
+                 }
+            });
+            await Promise.all(stockUpdatePromises);
             
             showSaveStatus('Pedido atualizado com sucesso!');
             closeModal('edit-modal');
