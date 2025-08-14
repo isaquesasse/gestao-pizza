@@ -816,3 +816,46 @@ body.admin-mode .admin-only {
     padding: 1.5rem;
   }
 }
+/* --- Modern, minimal polish (added by optimizer) --- */
+:root {
+  --ring: 0 0 0 3px rgba(72, 126, 176, 0.25);
+}
+
+button, .action-btn, .tab-link, select, input {
+  outline: none;
+  transition: box-shadow 0.2s ease, transform 0.06s ease;
+}
+
+button:focus, .action-btn:focus, .tab-link:focus, select:focus, input:focus {
+  box-shadow: var(--ring);
+}
+
+button:active, .action-btn:active {
+  transform: translateY(1px);
+}
+
+.card {
+  backdrop-filter: saturate(1.2) blur(0.5px);
+}
+
+.table-container {
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.modal-content {
+  box-shadow: var(--shadow);
+}
+
+
+/* Painel de Massas Semanais */
+.weekly-massas .form-row { display:flex; align-items:center; gap: 0.75rem; margin: 0.4rem 0; }
+.weekly-massas label { min-width: 220px; }
+.small-muted { font-size: 0.9rem; color: #555; margin-top: 0.5rem; }
+
+
+#consulta-rapida-sobras h4 { margin-top: .25rem; }
+#consulta-rapida-sobras table.table { width: 100%; border-collapse: collapse; }
+#consulta-rapida-sobras table.table th, 
+#consulta-rapida-sobras table.table td { border-bottom: 1px solid rgba(0,0,0,.06); padding: .5rem; text-align: left; }
+#consulta-rapida-sobras .checkbox-inline { display: inline-flex; align-items: center; gap: .35rem; }

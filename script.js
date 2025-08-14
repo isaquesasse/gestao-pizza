@@ -12,7 +12,8 @@ document.addEventListener('DOMContentLoaded', () => {
         estoque: [],
         pedidos: [],
         clientes: [],
-        massas: []
+        massas: [],
+        massas_semanais: []
     };
 
     let sortState = {
@@ -57,6 +58,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${year}-${month}-${day}`;
     };
 
+    const getWeekStart = (dateStr) => {
+        // dateStr format 'YYYY-MM-DD' (Monday) or any date string
+        let d = dateStr ? new Date(dateStr + 'T00:00:00') : new Date();
+        // Move to Monday
+        const day = d.getDay(); // 0=Sun,1=Mon
+        const diff = (day === 0 ? -6 : 1) - day;
+        d.setDate(d.getDate() + diff);
+        return formatDateToYYYYMMDD(d);
+    };
+
     const calculatePizzaCost = (pizzaId, ingredientsSource = database.ingredientes) => {
         const receita = database.receitas.find(r => r.pizzaId === pizzaId);
         if (!receita || !receita.ingredientes) return 0;
@@ -75,7 +86,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 supabaseClient.from('receitas').select('*'),
                 supabaseClient.from('pedidos').select('*').order('created_at', { ascending: false }),
                 supabaseClient.from('clientes').select('*').order('nome'),
-                supabaseClient.from('massas').select('*')
+                supabaseClient.from('massas').select('*'),
+                supabaseClient.from('massas_semanais').select('*')
             ]);
             
             const errors = results.map(r => r.error).filter(Boolean);
@@ -89,6 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
             database.pedidos = results[3].data || [];
             database.clientes = results[4].data || [];
             database.massas = results[5].data || [];
+            database.massas_semanais = results[6].data || [];
             
             await syncClientsFromOrders();
             renderAll();
@@ -100,9 +113,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     
-    // ====================================================================
-    // FUNÇÃO CORRIGIDA
-    // ====================================================================
     const syncClientsFromOrders = async () => {
         const existingClientKeys = new Set(database.clientes.map(c => `${c.nome.toLowerCase()}|${c.cidade.toLowerCase()}`));
         const newClientsMap = new Map();
@@ -111,15 +121,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (pedido.cliente && pedido.cidade) {
                 const clientKey = `${pedido.cliente.toLowerCase()}|${pedido.cidade.toLowerCase()}`;
                 if (!existingClientKeys.has(clientKey) && !newClientsMap.has(clientKey)) {
-                    // CORREÇÃO: Adiciona valores padrão para as novas colunas obrigatórias.
                     newClientsMap.set(clientKey, {
                         nome: pedido.cliente,
                         cidade: pedido.cidade,
-                        telefone: pedido.telefone || null,
-                        // Adiciona um e-mail falso para garantir que o campo não seja nulo, se necessário.
-                        email: `antigo-${pedido.cliente.replace(/\s+/g, '').toLowerCase()}@sasses.pizza`,
-                        // Define o status como 'aprovado' para clientes antigos.
-                        status_cadastro: 'aprovado' 
+                        telefone: pedido.telefone || null
                     });
                 }
             }
@@ -128,15 +133,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const clientsToUpsert = Array.from(newClientsMap.values());
 
         if (clientsToUpsert.length > 0) {
-            console.log(`Sincronizando ${clientsToUpsert.length} novo(s) cliente(s) a partir de pedidos antigos...`);
+            console.log(`Sincronizando ${clientsToUpsert.length} novo(s) cliente(s)...`);
             const { data, error } = await supabaseClient.from('clientes').upsert(clientsToUpsert, { onConflict: 'nome,cidade' }).select();
-            
             if (error) {
                 console.error('Erro ao sincronizar clientes:', error);
                 showSaveStatus('Erro ao sincronizar clientes antigos.', false);
             }
             if (data) {
-                // Adiciona os novos clientes sincronizados à base de dados local
                 database.clientes = [...database.clientes, ...data];
             }
         }
@@ -148,14 +151,21 @@ document.addEventListener('DOMContentLoaded', () => {
         renderIngredientes();
         renderEstoque();
         renderReceitas();
+        
+        // Definir filtro padrão para 'Pendente'
+        const statusSelect = document.getElementById('filter-status');
+        if (statusSelect && !statusSelect.value) {
+            statusSelect.value = 'Pendente';
+        }
+
         renderPedidos();
         renderClientes();
         renderProductionDemand();
-        renderCalendar(currentDateForCalendar.getFullYear(), currentDateForCalendar.getMonth());
+        renderWeeklyMassasPanel();
+        renderConsultaRapidaSobras();
         populateClienteDatalist();
         populateFilterDropdowns();
         renderDashboard(document.querySelector('.date-filter.active')?.dataset.range || 'all');
-        renderEstoqueResumido();
     };
 
     const populateSelects = (selectElementId) => {
@@ -472,36 +482,13 @@ document.addEventListener('DOMContentLoaded', () => {
     window.updatePedidoStatus = async (id, newStatus) => {
         if (!confirm(`Tem certeza que deseja alterar o status para "${newStatus}"?`)) return;
         showLoader();
-
-        try {
-            if (newStatus === 'Pronto') {
-                const pedido = database.pedidos.find(p => p.id === id);
-                if (pedido) {
-                    const stockUpdates = [];
-                    for (const item of pedido.items) {
-                        if (!item.isCustom) {
-                            const pizzaEstoque = database.estoque.find(p => p.id === item.pizzaId);
-                            if(pizzaEstoque) {
-                                stockUpdates.push({ id: item.pizzaId, newQty: pizzaEstoque.qtd - item.qtd });
-                            }
-                        }
-                    }
-                     await Promise.all(stockUpdates.map(upd => 
-                        supabaseClient.from('estoque').update({ qtd: upd.newQty }).eq('id', upd.id)
-                    ));
-                }
-            }
-
-            const { error: statusError } = await supabaseClient.from('pedidos').update({ status: newStatus }).eq('id', id);
-            if (statusError) throw statusError;
-
+        const { error } = await supabaseClient.from('pedidos').update({ status: newStatus }).eq('id', id);
+        hideLoader();
+        if (error) {
+            showSaveStatus(`Erro ao atualizar status: ${error.message}`, false);
+        } else {
             showSaveStatus('Status do pedido atualizado!');
             await loadDataFromSupabase();
-
-        } catch (error) {
-             showSaveStatus(`Erro ao atualizar status: ${error.message}`, false);
-        } finally {
-            hideLoader();
         }
     };
 
@@ -613,17 +600,60 @@ document.addEventListener('DOMContentLoaded', () => {
             valorFinal: valorFinal
         };
 
-        const { error: insertError } = await supabaseClient.from('pedidos').insert(newPedidoData).select().single();
+        
+        // === Verificação de quotas semanais de massas ===
+        const semanaInicio = getWeekStart(dataEntrega);
+        const quotas = database.massas_semanais.find(m => m.semana_inicio === semanaInicio) || { g_semana: 0, p_semana: 0, pc_semana: 0 };
+        const used = computeWeeklyUsage(semanaInicio);
+        // projetar uso com o novo pedido
+        const proj = { ...used };
+        newPedidoData.items.forEach(item => {
+            if (item.isCustom) return;
+            const pizza = database.estoque.find(e => e.id === item.pizzaId);
+            const d = mapPizzaToDough(pizza);
+            if (d) proj[d] = (proj[d] || 0) + Number(item.qtd || 0);
+        });
+        const exceeds = [];
+        if (proj.G > (quotas.g_semana || 0)) exceeds.push(`G: ${proj.G}/${quotas.g_semana || 0}`);
+        if (proj.P > (quotas.p_semana || 0)) exceeds.push(`P: ${proj.P}/${quotas.p_semana || 0}`);
+        if (proj.PC > (quotas.pc_semana || 0)) exceeds.push(`P de Chocolate: ${proj.PC}/${quotas.pc_semana || 0}`);
+        if (exceeds.length > 0) {
+            hideLoader();
+            alert('Limite semanal de massas atingido para: ' + exceeds.join(' | ') + '. Ajuste as quantidades ou a semana.');
+            return;
+        }
+
+        const stockUpdates = [];
+        for (const item of newPedidoData.items) {
+            if (!item.isCustom) {
+                const pizzaEstoque = database.estoque.find(p => p.id === item.pizzaId);
+                stockUpdates.push({ id: item.pizzaId, newQty: pizzaEstoque.qtd - item.qtd });
+            }
+        }
+        
+        const { data: pedidoSalvo, error: insertError } = await supabaseClient.from('pedidos').insert(newPedidoData).select().single();
 
         if (insertError) {
             showSaveStatus('Erro ao registrar pedido: ' + insertError.message, false);
-        } else {
+            hideLoader();
+            return;
+        }
+
+        try {
+            await Promise.all(stockUpdates.map(upd => 
+                supabaseClient.from('estoque').update({ qtd: upd.newQty }).eq('id', upd.id)
+            ));
+            
             showSaveStatus('Pedido registrado com sucesso!');
             resetFormPedido();
             await loadDataFromSupabase();
+
+        } catch (stockError) {
+            showSaveStatus(`Pedido salvo, mas erro ao dar baixa no estoque: ${stockError.message}. Reconcilie manualmente.`, false);
+            await supabaseClient.from('pedidos').update({ status: 'ERRO_ESTOQUE' }).eq('id', pedidoSalvo.id);
+        } finally {
+            hideLoader();
         }
-        
-        hideLoader();
     };
     
     const resetFormPedido = () => {
@@ -639,11 +669,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const pedido = database.pedidos.find(p => p.id === id);
         if (!pedido) return;
 
-        if (confirm(`Tem certeza que deseja remover o pedido de ${pedido.cliente}? \nATENÇÃO: Itens em estoque serão retornados se o pedido já estava "Pronto" ou "Concluído".`)) {
+        if (confirm(`Tem certeza que deseja remover o pedido de ${pedido.cliente}? \nATENÇÃO: Esta ação irá retornar os itens ao estoque.`)) {
             showLoader();
             
             const stockUpdates = [];
-            if (pedido.status === 'Pronto' || pedido.status === 'Concluído') {
+            if (pedido.status !== 'Concluído') {
                 for (const item of pedido.items) {
                     if (!item.isCustom) {
                         const pizzaEstoque = database.estoque.find(p => p.id === item.pizzaId);
@@ -658,13 +688,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const { error: deleteError } = await supabaseClient.from('pedidos').delete().eq('id', id);
                 if (deleteError) throw deleteError;
 
-                if(stockUpdates.length > 0) {
-                    await Promise.all(stockUpdates.map(upd => 
-                        supabaseClient.from('estoque').update({ qtd: upd.newQty }).eq('id', upd.id)
-                    ));
-                }
+                await Promise.all(stockUpdates.map(upd => 
+                    supabaseClient.from('estoque').update({ qtd: upd.newQty }).eq('id', upd.id)
+                ));
 
-                showSaveStatus('Pedido removido e estoque reconciliado.');
+                showSaveStatus('Pedido removido e estoque atualizado.');
                 await loadDataFromSupabase();
 
             } catch (error) {
@@ -675,7 +703,118 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     
-    const renderCalendar = (year, month) => {
+    
+    const renderWeeklyMassasPanel = () => {
+        const container = document.getElementById('calendario-container');
+        if (!container) return;
+        // Build a simple UI with a week selector and three numeric inputs
+        const weekOptionsId = 'semana-massas-select';
+        container.innerHTML = `
+            <div class="weekly-massas">
+                <div class="form-row">
+                    <label for="${weekOptionsId}">Semana:</label>
+                    <select id="${weekOptionsId}"><option value="">Selecione a Semana</option></select>
+                </div>
+                <div class="form-row">
+                    <label>Massas G (semana)</label>
+                    <input type="number" id="quota-g" min="0" value="0">
+                </div>
+                <div class="form-row">
+                    <label>Massas P (semana)</label>
+                    <input type="number" id="quota-p" min="0" value="0">
+                </div>
+                <div class="form-row">
+                    <label>Massas P Chocolate (semana)</label>
+                    <input type="number" id="quota-pc" min="0" value="0">
+                </div>
+                <div class="form-row">
+                    <button id="btn-salvar-quotas">Salvar</button>
+                </div>
+                <div id="quota-usage" class="small-muted"></div>
+            </div>
+        `;
+        // Populate week selector
+        const sel = document.getElementById(weekOptionsId);
+        populateWeekSelector(sel);
+        sel.addEventListener('change', () => {
+            loadQuotasIntoForm(sel.value);
+            renderQuotaUsage(sel.value);
+        });
+        // Default to current week
+        const thisWeek = getWeekStart();
+        sel.value = thisWeek;
+        loadQuotasIntoForm(thisWeek);
+        renderQuotaUsage(thisWeek);
+        document.getElementById('btn-salvar-quotas').addEventListener('click', async () => {
+            const semana_inicio = sel.value;
+            const g_semana = parseInt(document.getElementById('quota-g').value) || 0;
+            const p_semana = parseInt(document.getElementById('quota-p').value) || 0;
+            const pc_semana = parseInt(document.getElementById('quota-pc').value) || 0;
+            showLoader();
+            const { error } = await supabaseClient.from('massas_semanais')
+                .upsert({ semana_inicio, g_semana, p_semana, pc_semana }, { onConflict: 'semana_inicio' });
+            hideLoader();
+            if (error) {
+                showSaveStatus('Erro ao salvar quotas semanais: ' + error.message, false);
+            } else {
+                showSaveStatus('Quotas semanais salvas!');
+                await loadDataFromSupabase();
+                renderQuotaUsage(semana_inicio);
+            }
+        });
+    };
+    const loadQuotasIntoForm = (weekStart) => {
+        const q = database.massas_semanais.find(m => m.semana_inicio === weekStart);
+        document.getElementById('quota-g').value = q ? (q.g_semana || 0) : 0;
+        document.getElementById('quota-p').value = q ? (q.p_semana || 0) : 0;
+        document.getElementById('quota-pc').value = q ? (q.pc_semana || 0) : 0;
+    };
+    const mapPizzaToDough = (pizza) => {
+        if (!pizza) return null;
+        if (pizza.tamanho === 'G') return 'G';
+        if (pizza.tamanho === 'P') {
+            const nome = (pizza.nome || '').toLowerCase();
+            // Heurística: doces -> P de chocolate
+            if (/(choc|brigade|doce|nutella|prest[ií]gio|mm|morango|banana)/i.test(pizza.nome)) return 'PC';
+            return 'P';
+        }
+        return null;
+    };
+    const computeWeeklyUsage = (weekStart) => {
+        const totals = { G: 0, P: 0, PC: 0 };
+        database.pedidos.forEach(p => {
+            if (!p.dataEntrega) return;
+            const ws = getWeekStart(p.dataEntrega);
+            if (ws !== weekStart) return;
+            (p.items || []).forEach(item => {
+                if (item.isCustom) return;
+                const pizza = database.estoque.find(e => e.id === item.pizzaId);
+                const d = mapPizzaToDough(pizza);
+                if (d) totals[d] += Number(item.qtd || 0);
+            });
+        });
+        return totals;
+    };
+    const renderQuotaUsage = (weekStart) => {
+        const q = database.massas_semanais.find(m => m.semana_inicio === weekStart) || { g_semana: 0, p_semana: 0, pc_semana: 0 };
+        const used = computeWeeklyUsage(weekStart);
+        const el = document.getElementById('quota-usage');
+        const remaining = {
+            G: (q.g_semana || 0) - used.G,
+            P: (q.p_semana || 0) - used.P,
+            PC: (q.pc_semana || 0) - used.PC
+        };
+        el.innerHTML = `
+            <b>Uso da Semana:</b><br>
+            G: ${used.G}/${q.g_semana || 0} (restante ${remaining.G})<br>
+            P: ${used.P}/${q.p_semana || 0} (restante ${remaining.P})<br>
+            P de Chocolate: ${used.PC}/${q.pc_semana || 0} (restante ${remaining.PC})
+        `;
+    };
+
+
+// Calendário original desativado em favor do painel semanal
+const renderCalendar = (year, month) => {
         const container = document.getElementById('calendario-container');
         const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
         const firstDay = new Date(year, month, 1);
@@ -717,11 +856,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const addCalendarEventListeners = () => {
         document.getElementById('prev-month').addEventListener('click', () => {
             currentDateForCalendar.setMonth(currentDateForCalendar.getMonth() - 1);
-            renderCalendar(currentDateForCalendar.getFullYear(), currentDateForCalendar.getMonth());
+            renderWeeklyMassasPanel();
+        renderConsultaRapidaSobras();
         });
         document.getElementById('next-month').addEventListener('click', () => {
             currentDateForCalendar.setMonth(currentDateForCalendar.getMonth() + 1);
-            renderCalendar(currentDateForCalendar.getFullYear(), currentDateForCalendar.getMonth());
+            renderWeeklyMassasPanel();
+        renderConsultaRapidaSobras();
         });
         document.querySelectorAll('.calendar-day:not(.other-month)').forEach(day => {
             day.addEventListener('click', async (e) => {
@@ -760,11 +901,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 return;
                             }
                             const key = pizzaEstoque.id;
-                            const existing = demandMap.get(key) || { 
-                                sabor: `${pizzaEstoque.nome} (${pizzaEstoque.tamanho})`, 
-                                quantidade: 0, 
-                                estoqueAtual: pizzaEstoque.qtd 
-                            };
+                            const existing = demandMap.get(key) || { sabor: `${pizzaEstoque.nome} (${pizzaEstoque.tamanho})`, quantidade: 0, estoqueAtual: pizzaEstoque.qtd };
                             existing.quantidade += item.qtd;
                             demandMap.set(key, existing);
                         }
@@ -776,68 +913,30 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const { column, direction } = sortState.demanda;
         demandArray.sort((a,b) => {
-             const valA = a[column];
-             const valB = b[column];
-             if (column === 'saldo') {
-                 const saldoA = a.estoqueAtual - a.quantidade;
-                 const saldoB = b.estoqueAtual - b.quantidade;
-                 return saldoA - saldoB;
-             }
-             if (typeof valA === 'number') return valA - valB;
-             return (valA || '').localeCompare(valB || '');
+            const valA = a[column];
+            const valB = b[column];
+            if (typeof valA === 'number') return valA - valB;
+            return valA.localeCompare(valB);
         });
-
         if(direction === 'desc') demandArray.reverse();
 
         tbody.innerHTML = '';
         if(demandArray.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;">Nenhuma demanda de produção no momento.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="3" style="text-align: center;">Nenhuma demanda de produção no momento.</td></tr>';
             return;
         }
 
         demandArray.forEach(({ sabor, quantidade, estoqueAtual }) => {
             const row = tbody.insertRow();
-            const saldo = estoqueAtual - quantidade;
-            
-            let saldoDisplay;
-            if (saldo < 0) {
-                saldoDisplay = `<b style="color:var(--danger-color);">Faltam ${-saldo}</b>`;
-            } else {
-                saldoDisplay = saldo;
-            }
-
+            const estoqueClass = estoqueAtual < quantidade ? 'low-stock' : '';
             row.innerHTML = `
                 <td data-label="Sabor da Pizza">${sabor}</td>
                 <td data-label="Quantidade a Produzir">${quantidade}x</td>
-                <td data-label="Estoque Atual">${estoqueAtual}</td>
-                <td data-label="Saldo Final">${saldoDisplay}</td>
+                <td data-label="Estoque Atual" class="${estoqueClass}">${estoqueAtual}</td>
             `;
         });
         updateSortHeaders('tabela-demanda-producao', column, direction);
     };
-
-    const renderEstoqueResumido = () => {
-        const tbody = document.getElementById('tabela-estoque-resumido')?.querySelector('tbody');
-        if (!tbody) return;
-
-        tbody.innerHTML = '';
-        const pizzasEmEstoque = database.estoque.filter(p => p.qtd > 0);
-
-        if (pizzasEmEstoque.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="3" style="text-align: center;">Nenhuma pizza em estoque.</td></tr>';
-            return;
-        }
-
-        pizzasEmEstoque.forEach(p => {
-            const row = tbody.insertRow();
-            row.innerHTML = `
-                <td data-label="Sabor">${p.nome}</td>
-                <td data-label="Tamanho">${p.tamanho}</td>
-                <td data-label="Qtd. em Estoque">${p.qtd}</td>
-            `;
-        });
-    };
-
 
     document.getElementById('pedido-cliente').addEventListener('input', (e) => {
         const nome = e.target.value;
@@ -1030,29 +1129,9 @@ document.addEventListener('DOMContentLoaded', () => {
         filteredData.forEach(item => {
             const custo = calculatePizzaCost(item.id);
             const lucro = item.precoVenda - custo;
-            
-            let pedidosPendentes = 0;
-            database.pedidos
-                .filter(p => p.status === 'Pendente')
-                .forEach(p => {
-                    p.items.forEach(pedidoItem => {
-                        if (pedidoItem.pizzaId === item.id) {
-                            pedidosPendentes += pedidoItem.qtd;
-                        }
-                    });
-                });
-
             const row = tbody.insertRow();
             if(item.qtd <= 0) row.classList.add('low-stock');
-            row.innerHTML = `
-                <td data-label="Sabor da Pizza">${item.nome}</td>
-                <td data-label="Tamanho">${item.tamanho||"N/A"}</td>
-                <td data-label="Qtd.">${item.qtd}</td>
-                <td data-label="PDS. (Pedidos)">${pedidosPendentes > 0 ? pedidosPendentes : ''}</td>
-                <td data-label="Custo Produção" class="admin-only">${formatCurrency(custo)}</td>
-                <td data-label="Preço Venda">${formatCurrency(item.precoVenda)}</td>
-                <td data-label="Lucro Bruto" class="admin-only" style="color:${lucro>=0?"green":"red"};font-weight:bold;">${formatCurrency(lucro)}</td>
-                <td data-label="Ações"><button class="action-btn edit-btn" onclick="window.editEstoque('${item.id}')">Editar</button><button class="action-btn remove-btn" onclick="window.removeEstoque('${item.id}')">Remover</button></td>`;
+            row.innerHTML = `<td data-label="Sabor da Pizza">${item.nome}</td><td data-label="Tamanho">${item.tamanho||"N/A"}</td><td data-label="Qtd.">${item.qtd}</td><td data-label="Custo Produção" class="admin-only">${formatCurrency(custo)}</td><td data-label="Preço Venda">${formatCurrency(item.precoVenda)}</td><td data-label="Lucro Bruto" class="admin-only" style="color:${lucro>=0?"green":"red"};font-weight:bold;">${formatCurrency(lucro)}</td><td data-label="Ações"><button class="action-btn edit-btn" onclick="window.editEstoque('${item.id}')">Editar</button><button class="action-btn remove-btn" onclick="window.removeEstoque('${item.id}')">Remover</button></td>`;
         });
         updateSortHeaders('tabela-estoque', column, direction);
     };
@@ -1276,6 +1355,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderPizzasMaisLucrativasChart(filteredPedidos);
         renderVendasPorVendedorChart(filteredPedidos);
         renderPizzasMaisVendidasChart(filteredPedidos);
+        renderPedidosSemanaChart(filteredPedidos);
         renderVendasPorDiaChart(filteredPedidos);
     };
 
@@ -1283,7 +1363,82 @@ document.addEventListener('DOMContentLoaded', () => {
     const renderPizzasMaisLucrativasChart=(t)=>{const e=t.flatMap(t=>t.items).reduce((t,e)=>{if(e.isCustom)return t;const a=calculatePizzaCost(e.pizzaId),r=(e.preco-a)*e.qtd;return t[e.pizzaNome]=(t[e.pizzaNome]||0)+r,t},{}),a=Object.keys(e).sort((t,a)=>e[a]-e[t]).slice(0,10),r=a.map(t=>e[t]),o=document.getElementById("pizzasMaisLucrativasChart").getContext("2d");chartInstances.lucro=new Chart(o,{type:"doughnut",data:{labels:a,datasets:[{data:r,backgroundColor:["#2ecc71","#3498db","#9b59b6","#f1c40f","#e67e22","#1abc9c"]}]},options:{responsive:!0,plugins:{legend:{position:"top"},tooltip:{callbacks:{label:t=>`${t.label}: ${formatCurrency(t.raw)}`}}}}})};
     const renderVendasPorVendedorChart=(t)=>{const e=t.reduce((t,e)=>{if(e.vendedor)t[e.vendedor]=(t[e.vendedor]||0)+Number(e.valorFinal);return t},{}),a=Object.keys(e).sort((t,a)=>e[a]-e[t]),r=a.map(t=>e[t]),o=document.getElementById("vendasPorVendedorChart").getContext("2d");chartInstances.vendedor=new Chart(o,{type:"bar",data:{labels:a,datasets:[{label:"Total Vendido",data:r,backgroundColor:"#487eb0"}]},options:{responsive:!0,scales:{y:{ticks:{callback:t=>formatCurrency(t)}}}}})};
     const renderPizzasMaisVendidasChart=(t)=>{const e=t.flatMap(t=>t.items).reduce((t,e)=>{return e.isCustom?t:(t[e.pizzaNome]=(t[e.pizzaNome]||0)+e.qtd,t)},{}),a=Object.keys(e).sort((t,a)=>e[a]-e[t]).slice(0,10),r=a.map(t=>e[t]),o=document.getElementById("pizzasMaisVendidasChart").getContext("2d");chartInstances.vendas=new Chart(o,{type:"pie",data:{labels:a,datasets:[{data:r,backgroundColor:["#e74c3c","#3498db","#f1c40f","#2ecc71","#9b59b6","#1abc9c"]}]},options:{responsive:!0,plugins:{legend:{position:"top"}}}})};
-    const renderVendasPorDiaChart=(t)=>{const e=t.reduce((t,e)=>{const a=new Date(e.dataEntrega+"T00:00:00").toLocaleDateString("pt-BR");return t[a]=(t[a]||0)+Number(e.valorFinal),t},{}),a=Object.keys(e).sort((t,a)=>new Date(t.split("/").reverse().join("-"))-new Date(a.split("/").reverse().join("-"))),r=a.map(t=>e[t]),o=document.getElementById("vendasPorDiaChart").getContext("2d");chartInstances.dia=new Chart(o,{type:"line",data:{labels:a,datasets:[{label:"Receita por Dia",data:r,borderColor:"#2c3e50",tension:.1,fill:!1}]},options:{responsive:!0,scales:{y:{ticks:{callback:t=>formatCurrency(t)}}}}})};
+    
+    let pedidosSemanaChartInstance = null;
+    const renderPedidosSemanaChart = (pedidos) => {
+        // Série semanal (últimas 8 semanas) pela semana de entrega
+        const weeksMap = {};
+        const addWeek = (dateStr) => {
+            const ws = getWeekStart(dateStr);
+            weeksMap[ws] = weeksMap[ws] || 0;
+        };
+        // Pré-preencher últimas 8 semanas para suavizar labels
+        const todayWs = getWeekStart();
+        const base = new Date(todayWs + 'T00:00:00');
+        for (let i = 7; i >= 0; i--) {
+            const d = new Date(base);
+            d.setDate(d.getDate() - i*7);
+            const iso = d.toISOString().slice(0,10);
+            addWeek(iso);
+        }
+        pedidos.forEach(p => {
+            if (!p.dataEntrega) return;
+            const ws = getWeekStart(p.dataEntrega);
+            const qty = (p.items || []).reduce((acc,it)=> acc + Number(it.qtd||0), 0);
+            weeksMap[ws] = (weeksMap[ws] || 0) + qty;
+        });
+        const labels = Object.keys(weeksMap).sort().map(ws => {
+            const d = new Date(ws + 'T00:00:00');
+            const end = new Date(d); end.setDate(d.getDate()+6);
+            return d.toLocaleDateString('pt-BR', { day:'2-digit', month:'short' }) + '–' + end.toLocaleDateString('pt-BR', { day:'2-digit' });
+        });
+        const data = Object.keys(weeksMap).sort().map(ws => weeksMap[ws] || 0);
+        const ctx = document.getElementById('pedidosSemanaChart').getContext('2d');
+        if (pedidosSemanaChartInstance) pedidosSemanaChartInstance.destroy();
+        pedidosSemanaChartInstance = new Chart(ctx, {
+            type: 'line',
+            data: { labels, datasets: [{ label: 'Pedidos por semana (qtd de pizzas)', data, tension: 0.3, fill: false }] },
+            options: { responsive: true, plugins: { legend: { display: true } } }
+        });
+    };
+
+    const renderVendasPorDiaChart = (pedidos) => {
+        const vendasPorDia = pedidos.reduce((acc, pedido) => {
+            if (!pedido.dataEntrega) return acc;
+            const dia = new Date(pedido.dataEntrega + 'T00:00:00').toLocaleDateString('pt-BR');
+            acc[dia] = (acc[dia] || 0) + Number(pedido.valorFinal);
+            return acc;
+        }, {});
+        
+        const labels = Object.keys(vendasPorDia).sort((a, b) => new Date(a.split('/').reverse().join('-')) - new Date(b.split('/').reverse().join('-')));
+        const data = labels.map(label => vendasPorDia[label]);
+        
+        const ctx = document.getElementById("vendasPorDiaChart").getContext("2d");
+        if (chartInstances.dia) chartInstances.dia.destroy();
+        chartInstances.dia = new Chart(ctx, {
+            type: "line",
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: "Receita por Dia",
+                    data: data,
+                    borderColor: "#2c3e50",
+                    tension: 0.1,
+                    fill: false
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        ticks: {
+                            callback: value => formatCurrency(value)
+                        }
+                    }
+                }
+            }
+        });
+    };
 
     document.querySelectorAll('.date-filter').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -1525,8 +1680,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const form = document.getElementById('edit-pedido-form');
         const formData = new FormData(form);
-        const valorFinal = parseFloat(formData.get('valor-final-edit-pedido'));
+        const valorFinalInput = form.querySelector('#valor-final-edit-pedido').value;
         const valorCalculado = pedidoEditItems.reduce((acc, item) => acc + (item.preco * item.qtd), 0);
+        const valorFinal = parseFloat(valorFinalInput) || valorCalculado;
 
         const updatedPedidoData = {
             cliente: formData.get('cliente'),
@@ -1537,12 +1693,72 @@ document.addEventListener('DOMContentLoaded', () => {
             status: formData.get('status'),
             items: pedidoEditItems,
             valorTotal: valorCalculado,
-            valorFinal: isNaN(valorFinal) ? valorCalculado : valorFinal,
+            valorFinal: valorFinal,
         };
+
         
+        // === Verificação de quotas semanais de massas ===
+        const semanaInicio = getWeekStart(originalPedido.dataEntrega);
+        const quotas = database.massas_semanais.find(m => m.semana_inicio === semanaInicio) || { g_semana: 0, p_semana: 0, pc_semana: 0 };
+        const used = computeWeeklyUsage(semanaInicio);
+        // projetar uso com o novo pedido
+        const proj = { ...used };
+        updatedPedidoData.items.forEach(item => {
+            if (item.isCustom) return;
+            const pizza = database.estoque.find(e => e.id === item.pizzaId);
+            const d = mapPizzaToDough(pizza);
+            if (d) proj[d] = (proj[d] || 0) + Number(item.qtd || 0);
+        });
+        const exceeds = [];
+        if (proj.G > (quotas.g_semana || 0)) exceeds.push(`G: ${proj.G}/${quotas.g_semana || 0}`);
+        if (proj.P > (quotas.p_semana || 0)) exceeds.push(`P: ${proj.P}/${quotas.p_semana || 0}`);
+        if (proj.PC > (quotas.pc_semana || 0)) exceeds.push(`P de Chocolate: ${proj.PC}/${quotas.pc_semana || 0}`);
+        if (exceeds.length > 0) {
+            hideLoader();
+            alert('Limite semanal de massas atingido para: ' + exceeds.join(' | ') + '. Ajuste as quantidades ou a semana.');
+            return;
+        }
+
+        const stockUpdates = [];
+
+        for (const item of originalPedido.items) {
+            if (!item.isCustom) {
+                const pizzaEstoque = database.estoque.find(p => p.id === item.pizzaId);
+                if(pizzaEstoque) {
+                    stockUpdates.push({ id: item.pizzaId, change: item.qtd });
+                }
+            }
+        }
+
+        for (const item of updatedPedidoData.items) {
+            if (!item.isCustom) {
+                 const pizzaEstoque = database.estoque.find(p => p.id === item.pizzaId);
+                if(pizzaEstoque) {
+                    stockUpdates.push({ id: item.pizzaId, change: -item.qtd });
+                }
+            }
+        }
+        
+        const finalStockUpdates = new Map();
+        for(const update of stockUpdates) {
+            const existing = finalStockUpdates.get(update.id) || 0;
+            finalStockUpdates.set(update.id, existing + update.change);
+        }
+
         try {
             const { error: updateError } = await supabaseClient.from('pedidos').update(updatedPedidoData).eq('id', originalPedido.id);
             if (updateError) throw updateError;
+            
+            const stockUpdatePromises = [];
+            finalStockUpdates.forEach((change, id) => {
+                 const pizzaEstoque = database.estoque.find(p => p.id === id);
+                 if(pizzaEstoque) {
+                    stockUpdatePromises.push(
+                        supabaseClient.from('estoque').update({ qtd: pizzaEstoque.qtd + change }).eq('id', id)
+                    );
+                 }
+            });
+            await Promise.all(stockUpdatePromises);
             
             showSaveStatus('Pedido atualizado com sucesso!');
             closeModal('edit-modal');
@@ -1557,4 +1773,80 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     
     loadDataFromSupabase();
+
+
+    // ===== Consulta Rápida — Sobras =====
+    const renderConsultaRapidaSobras = () => {
+        const selectSemana = document.getElementById('sobras-semana-select');
+        const onlyPendentes = document.getElementById('sobras-considerar-pendentes');
+        if (!selectSemana) return;
+
+        // Popular semanas (mesma função do seletor de semanas existente)
+        populateWeekSelector(selectSemana);
+        if (!selectSemana.value) selectSemana.value = getWeekStart();
+
+        const refresh = () => {
+            const weekStart = selectSemana.value || getWeekStart();
+            const statusFilter = onlyPendentes && onlyPendentes.checked ? ['Pendente'] : null;
+
+            // ----- Massa (G, P, PC) -----
+            const quotas = database.massas_semanais.find(m => m.semana_inicio === weekStart) || { g_semana: 0, p_semana: 0, pc_semana: 0 };
+            const usedAll = computeWeeklyUsage(weekStart); // usa todos os pedidos
+            // Se marcar apenas pendentes, recalcular uso só com pendentes
+            const used = { G:0, P:0, PC:0 };
+            database.pedidos.forEach(p => {
+                if (!p.dataEntrega) return;
+                if (getWeekStart(p.dataEntrega) !== weekStart) return;
+                if (statusFilter && !statusFilter.includes(p.status)) return;
+                (p.items || []).forEach(item => {
+                    if (item.isCustom) return;
+                    const pizza = database.estoque.find(e => e.id === item.pizzaId);
+                    const d = mapPizzaToDough(pizza);
+                    if (d) used[d] += Number(item.qtd || 0);
+                });
+            });
+            const tbodyM = document.querySelector('#tabela-sobras-massas tbody');
+            if (tbodyM) {
+                tbodyM.innerHTML = '';
+                const rows = [
+                    ['G', quotas.g_semana || 0, used.G, (quotas.g_semana || 0) - used.G],
+                    ['P', quotas.p_semana || 0, used.P, (quotas.p_semana || 0) - used.P],
+                    ['P de Chocolate', quotas.pc_semana || 0, used.PC, (quotas.pc_semana || 0) - used.PC]
+                ];
+                rows.forEach(r => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td>`;
+                    tbodyM.appendChild(tr);
+                });
+            }
+
+            // ----- Pizza (estoque vs pedidos da semana) -----
+            const demandByPizza = {};
+            database.pedidos.forEach(p => {
+                if (!p.dataEntrega) return;
+                if (getWeekStart(p.dataEntrega) !== weekStart) return;
+                if (statusFilter && !statusFilter.includes(p.status)) return;
+                (p.items || []).forEach(item => {
+                    if (item.isCustom) return;
+                    demandByPizza[item.pizzaId] = (demandByPizza[item.pizzaId] || 0) + Number(item.qtd || 0);
+                });
+            });
+            const tbodyP = document.querySelector('#tabela-sobras-pizzas tbody');
+            if (tbodyP) {
+                tbodyP.innerHTML = '';
+                database.estoque.forEach(e => {
+                    const pedidosSemana = demandByPizza[e.id] || 0;
+                    const sobraProj = (e.qtd || 0) - pedidosSemana;
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td>${e.nome}</td><td>${e.tamanho}</td><td>${e.qtd ?? 0}</td><td>${pedidosSemana}</td><td>${sobraProj}</td>`;
+                    tbodyP.appendChild(tr);
+                });
+            }
+        };
+
+        selectSemana.addEventListener('change', refresh);
+        if (onlyPendentes) onlyPendentes.addEventListener('change', refresh);
+        refresh();
+    };
+
 });

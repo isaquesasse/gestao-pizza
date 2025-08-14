@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,6 +10,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
 </head>
+
 <body>
 
     <div id="loader" class="loader-container">
@@ -38,7 +40,8 @@
                     <div class="card">
                         <form id="form-pedido-principal">
                             <input type="hidden" id="pedido-edit-id">
-                            <input type="text" id="pedido-cliente" placeholder="Nome do Cliente" required list="clientes-list">
+                            <input type="text" id="pedido-cliente" placeholder="Nome do Cliente" required
+                                list="clientes-list">
                             <datalist id="clientes-list"></datalist>
                             <input type="text" id="pedido-cliente-telefone" placeholder="Telefone (Opcional)">
                             <input type="text" id="pedido-cidade" placeholder="Cidade" required>
@@ -59,7 +62,8 @@
                             <select id="item-pizza" required>
                                 <option value="">Selecione a Pizza...</option>
                             </select>
-                            <input type="text" id="item-pizza-outro-nome" class="hidden" placeholder="Nome da nova pizza">
+                            <input type="text" id="item-pizza-outro-nome" class="hidden"
+                                placeholder="Nome da nova pizza">
                             <select id="item-pizza-outro-tamanho" class="hidden">
                                 <option value="P">Pequena</option>
                                 <option value="G">Grande</option>
@@ -67,11 +71,12 @@
                             <input type="number" id="item-qtd" placeholder="Qtd" required min="1" value="1">
                             <button type="button" id="btn-add-item-pedido">Adicionar</button>
                         </div>
-                         <h3>Itens do Pedido Atual</h3>
+                        <h3>Itens do Pedido Atual</h3>
                         <div id="pedido-itens-carrinho" class="carrinho-container"></div>
                         <div class="resumo-pedido">
                             <span>Total Calculado: <b id="total-calculado-pedido">R$ 0,00</b></span>
-                            <input type="number" id="valor-final-pedido" placeholder="Valor Final (com desconto)" step="0.01">
+                            <input type="number" id="valor-final-pedido" placeholder="Valor Final (com desconto)"
+                                step="0.01">
                         </div>
                         <div id="pedido-botoes-acao" style="display: flex; gap: 1rem; margin-top: 1rem;">
                             <button type="button" id="btn-registrar-pedido">Registrar Pedido</button>
@@ -79,7 +84,7 @@
                     </div>
                 </div>
                 <div class="grid-col">
-                    <h2>Calendário de Massas</h2>
+                    <h2>Planejamento Semanal de Massas</h2>
                     <div id="calendario-container" class="card">
                     </div>
                 </div>
@@ -89,9 +94,13 @@
                 <div class="table-header">
                     <h3>Histórico de Pedidos</h3>
                     <div class="filters-container">
-                        <input type="search" id="search-pedidos" class="search-input" placeholder="Buscar por cliente...">
-                        <select id="filter-vendedor"><option value="">Todos Vendedores</option></select>
-                        <select id="filter-status"><option value="">Todos Status</option>
+                        <input type="search" id="search-pedidos" class="search-input"
+                            placeholder="Buscar por cliente...">
+                        <select id="filter-vendedor">
+                            <option value="">Todos Vendedores</option>
+                        </select>
+                        <select id="filter-status">
+                            <option value="">Todos Status</option>
                             <option value="Pendente">Pendente</option>
                             <option value="Pronto">Pronto</option>
                             <option value="Concluído">Concluído</option>
@@ -117,26 +126,58 @@
                 </div>
             </div>
 
-            <div class="card">
-                <h3>Consulta Rápida de Estoque</h3>
-                 <div class="table-container">
-                    <table id="tabela-estoque-resumido">
-                        <thead>
-                            <tr>
-                                <th>Sabor</th>
-                                <th>Tamanho</th>
-                                <th>Qtd. em Estoque</th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
+            <div class="card" id="consulta-rapida-sobras">
+                <h3>Consulta Rápida — Sobras</h3>
+                <div class="small-muted">Mostra o saldo semanal por <b>massa</b> e um resumo por <b>pizza</b>.</div>
+                <div class="form-row" style="margin-top: .5rem;">
+                    <label for="sobras-semana-select">Semana:</label>
+                    <select id="sobras-semana-select"></select>
+                    <label class="checkbox-inline" style="margin-left:1rem;">
+                        <input type="checkbox" id="sobras-considerar-pendentes" checked>
+                        Considerar apenas pedidos <b>Pendentes</b>
+                    </label>
+                </div>
+                <div class="grid-container" style="margin-top: .5rem;">
+                    <div class="grid-col">
+                        <h4>Sobra por Massa (Semana)</h4>
+                        <table id="tabela-sobras-massas" class="table">
+                            <thead>
+                                <tr>
+                                    <th>Tipo</th>
+                                    <th>Quota</th>
+                                    <th>Usado</th>
+                                    <th>Restante</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                    <div class="grid-col">
+                        <h4>Resumo por Pizza (Semana)</h4>
+                        <table id="tabela-sobras-pizzas" class="table">
+                            <thead>
+                                <tr>
+                                    <th>Pizza</th>
+                                    <th>Tam.</th>
+                                    <th>Em estoque</th>
+                                    <th>Pedidos (semana)</th>
+                                    <th>Sobra projetada*</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                        <div class="small-muted">* Observação: no sistema atual o <b>estoque</b> é reduzido no momento
+                            em que o pedido é registrado.
+                            Portanto, a “Sobra projetada” já pode ter sido parcialmente considerada no estoque atual.
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
 
         <div id="clientes" class="tab-content">
-             <h2>Relatório de Clientes</h2>
-              <div class="card">
+            <h2>Relatório de Clientes</h2>
+            <div class="card">
                 <div class="table-header">
                     <h3>Clientes Registrados</h3>
                     <input type="search" id="search-clientes" class="search-input" placeholder="Buscar cliente...">
@@ -163,13 +204,13 @@
             <div class="card">
                 <h3>Ferramentas de Estoque</h3>
                 <div class="form-producao-container">
-                     <form id="form-producao" style="flex: 2; min-width: 300px;">
+                    <form id="form-producao" style="flex: 2; min-width: 300px;">
                         <select id="producao-pizza-select" required>
                             <option value="">Selecione a Pizza a Produzir...</option>
                         </select>
                         <input type="number" id="producao-qtd" placeholder="Quantidade" required min="1">
                         <button type="submit">Produzir</button>
-                     </form>
+                    </form>
                 </div>
             </div>
             <div class="card">
@@ -177,18 +218,19 @@
                 <form id="form-estoque">
                     <input type="hidden" id="estoque-id">
                     <input type="text" id="estoque-nome" placeholder="Sabor da Pizza" required>
-                     <select id="estoque-tamanho" required>
+                    <select id="estoque-tamanho" required>
                         <option value="">Tamanho</option>
                         <option value="P">Pequena</option>
                         <option value="G">Grande</option>
                     </select>
                     <input type="number" id="estoque-qtd" placeholder="Quantidade Inicial" required min="0">
-                    <input type="number" id="estoque-preco-venda" placeholder="Preço de Venda (R$)" required min="0" step="0.01">
+                    <input type="number" id="estoque-preco-venda" placeholder="Preço de Venda (R$)" required min="0"
+                        step="0.01">
                     <button type="submit">Adicionar Pizza</button>
                 </form>
             </div>
             <div class="card">
-                 <div class="table-header">
+                <div class="table-header">
                     <h3>Pizzas em Estoque</h3>
                     <input type="search" id="search-estoque" class="search-input" placeholder="Buscar pizza...">
                     <button id="export-estoque">Baixar Excel</button>
@@ -200,7 +242,6 @@
                                 <th data-sort-by="nome">Sabor da Pizza</th>
                                 <th data-sort-by="tamanho">Tamanho</th>
                                 <th data-sort-by="qtd">Qtd.</th>
-                                <th>Pedidos</th>
                                 <th class="admin-only" data-sort-by="custo">Custo Produção</th>
                                 <th data-sort-by="precoVenda">Preço Venda</th>
                                 <th class="admin-only" data-sort-by="lucro">Lucro Bruto</th>
@@ -225,15 +266,18 @@
                 </form>
                 <hr>
                 <div id="form-add-ingrediente-receita">
-                     <select id="receita-ingrediente-select" required><option value="">Selecione o ingrediente</option></select>
-                     <input type="number" id="receita-ingrediente-qtd" placeholder="Qtd (ex: 0.150 para 150g)" step="0.001" min="0">
-                     <button type="button" id="btn-add-ingrediente-receita">Adicionar Ingrediente</button>
+                    <select id="receita-ingrediente-select" required>
+                        <option value="">Selecione o ingrediente</option>
+                    </select>
+                    <input type="number" id="receita-ingrediente-qtd" placeholder="Qtd (ex: 0.150 para 150g)"
+                        step="0.001" min="0">
+                    <button type="button" id="btn-add-ingrediente-receita">Adicionar Ingrediente</button>
                 </div>
                 <h4>Ingredientes da Receita:</h4>
                 <div id="receita-ingredientes-list"></div>
             </div>
-             <div class="card">
-                 <div class="table-header">
+            <div class="card">
+                <div class="table-header">
                     <h3>Receitas Salvas</h3>
                     <input type="search" id="search-receitas" class="search-input" placeholder="Buscar receita...">
                     <button id="export-receitas">Baixar Excel</button>
@@ -261,16 +305,20 @@
                 <form id="form-ingrediente">
                     <input type="hidden" id="ingrediente-id">
                     <input type="text" id="ingrediente-nome" placeholder="Nome do Ingrediente" required>
-                    <input type="number" id="ingrediente-qtd" placeholder="Qtd em Estoque (un./kg)" required min="0" step="0.001">
-                    <input type="number" id="ingrediente-custo" placeholder="Preço de Custo (R$ por un./kg)" required min="0" step="0.01">
-                    <input type="number" id="ingrediente-estoque-minimo" placeholder="Estoque Mínimo" required min="0" step="0.001">
+                    <input type="number" id="ingrediente-qtd" placeholder="Qtd em Estoque (un./kg)" required min="0"
+                        step="0.001">
+                    <input type="number" id="ingrediente-custo" placeholder="Preço de Custo (R$ por un./kg)" required
+                        min="0" step="0.01">
+                    <input type="number" id="ingrediente-estoque-minimo" placeholder="Estoque Mínimo" required min="0"
+                        step="0.001">
                     <button type="submit">Adicionar Ingrediente</button>
                 </form>
             </div>
             <div class="card">
                 <div class="table-header">
                     <h3>Lista de Ingredientes</h3>
-                    <input type="search" id="search-ingredientes" class="search-input" placeholder="Buscar ingrediente...">
+                    <input type="search" id="search-ingredientes" class="search-input"
+                        placeholder="Buscar ingrediente...">
                     <button id="btn-lista-compras">Gerar Lista de Compras</button>
                     <button id="export-ingredientes">Baixar Excel</button>
                 </div>
@@ -313,7 +361,6 @@
                                 <th data-sort-by="sabor">Sabor da Pizza</th>
                                 <th data-sort-by="quantidade">Quantidade a Produzir</th>
                                 <th data-sort-by="estoqueAtual">Estoque Atual</th>
-                                <th data-sort-by="saldo">Saldo Final</th>
                             </tr>
                         </thead>
                         <tbody></tbody>
@@ -333,7 +380,7 @@
                     <h3>Balanço Financeiro (Receita x Custo)</h3>
                     <canvas id="balancoChart"></canvas>
                 </div>
-                 <div class="card chart-card">
+                <div class="card chart-card">
                     <h3>Pizzas Mais Lucrativas</h3>
                     <canvas id="pizzasMaisLucrativasChart"></canvas>
                 </div>
@@ -345,9 +392,13 @@
                     <h3>Pizzas Mais Vendidas (Quantidade)</h3>
                     <canvas id="pizzasMaisVendidasChart"></canvas>
                 </div>
-                 <div class="card chart-card full-width">
+                <div class="chart-container">
                     <h3>Vendas por Dia</h3>
                     <canvas id="vendasPorDiaChart"></canvas>
+                </div>
+                <div class="card chart-card full-width">
+                    <h3>Pedidos por Dia (Semana Atual)</h3>
+                    <canvas id="pedidosSemanaChart"></canvas>
                 </div>
             </div>
         </div>
@@ -386,9 +437,10 @@
         <p>&copy; 2025 Sasse's Pizza</p>
     </footer>
 
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="script.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script defer src="script.js"></script>
 </body>
+
 </html>
