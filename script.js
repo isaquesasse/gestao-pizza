@@ -312,6 +312,7 @@ const toggleAdminView = () => {
         openAuthModal();
     }
 };
+    document.getElementById('btn-admin-view').addEventListener('click', toggleAdminView);
     // Handler para o formulário de autenticação
 document.getElementById('auth-form')?.addEventListener('submit', (e) => {
     e.preventDefault();
