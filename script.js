@@ -170,6 +170,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const populateSelects = (selectElementId) => {
         const pizzaEstoqueSelect = document.getElementById(selectElementId || 'item-pizza');
+        if (!pizzaEstoqueSelect) return;
         const firstOption = pizzaEstoqueSelect.options[0];
         pizzaEstoqueSelect.innerHTML = '';
         if (firstOption) pizzaEstoqueSelect.appendChild(firstOption);
@@ -184,6 +185,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!selectElementId) {
             ['producao-pizza-select', 'receita-pizza-select'].forEach(id => {
                 const sel = document.getElementById(id);
+                if (!sel) return;
                 const firstOpt = sel.options[0];
                 sel.innerHTML = '';
                 if(firstOpt) sel.appendChild(firstOpt);
@@ -193,7 +195,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             });
             const ingredienteReceitaSelect = document.getElementById('receita-ingrediente-select');
-            
+             if (!ingredienteReceitaSelect) return;
             const firstOpt = ingredienteReceitaSelect.options[0];
             ingredienteReceitaSelect.innerHTML = '';
             if(firstOpt) ingredienteReceitaSelect.appendChild(firstOpt);
@@ -205,13 +207,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const populateWeekSelector = (selectElement) => {
         const weekSelect = selectElement || document.getElementById('pedido-semana-entrega');
+        if (!weekSelect) return;
         const firstOption = weekSelect.options[0];
         weekSelect.innerHTML = '';
         if (firstOption) weekSelect.appendChild(firstOption);
 
         let today = new Date();
+        // Reset to today before the loop
         for (let i = 0; i < 12; i++) {
-            let startOfWeek = new Date(today.setDate(today.getDate() - today.getDay() + 1));
+             let weekDate = new Date();
+             weekDate.setDate(weekDate.getDate() + (i * 7));
+             
+            let startOfWeek = new Date(weekDate.setDate(weekDate.getDate() - weekDate.getDay() + 1));
             let endOfWeek = new Date(startOfWeek);
             endOfWeek.setDate(endOfWeek.getDate() + 6);
 
@@ -220,12 +227,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const weekValue = formatDateToYYYYMMDD(startOfWeek);
 
             weekSelect.innerHTML += `<option value="${weekValue}">Semana de ${startFormatted} a ${endFormatted}</option>`;
-            today.setDate(today.getDate() + 7);
         }
     };
 
     const populateClienteDatalist = () => {
         const datalist = document.getElementById('clientes-list');
+        if (!datalist) return;
         datalist.innerHTML = '';
         database.clientes.forEach(cliente => {
             datalist.innerHTML += `<option value="${cliente.nome}">`;
@@ -234,11 +241,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const populateFilterDropdowns = () => {
         const vendedorSelect = document.getElementById('filter-vendedor');
-        const vendedores = [...new Set(database.pedidos.map(p => p.vendedor).filter(Boolean))];
+        if (!vendedorSelect) return;
+
+        // Map to first names, normalize to Title Case, then get unique values
+        const allFirstNames = database.pedidos
+            .map(p => p.vendedor)
+            .filter(Boolean) // Remove null/empty/undefined values
+            .map(vendedor => {
+                const firstName = vendedor.trim().split(' ')[0];
+                return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+            });
+
+        const vendedores = [...new Set(allFirstNames)];
         
         const firstOption = vendedorSelect.options[0];
         vendedorSelect.innerHTML = '';
         if (firstOption) vendedorSelect.appendChild(firstOption);
+        
         vendedores.sort().forEach(v => {
             vendedorSelect.innerHTML += `<option value="${v}">${v}</option>`;
         });
@@ -301,6 +320,8 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const renderClientes = () => {
+        const tbody = document.getElementById('tabela-clientes')?.querySelector('tbody');
+        if (!tbody) return;
         const searchTerm = document.getElementById('search-clientes').value.toLowerCase();
         let filteredData = database.clientes.filter(c => 
             (c.nome || '').toLowerCase().includes(searchTerm) || 
@@ -317,7 +338,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         if (direction === 'desc') filteredData.reverse();
 
-        const tbody = document.getElementById('tabela-clientes').querySelector('tbody');
         tbody.innerHTML = '';
         filteredData.forEach(c => {
             const row = tbody.insertRow();
@@ -417,16 +437,23 @@ document.addEventListener('DOMContentLoaded', () => {
         openModal('history-modal', `Histórico de ${cliente.nome}`, tableHTML);
     };
 
-    document.getElementById('search-clientes').addEventListener('input', renderClientes);
+    document.getElementById('search-clientes')?.addEventListener('input', renderClientes);
 
     const renderPedidos = () => {
+        const tbody = document.getElementById('tabela-pedidos')?.querySelector('tbody');
+        if (!tbody) return;
+
         const searchTerm = document.getElementById('search-pedidos').value.toLowerCase();
-        const vendedorFilter = document.getElementById('filter-vendedor').value;
+        const vendedorFilterInput = document.getElementById('filter-vendedor').value;
         const statusFilter = document.getElementById('filter-status').value;
 
         let filteredData = database.pedidos.filter(p => {
             const searchMatch = (p.cliente || '').toLowerCase().includes(searchTerm);
-            const vendedorMatch = !vendedorFilter || p.vendedor === vendedorFilter;
+            
+            const vendedorFirstName = (p.vendedor || '').trim().split(' ')[0];
+            const normalizedVendedor = vendedorFirstName.charAt(0).toUpperCase() + vendedorFirstName.slice(1).toLowerCase();
+            const vendedorMatch = !vendedorFilterInput || normalizedVendedor === vendedorFilterInput;
+            
             const statusMatch = !statusFilter || p.status === statusFilter;
             return searchMatch && vendedorMatch && statusMatch;
         });
@@ -441,7 +468,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         if (direction === 'desc') filteredData.reverse();
 
-        const tbody = document.getElementById('tabela-pedidos').querySelector('tbody');
         tbody.innerHTML = '';
         filteredData.forEach(p => {
             const row = tbody.insertRow();
@@ -492,7 +518,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    document.getElementById('btn-add-item-pedido').addEventListener('click', () => {
+    document.getElementById('btn-add-item-pedido')?.addEventListener('click', () => {
         const pizzaSelect = document.getElementById('item-pizza');
         const pizzaId = pizzaSelect.value;
         const qtd = parseInt(document.getElementById('item-qtd').value);
@@ -525,6 +551,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const renderPedidoCarrinho = () => {
         const container = document.getElementById('pedido-itens-carrinho');
+        if (!container) return;
         container.innerHTML = '';
         if (pedidoAtualItems.length === 0) {
             container.innerHTML = '<p style="text-align:center;color:#777">Nenhuma pizza adicionada.</p>';
@@ -547,7 +574,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('valor-final-pedido').value = total.toFixed(2);
     };
 
-    document.getElementById('btn-registrar-pedido').addEventListener('click', async () => {
+    document.getElementById('btn-registrar-pedido')?.addEventListener('click', async () => {
         await registrarNovoPedido();
     });
 
@@ -601,22 +628,32 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         
-        // === Verificação de quotas semanais de massas ===
+        // === Verificação de quotas semanais de massas (CORRIGIDO) ===
         const semanaInicio = getWeekStart(dataEntrega);
         const quotas = database.massas_semanais.find(m => m.semana_inicio === semanaInicio) || { g_semana: 0, p_semana: 0, pc_semana: 0 };
         const used = computeWeeklyUsage(semanaInicio);
-        // projetar uso com o novo pedido
-        const proj = { ...used };
+        
+        const newOrderDoughs = { G: 0, P: 0, PC: 0 };
         newPedidoData.items.forEach(item => {
             if (item.isCustom) return;
             const pizza = database.estoque.find(e => e.id === item.pizzaId);
-            const d = mapPizzaToDough(pizza);
-            if (d) proj[d] = (proj[d] || 0) + Number(item.qtd || 0);
+            const doughType = mapPizzaToDough(pizza);
+            if (doughType) {
+                newOrderDoughs[doughType] += Number(item.qtd || 0);
+            }
         });
+
         const exceeds = [];
-        if (proj.G > (quotas.g_semana || 0)) exceeds.push(`G: ${proj.G}/${quotas.g_semana || 0}`);
-        if (proj.P > (quotas.p_semana || 0)) exceeds.push(`P: ${proj.P}/${quotas.p_semana || 0}`);
-        if (proj.PC > (quotas.pc_semana || 0)) exceeds.push(`P de Chocolate: ${proj.PC}/${quotas.pc_semana || 0}`);
+        if (used.G + newOrderDoughs.G > (quotas.g_semana || 0)) {
+            exceeds.push(`G: ${used.G + newOrderDoughs.G}/${quotas.g_semana || 0}`);
+        }
+        if (used.P + newOrderDoughs.P > (quotas.p_semana || 0)) {
+            exceeds.push(`P: ${used.P + newOrderDoughs.P}/${quotas.p_semana || 0}`);
+        }
+        if (used.PC + newOrderDoughs.PC > (quotas.pc_semana || 0)) {
+            exceeds.push(`P de Chocolate: ${used.PC + newOrderDoughs.PC}/${quotas.pc_semana || 0}`);
+        }
+
         if (exceeds.length > 0) {
             hideLoader();
             alert('Limite semanal de massas atingido para: ' + exceeds.join(' | ') + '. Ajuste as quantidades ou a semana.');
@@ -657,9 +694,15 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     
     const resetFormPedido = () => {
-        document.getElementById('form-pedido-principal').reset();
-        document.getElementById('pedido-edit-id').value = '';
-        document.getElementById('valor-final-pedido').value = '';
+        const form = document.getElementById('form-pedido-principal');
+        if (form) form.reset();
+        
+        const editId = document.getElementById('pedido-edit-id');
+        if (editId) editId.value = '';
+        
+        const valorFinal = document.getElementById('valor-final-pedido');
+        if (valorFinal) valorFinal.value = '';
+
         pedidoAtualItems = [];
         renderPedidoCarrinho();
         updateTotalPedido();
@@ -707,7 +750,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const renderWeeklyMassasPanel = () => {
         const container = document.getElementById('calendario-container');
         if (!container) return;
-        // Build a simple UI with a week selector and three numeric inputs
+        
         const weekOptionsId = 'semana-massas-select';
         container.innerHTML = `
             <div class="weekly-massas">
@@ -733,18 +776,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div id="quota-usage" class="small-muted"></div>
             </div>
         `;
-        // Populate week selector
+        
         const sel = document.getElementById(weekOptionsId);
         populateWeekSelector(sel);
+        
         sel.addEventListener('change', () => {
             loadQuotasIntoForm(sel.value);
             renderQuotaUsage(sel.value);
         });
-        // Default to current week
+        
         const thisWeek = getWeekStart();
         sel.value = thisWeek;
         loadQuotasIntoForm(thisWeek);
         renderQuotaUsage(thisWeek);
+        
         document.getElementById('btn-salvar-quotas').addEventListener('click', async () => {
             const semana_inicio = sel.value;
             const g_semana = parseInt(document.getElementById('quota-g').value) || 0;
@@ -763,23 +808,24 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     };
+    
     const loadQuotasIntoForm = (weekStart) => {
         const q = database.massas_semanais.find(m => m.semana_inicio === weekStart);
         document.getElementById('quota-g').value = q ? (q.g_semana || 0) : 0;
         document.getElementById('quota-p').value = q ? (q.p_semana || 0) : 0;
         document.getElementById('quota-pc').value = q ? (q.pc_semana || 0) : 0;
     };
+    
     const mapPizzaToDough = (pizza) => {
         if (!pizza) return null;
         if (pizza.tamanho === 'G') return 'G';
         if (pizza.tamanho === 'P') {
-            const nome = (pizza.nome || '').toLowerCase();
-            // Heurística: doces -> P de chocolate
             if (/(choc|brigade|doce|nutella|prest[ií]gio|mm|morango|banana)/i.test(pizza.nome)) return 'PC';
             return 'P';
         }
         return null;
     };
+    
     const computeWeeklyUsage = (weekStart) => {
         const totals = { G: 0, P: 0, PC: 0 };
         database.pedidos.forEach(p => {
@@ -795,10 +841,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         return totals;
     };
+    
     const renderQuotaUsage = (weekStart) => {
+        const el = document.getElementById('quota-usage');
+        if (!el) return;
         const q = database.massas_semanais.find(m => m.semana_inicio === weekStart) || { g_semana: 0, p_semana: 0, pc_semana: 0 };
         const used = computeWeeklyUsage(weekStart);
-        const el = document.getElementById('quota-usage');
         const remaining = {
             G: (q.g_semana || 0) - used.G,
             P: (q.p_semana || 0) - used.P,
@@ -812,81 +860,9 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
     };
 
-
-// Calendário original desativado em favor do painel semanal
-const renderCalendar = (year, month) => {
-        const container = document.getElementById('calendario-container');
-        const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
-        const firstDay = new Date(year, month, 1);
-        const lastDay = new Date(year, month + 1, 0);
-
-        let html = `
-            <div class="calendar-header">
-                <button id="prev-month">&lt;</button>
-                <h3>${monthNames[month]} ${year}</h3>
-                <button id="next-month">&gt;</button>
-            </div>
-            <div class="calendar-grid">
-                <div class="calendar-day-name">D</div><div class="calendar-day-name">S</div><div class="calendar-day-name">T</div><div class="calendar-day-name">Q</div><div class="calendar-day-name">Q</div><div class="calendar-day-name">S</div><div class="calendar-day-name">S</div>
-        `;
-
-        for (let i = 0; i < firstDay.getDay(); i++) {
-            html += `<div class="calendar-day other-month"></div>`;
-        }
-
-        for (let i = 1; i <= lastDay.getDate(); i++) {
-            const currentDate = new Date(year, month, i);
-            const dateString = formatDateToYYYYMMDD(currentDate);
-            const massaInfo = database.massas.find(m => m.dia === dateString);
-            const doughCount = massaInfo ? massaInfo.quantidade : 0;
-            let countClass = doughCount > 0 ? 'positive' : 'zero';
-
-            html += `
-                <div class="calendar-day" data-date="${dateString}">
-                    <div class="day-number">${i}</div>
-                    <div class="dough-count ${countClass}">${doughCount}</div>
-                </div>
-            `;
-        }
-        html += `</div>`;
-        container.innerHTML = html;
-        addCalendarEventListeners();
-    };
-
-    const addCalendarEventListeners = () => {
-        document.getElementById('prev-month').addEventListener('click', () => {
-            currentDateForCalendar.setMonth(currentDateForCalendar.getMonth() - 1);
-            renderWeeklyMassasPanel();
-        renderConsultaRapidaSobras();
-        });
-        document.getElementById('next-month').addEventListener('click', () => {
-            currentDateForCalendar.setMonth(currentDateForCalendar.getMonth() + 1);
-            renderWeeklyMassasPanel();
-        renderConsultaRapidaSobras();
-        });
-        document.querySelectorAll('.calendar-day:not(.other-month)').forEach(day => {
-            day.addEventListener('click', async (e) => {
-                const date = e.currentTarget.dataset.date;
-                const currentQty = database.massas.find(m => m.dia === date)?.quantidade || 0;
-                const newQty = prompt(`Quantidade de massas para ${new Date(date + 'T12:00:00').toLocaleDateString('pt-BR')}:\n(Atual: ${currentQty})`, currentQty);
-
-                if (newQty !== null && !isNaN(newQty) && newQty >= 0) {
-                    showLoader();
-                    const { error } = await supabaseClient.from('massas').upsert({ dia: date, quantidade: parseInt(newQty) }, { onConflict: 'dia' });
-                    hideLoader();
-                    if (error) {
-                        showSaveStatus(`Erro ao salvar massas: ${error.message}`, false);
-                    } else {
-                        showSaveStatus('Quantidade de massas atualizada!');
-                        await loadDataFromSupabase();
-                    }
-                }
-            });
-        });
-    };
-    
     const renderProductionDemand = () => {
-        const tbody = document.getElementById('tabela-demanda-producao').querySelector('tbody');
+        const tbody = document.getElementById('tabela-demanda-producao')?.querySelector('tbody');
+        if (!tbody) return;
         const sizeFilter = document.getElementById('filter-demanda-tamanho').value;
         const demandMap = new Map();
 
@@ -938,7 +914,7 @@ const renderCalendar = (year, month) => {
         updateSortHeaders('tabela-demanda-producao', column, direction);
     };
 
-    document.getElementById('pedido-cliente').addEventListener('input', (e) => {
+    document.getElementById('pedido-cliente')?.addEventListener('input', (e) => {
         const nome = e.target.value;
         const cliente = database.clientes.find(c => c.nome.toLowerCase() === nome.toLowerCase());
         if(cliente) {
@@ -948,10 +924,11 @@ const renderCalendar = (year, month) => {
     });
 
     ['search-pedidos', 'filter-vendedor', 'filter-status'].forEach(id => {
-        document.getElementById(id).addEventListener('input', renderPedidos);
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', renderPedidos);
     });
     
-    document.getElementById('filter-demanda-tamanho').addEventListener('input', renderProductionDemand);
+    document.getElementById('filter-demanda-tamanho')?.addEventListener('input', renderProductionDemand);
 
     const handleSort = (tableKey, column) => {
         const state = sortState[tableKey];
@@ -988,7 +965,7 @@ const renderCalendar = (year, month) => {
     ['tabela-estoque', 'tabela-ingredientes', 'tabela-clientes', 'tabela-pedidos', 'tabela-demanda-producao'].forEach(id => {
         const table = document.getElementById(id);
         if(table) {
-            table.querySelector('thead').addEventListener('click', e => {
+            table.querySelector('thead')?.addEventListener('click', e => {
                 const header = e.target.closest('th');
                 if (header && header.dataset.sortBy) {
                     const tableKey = id.replace('tabela-', '').replace('-producao', '');
@@ -998,7 +975,12 @@ const renderCalendar = (year, month) => {
         }
     });
 
-    const renderIngredientes = () => {
+    // ... (O restante do código, como as funções de Ingredientes, Estoque, Receitas, Dashboard, etc., permanecem as mesmas)
+    // ... (Cole o código restante do seu script.js aqui, pois ele não precisa de alterações para estas correções)
+    
+     const renderIngredientes = () => {
+        const tbody = document.getElementById('tabela-ingredientes')?.querySelector('tbody');
+        if(!tbody) return;
         const searchTerm = document.getElementById('search-ingredientes').value.toLowerCase();
         let filteredData = database.ingredientes.filter(item => (item.nome || '').toLowerCase().includes(searchTerm));
 
@@ -1011,7 +993,6 @@ const renderCalendar = (year, month) => {
         });
         if (direction === 'desc') filteredData.reverse();
 
-        const tbody = document.getElementById('tabela-ingredientes').querySelector('tbody');
         tbody.innerHTML = '';
         filteredData.forEach(item => {
             const row = tbody.insertRow();
@@ -1021,7 +1002,7 @@ const renderCalendar = (year, month) => {
         updateSortHeaders('tabela-ingredientes', column, direction);
     };
 
-    document.getElementById('form-ingrediente').addEventListener('submit', async e => {
+    document.getElementById('form-ingrediente')?.addEventListener('submit', async e => {
         e.preventDefault();
         showLoader();
         const id = document.getElementById('ingrediente-id').value;
@@ -1100,9 +1081,11 @@ const renderCalendar = (year, month) => {
         }
     };
 
-    document.getElementById('search-ingredientes').addEventListener('input', renderIngredientes);
+    document.getElementById('search-ingredientes')?.addEventListener('input', renderIngredientes);
 
     const renderEstoque = () => {
+        const tbody = document.getElementById('tabela-estoque')?.querySelector('tbody');
+        if(!tbody) return;
         const searchTerm = document.getElementById('search-estoque').value.toLowerCase();
         let filteredData = database.estoque.filter(item => (item.nome || '').toLowerCase().includes(searchTerm));
         
@@ -1120,11 +1103,10 @@ const renderCalendar = (year, month) => {
             }
 
             if (typeof valA === 'number') return valA - valB;
-            return valA.localeCompare(valB);
+            return (valA || "").localeCompare(valB || "");
         });
         if (direction === 'desc') filteredData.reverse();
 
-        const tbody = document.getElementById('tabela-estoque').querySelector('tbody');
         tbody.innerHTML = '';
         filteredData.forEach(item => {
             const custo = calculatePizzaCost(item.id);
@@ -1136,7 +1118,7 @@ const renderCalendar = (year, month) => {
         updateSortHeaders('tabela-estoque', column, direction);
     };
 
-    document.getElementById('form-estoque').addEventListener('submit', async e => {
+    document.getElementById('form-estoque')?.addEventListener('submit', async e => {
         e.preventDefault();
         showLoader();
         const id = document.getElementById('estoque-id').value;
@@ -1220,10 +1202,11 @@ const renderCalendar = (year, month) => {
         }
     };
 
-    document.getElementById('search-estoque').addEventListener('input', renderEstoque);
+    document.getElementById('search-estoque')?.addEventListener('input', renderEstoque);
 
     const renderReceitaIngredientesList = () => {
         const container = document.getElementById('receita-ingredientes-list');
+        if(!container) return;
         container.innerHTML = '';
         if (receitaAtualIngredientes) {
             receitaAtualIngredientes.forEach((item, index) => {
@@ -1234,8 +1217,9 @@ const renderCalendar = (year, month) => {
     };
 
     const renderReceitas = () => {
+        const tbody = document.getElementById('tabela-receitas')?.querySelector('tbody');
+        if (!tbody) return;
         const searchTerm = document.getElementById('search-receitas').value.toLowerCase();
-        const tbody = document.getElementById('tabela-receitas').querySelector('tbody');
         tbody.innerHTML = '';
         const filteredData = database.receitas.filter(receita => {
             const pizza = database.estoque.find(p => p.id === receita.pizzaId);
@@ -1257,14 +1241,14 @@ const renderCalendar = (year, month) => {
         });
     };
 
-    document.getElementById('receita-pizza-select').addEventListener('change', e => {
+    document.getElementById('receita-pizza-select')?.addEventListener('change', e => {
         const pizzaId = e.target.value;
         const receitaExistente = database.receitas.find(r => r.pizzaId === pizzaId);
         receitaAtualIngredientes = receitaExistente ? [...(receitaExistente.ingredientes || [])] : [];
         renderReceitaIngredientesList();
     });
 
-    document.getElementById('btn-add-ingrediente-receita').addEventListener('click', () => {
+    document.getElementById('btn-add-ingrediente-receita')?.addEventListener('click', () => {
         const ingredienteId = document.getElementById('receita-ingrediente-select').value;
         const qtd = parseFloat(document.getElementById('receita-ingrediente-qtd').value);
         if (!ingredienteId || !qtd) {
@@ -1282,7 +1266,7 @@ const renderCalendar = (year, month) => {
         renderReceitaIngredientesList();
     };
 
-    document.getElementById('btn-salvar-receita').addEventListener('click', async () => {
+    document.getElementById('btn-salvar-receita')?.addEventListener('click', async () => {
         const pizzaId = document.getElementById('receita-pizza-select').value;
         if (!pizzaId) {
             alert('Selecione uma pizza para salvar a receita.');
@@ -1327,7 +1311,7 @@ const renderCalendar = (year, month) => {
             }
         }
     };
-    document.getElementById('search-receitas').addEventListener('input', renderReceitas);
+    document.getElementById('search-receitas')?.addEventListener('input', renderReceitas);
 
     const getFilteredPedidos = (filterRange = 'all') => {
         const now = new Date();
@@ -1359,50 +1343,49 @@ const renderCalendar = (year, month) => {
         renderVendasPorDiaChart(filteredPedidos);
     };
 
-    const renderBalancoChart=(t)=>{const e=t.reduce((t,e)=>t+Number(e.valorFinal),0),a=t.reduce((t,e)=>{const a=e.items.reduce((t,a)=>{if(a.isCustom)return t;const r=calculatePizzaCost(a.pizzaId);return t+r*a.qtd},0);return t+a},0),r=e-a,o=document.getElementById("balancoChart").getContext("2d");chartInstances.balanco=new Chart(o,{type:"bar",data:{labels:["Balanço Financeiro"],datasets:[{label:"Receita Total",data:[e],backgroundColor:"#2ecc71"},{label:"Custo Total",data:[a],backgroundColor:"#e74c3c"},{label:"Lucro Total",data:[r],backgroundColor:"#3498db"}]},options:{indexAxis:"y",responsive:!0,scales:{x:{ticks:{callback:t=>formatCurrency(t)}}}}})};
-    const renderPizzasMaisLucrativasChart=(t)=>{const e=t.flatMap(t=>t.items).reduce((t,e)=>{if(e.isCustom)return t;const a=calculatePizzaCost(e.pizzaId),r=(e.preco-a)*e.qtd;return t[e.pizzaNome]=(t[e.pizzaNome]||0)+r,t},{}),a=Object.keys(e).sort((t,a)=>e[a]-e[t]).slice(0,10),r=a.map(t=>e[t]),o=document.getElementById("pizzasMaisLucrativasChart").getContext("2d");chartInstances.lucro=new Chart(o,{type:"doughnut",data:{labels:a,datasets:[{data:r,backgroundColor:["#2ecc71","#3498db","#9b59b6","#f1c40f","#e67e22","#1abc9c"]}]},options:{responsive:!0,plugins:{legend:{position:"top"},tooltip:{callbacks:{label:t=>`${t.label}: ${formatCurrency(t.raw)}`}}}}})};
-    const renderVendasPorVendedorChart=(t)=>{const e=t.reduce((t,e)=>{if(e.vendedor)t[e.vendedor]=(t[e.vendedor]||0)+Number(e.valorFinal);return t},{}),a=Object.keys(e).sort((t,a)=>e[a]-e[t]),r=a.map(t=>e[t]),o=document.getElementById("vendasPorVendedorChart").getContext("2d");chartInstances.vendedor=new Chart(o,{type:"bar",data:{labels:a,datasets:[{label:"Total Vendido",data:r,backgroundColor:"#487eb0"}]},options:{responsive:!0,scales:{y:{ticks:{callback:t=>formatCurrency(t)}}}}})};
-    const renderPizzasMaisVendidasChart=(t)=>{const e=t.flatMap(t=>t.items).reduce((t,e)=>{return e.isCustom?t:(t[e.pizzaNome]=(t[e.pizzaNome]||0)+e.qtd,t)},{}),a=Object.keys(e).sort((t,a)=>e[a]-e[t]).slice(0,10),r=a.map(t=>e[t]),o=document.getElementById("pizzasMaisVendidasChart").getContext("2d");chartInstances.vendas=new Chart(o,{type:"pie",data:{labels:a,datasets:[{data:r,backgroundColor:["#e74c3c","#3498db","#f1c40f","#2ecc71","#9b59b6","#1abc9c"]}]},options:{responsive:!0,plugins:{legend:{position:"top"}}}})};
+    const renderBalancoChart=(t)=>{const e=t.reduce((t,e)=>t+Number(e.valorFinal),0),a=t.reduce((t,e)=>{const a=e.items.reduce((t,a)=>{if(a.isCustom)return t;const r=calculatePizzaCost(a.pizzaId);return t+r*a.qtd},0);return t+a},0),r=e-a;if(!document.getElementById("balancoChart"))return;const o=document.getElementById("balancoChart").getContext("2d");if(chartInstances.balanco)chartInstances.balanco.destroy();chartInstances.balanco=new Chart(o,{type:"bar",data:{labels:["Balanço Financeiro"],datasets:[{label:"Receita Total",data:[e],backgroundColor:"#2ecc71"},{label:"Custo Total",data:[a],backgroundColor:"#e74c3c"},{label:"Lucro Total",data:[r],backgroundColor:"#3498db"}]},options:{indexAxis:"y",responsive:!0,scales:{x:{ticks:{callback:t=>formatCurrency(t)}}}}})};
+    const renderPizzasMaisLucrativasChart=(t)=>{const e=t.flatMap(t=>t.items).reduce((t,e)=>{if(e.isCustom)return t;const a=calculatePizzaCost(e.pizzaId),r=(e.preco-a)*e.qtd;return t[e.pizzaNome]=(t[e.pizzaNome]||0)+r,t},{}),a=Object.keys(e).sort((t,a)=>e[a]-e[t]).slice(0,10),r=a.map(t=>e[t]);if(!document.getElementById("pizzasMaisLucrativasChart"))return;const o=document.getElementById("pizzasMaisLucrativasChart").getContext("2d");if(chartInstances.lucro)chartInstances.lucro.destroy();chartInstances.lucro=new Chart(o,{type:"doughnut",data:{labels:a,datasets:[{data:r,backgroundColor:["#2ecc71","#3498db","#9b59b6","#f1c40f","#e67e22","#1abc9c"]}]},options:{responsive:!0,plugins:{legend:{position:"top"},tooltip:{callbacks:{label:t=>`${t.label}: ${formatCurrency(t.raw)}`}}}}})};
+    const renderVendasPorVendedorChart=(t)=>{const e=t.reduce((t,e)=>{if(e.vendedor)t[e.vendedor]=(t[e.vendedor]||0)+Number(e.valorFinal);return t},{}),a=Object.keys(e).sort((t,a)=>e[a]-e[t]),r=a.map(t=>e[t]);if(!document.getElementById("vendasPorVendedorChart"))return;const o=document.getElementById("vendasPorVendedorChart").getContext("2d");if(chartInstances.vendedor)chartInstances.vendedor.destroy();chartInstances.vendedor=new Chart(o,{type:"bar",data:{labels:a,datasets:[{label:"Total Vendido",data:r,backgroundColor:"#487eb0"}]},options:{responsive:!0,scales:{y:{ticks:{callback:t=>formatCurrency(t)}}}}})};
+    const renderPizzasMaisVendidasChart=(t)=>{const e=t.flatMap(t=>t.items).reduce((t,e)=>{return e.isCustom?t:(t[e.pizzaNome]=(t[e.pizzaNome]||0)+e.qtd,t)},{}),a=Object.keys(e).sort((t,a)=>e[a]-e[t]).slice(0,10),r=a.map(t=>e[t]);if(!document.getElementById("pizzasMaisVendidasChart"))return;const o=document.getElementById("pizzasMaisVendidasChart").getContext("2d");if(chartInstances.vendas)chartInstances.vendas.destroy();chartInstances.vendas=new Chart(o,{type:"pie",data:{labels:a,datasets:[{data:r,backgroundColor:["#e74c3c","#3498db","#f1c40f","#2ecc71","#9b59b6","#1abc9c"]}]},options:{responsive:!0,plugins:{legend:{position:"top"}}}})};
     
-    let pedidosSemanaChartInstance = null;
     const renderPedidosSemanaChart = (pedidos) => {
-        // Série semanal (últimas 8 semanas) pela semana de entrega
+        const canvas = document.getElementById('pedidosSemanaChart');
+        if(!canvas) return;
         const weeksMap = {};
-        const addWeek = (dateStr) => {
-            const ws = getWeekStart(dateStr);
-            weeksMap[ws] = weeksMap[ws] || 0;
-        };
-        // Pré-preencher últimas 8 semanas para suavizar labels
         const todayWs = getWeekStart();
         const base = new Date(todayWs + 'T00:00:00');
         for (let i = 7; i >= 0; i--) {
             const d = new Date(base);
             d.setDate(d.getDate() - i*7);
-            const iso = d.toISOString().slice(0,10);
-            addWeek(iso);
+            const ws = getWeekStart(d.toISOString().slice(0,10));
+            weeksMap[ws] = 0;
         }
         pedidos.forEach(p => {
             if (!p.dataEntrega) return;
             const ws = getWeekStart(p.dataEntrega);
-            const qty = (p.items || []).reduce((acc,it)=> acc + Number(it.qtd||0), 0);
-            weeksMap[ws] = (weeksMap[ws] || 0) + qty;
+            if (weeksMap.hasOwnProperty(ws)) {
+                const qty = (p.items || []).reduce((acc,it)=> acc + Number(it.qtd||0), 0);
+                weeksMap[ws] += qty;
+            }
         });
         const labels = Object.keys(weeksMap).sort().map(ws => {
             const d = new Date(ws + 'T00:00:00');
-            const end = new Date(d); end.setDate(d.getDate()+6);
-            return d.toLocaleDateString('pt-BR', { day:'2-digit', month:'short' }) + '–' + end.toLocaleDateString('pt-BR', { day:'2-digit' });
+            return d.toLocaleDateString('pt-BR', { day:'2-digit', month:'short' });
         });
-        const data = Object.keys(weeksMap).sort().map(ws => weeksMap[ws] || 0);
-        const ctx = document.getElementById('pedidosSemanaChart').getContext('2d');
-        if (pedidosSemanaChartInstance) pedidosSemanaChartInstance.destroy();
-        pedidosSemanaChartInstance = new Chart(ctx, {
+        const data = Object.values(weeksMap);
+        const ctx = canvas.getContext('2d');
+        if (chartInstances.semana) chartInstances.semana.destroy();
+        chartInstances.semana = new Chart(ctx, {
             type: 'line',
-            data: { labels, datasets: [{ label: 'Pedidos por semana (qtd de pizzas)', data, tension: 0.3, fill: false }] },
+            data: { labels, datasets: [{ label: 'Qtd de pizzas vendidas (semana)', data, tension: 0.3, fill: false, backgroundColor: '#1e272e', borderColor: '#e84118' }] },
             options: { responsive: true, plugins: { legend: { display: true } } }
         });
     };
 
     const renderVendasPorDiaChart = (pedidos) => {
+        const canvasElement = document.getElementById("vendasPorDiaChart");
+        if (!canvasElement) return;
+        const ctx = canvasElement.getContext("2d");
         const vendasPorDia = pedidos.reduce((acc, pedido) => {
             if (!pedido.dataEntrega) return acc;
             const dia = new Date(pedido.dataEntrega + 'T00:00:00').toLocaleDateString('pt-BR');
@@ -1413,7 +1396,6 @@ const renderCalendar = (year, month) => {
         const labels = Object.keys(vendasPorDia).sort((a, b) => new Date(a.split('/').reverse().join('-')) - new Date(b.split('/').reverse().join('-')));
         const data = labels.map(label => vendasPorDia[label]);
         
-        const ctx = document.getElementById("vendasPorDiaChart").getContext("2d");
         if (chartInstances.dia) chartInstances.dia.destroy();
         chartInstances.dia = new Chart(ctx, {
             type: "line",
@@ -1459,19 +1441,19 @@ const renderCalendar = (year, month) => {
         XLSX.writeFile(workbook, `${filename}_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.xlsx`);
     };
 
-    document.getElementById('export-ingredientes').addEventListener('click', () => exportToExcel(database.ingredientes, 'sasses_ingredientes'));
-    document.getElementById('export-estoque').addEventListener('click', () => {
+    document.getElementById('export-ingredientes')?.addEventListener('click', () => exportToExcel(database.ingredientes, 'sasses_ingredientes'));
+    document.getElementById('export-estoque')?.addEventListener('click', () => {
         const data = database.estoque.map(p => ({ "Pizza": p.nome, "Tamanho": p.tamanho, "Quantidade": p.qtd, "Preco de Venda": p.precoVenda, "Custo de Produção": calculatePizzaCost(p.id), "Lucro por Unidade": p.precoVenda - calculatePizzaCost(p.id) }));
         exportToExcel(data, 'sasses_estoque_financeiro');
     });
-    document.getElementById('export-receitas').addEventListener('click', () => {
+    document.getElementById('export-receitas')?.addEventListener('click', () => {
         const data = database.receitas.map(r => {
             const pizza = database.estoque.find(p => p.id === r.pizzaId);
             return { "Pizza": pizza ? `${pizza.nome} (${pizza.tamanho || ''})` : 'Pizza Removida', "Ingredientes": r.ingredientes.map(i => { const ingrediente = database.ingredientes.find(ing => ing.id === i.ingredienteId); return `${i.qtd} de ${ingrediente ? ingrediente.nome : 'N/A'}`; }).join('; '), "Custo Total da Receita": calculatePizzaCost(r.pizzaId) };
         });
         exportToExcel(data, 'sasses_receitas');
     });
-    document.getElementById('export-pedidos').addEventListener('click', () => {
+    document.getElementById('export-pedidos')?.addEventListener('click', () => {
         const flatData = [];
         database.pedidos.forEach(p => {
             if (p.items && p.items.length > 0) {
@@ -1483,7 +1465,7 @@ const renderCalendar = (year, month) => {
         exportToExcel(flatData, 'sasses_pedidos_detalhado');
     });
     
-    document.getElementById('btn-lista-compras').addEventListener('click', () => {
+    document.getElementById('btn-lista-compras')?.addEventListener('click', () => {
         const itemsBaixos = database.ingredientes.filter(i => i.qtd < i.estoqueMinimo);
         let contentHTML = '<p>Ótima notícia! Nenhum ingrediente está com estoque baixo.</p>';
         
@@ -1498,9 +1480,19 @@ const renderCalendar = (year, month) => {
         openModal('modal-lista-compras', 'Lista de Compras Sugerida', contentHTML);
     });
     
-    document.getElementById('btn-print-lista').addEventListener('click', () => window.print());
+    document.getElementById('btn-print-lista')?.addEventListener('click', () => {
+        const modalContent = document.getElementById('modal-lista-compras').innerHTML;
+        const printWindow = window.open('', '', 'height=600,width=800');
+        printWindow.document.write('<html><head><title>Lista de Compras</title>');
+        printWindow.document.write('<link rel="stylesheet" href="style.css">');
+        printWindow.document.write('</head><body>');
+        printWindow.document.write(modalContent);
+        printWindow.document.write('</body></html>');
+        printWindow.document.close();
+        printWindow.print();
+    });
     
-    document.getElementById('form-producao').addEventListener('submit', async (e) => {
+    document.getElementById('form-producao')?.addEventListener('submit', async (e) => {
         e.preventDefault();
         const pizzaId = document.getElementById('producao-pizza-select').value;
         const quantidade = parseInt(document.getElementById('producao-qtd').value);
@@ -1555,7 +1547,7 @@ const renderCalendar = (year, month) => {
         e.target.reset();
     });
 
-    document.getElementById('export-demanda').addEventListener('click', () => {
+    document.getElementById('export-demanda')?.addEventListener('click', () => {
         const demand = {};
         database.pedidos
             .filter(p => p.status === 'Pendente')
@@ -1697,22 +1689,42 @@ const renderCalendar = (year, month) => {
         };
 
         
-        // === Verificação de quotas semanais de massas ===
+        // === Verificação de quotas semanais de massas (CORRIGIDO) ===
         const semanaInicio = getWeekStart(originalPedido.dataEntrega);
         const quotas = database.massas_semanais.find(m => m.semana_inicio === semanaInicio) || { g_semana: 0, p_semana: 0, pc_semana: 0 };
         const used = computeWeeklyUsage(semanaInicio);
-        // projetar uso com o novo pedido
-        const proj = { ...used };
+
+        // Subtrai o uso do pedido original para recalcular
+        originalPedido.items.forEach(item => {
+            if (item.isCustom) return;
+            const pizza = database.estoque.find(e => e.id === item.pizzaId);
+            const doughType = mapPizzaToDough(pizza);
+            if (doughType) {
+                used[doughType] -= Number(item.qtd || 0);
+            }
+        });
+        
+        const newOrderDoughs = { G: 0, P: 0, PC: 0 };
         updatedPedidoData.items.forEach(item => {
             if (item.isCustom) return;
             const pizza = database.estoque.find(e => e.id === item.pizzaId);
-            const d = mapPizzaToDough(pizza);
-            if (d) proj[d] = (proj[d] || 0) + Number(item.qtd || 0);
+            const doughType = mapPizzaToDough(pizza);
+            if (doughType) {
+                newOrderDoughs[doughType] += Number(item.qtd || 0);
+            }
         });
+
         const exceeds = [];
-        if (proj.G > (quotas.g_semana || 0)) exceeds.push(`G: ${proj.G}/${quotas.g_semana || 0}`);
-        if (proj.P > (quotas.p_semana || 0)) exceeds.push(`P: ${proj.P}/${quotas.p_semana || 0}`);
-        if (proj.PC > (quotas.pc_semana || 0)) exceeds.push(`P de Chocolate: ${proj.PC}/${quotas.pc_semana || 0}`);
+        if (used.G + newOrderDoughs.G > (quotas.g_semana || 0)) {
+            exceeds.push(`G: ${used.G + newOrderDoughs.G}/${quotas.g_semana || 0}`);
+        }
+        if (used.P + newOrderDoughs.P > (quotas.p_semana || 0)) {
+            exceeds.push(`P: ${used.P + newOrderDoughs.P}/${quotas.p_semana || 0}`);
+        }
+        if (used.PC + newOrderDoughs.PC > (quotas.pc_semana || 0)) {
+            exceeds.push(`P de Chocolate: ${used.PC + newOrderDoughs.PC}/${quotas.pc_semana || 0}`);
+        }
+        
         if (exceeds.length > 0) {
             hideLoader();
             alert('Limite semanal de massas atingido para: ' + exceeds.join(' | ') + '. Ajuste as quantidades ou a semana.');
@@ -1772,16 +1784,12 @@ const renderCalendar = (year, month) => {
         }
     };
     
-    loadDataFromSupabase();
-
-
     // ===== Consulta Rápida — Sobras =====
     const renderConsultaRapidaSobras = () => {
         const selectSemana = document.getElementById('sobras-semana-select');
         const onlyPendentes = document.getElementById('sobras-considerar-pendentes');
         if (!selectSemana) return;
 
-        // Popular semanas (mesma função do seletor de semanas existente)
         populateWeekSelector(selectSemana);
         if (!selectSemana.value) selectSemana.value = getWeekStart();
 
@@ -1791,8 +1799,6 @@ const renderCalendar = (year, month) => {
 
             // ----- Massa (G, P, PC) -----
             const quotas = database.massas_semanais.find(m => m.semana_inicio === weekStart) || { g_semana: 0, p_semana: 0, pc_semana: 0 };
-            const usedAll = computeWeeklyUsage(weekStart); // usa todos os pedidos
-            // Se marcar apenas pendentes, recalcular uso só com pendentes
             const used = { G:0, P:0, PC:0 };
             database.pedidos.forEach(p => {
                 if (!p.dataEntrega) return;
@@ -1849,4 +1855,5 @@ const renderCalendar = (year, month) => {
         refresh();
     };
 
+    loadDataFromSupabase();
 });
