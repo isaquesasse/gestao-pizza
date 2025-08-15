@@ -6,6 +6,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const LOADER = document.getElementById('loader');
     const SAVE_STATUS = document.getElementById('save-status');
 
+    // Adicione esta verificação no início do seu script
+if (sessionStorage.getItem('isAdminLoggedIn') === 'true') {
+    document.body.classList.add('admin-mode');
+    document.getElementById('btn-admin-view').textContent = 'Sair da Visão ADM';
+}
+
     let database = {
         ingredientes: [],
         receitas: [],
@@ -276,29 +282,53 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    const toggleAdminView = () => {
-        const body = document.body;
-        const btn = document.getElementById('btn-admin-view');
-        
-        if (body.classList.contains('admin-mode')) {
-            body.classList.remove('admin-mode');
-            btn.textContent = 'Visão ADM';
-            const activeTabIsAdminOnly = document.querySelector('.tab-link.active.admin-only');
-            if (activeTabIsAdminOnly) {
-                document.querySelector('.tab-link[data-tab="pedidos"]').click();
-            }
-        } else {
-            const password = prompt('Digite a senha de administrador:');
-            if (password === 'sasse') {
-                body.classList.add('admin-mode');
-                btn.textContent = 'Sair da Visão ADM';
-            } else if (password) {
-                alert('Senha incorreta!');
-            }
-        }
-    };
-    document.getElementById('btn-admin-view').addEventListener('click', toggleAdminView);
+    // Funções para o novo Modal de Autenticação
+const openAuthModal = () => {
+    document.getElementById('auth-error').style.display = 'none';
+    document.getElementById('admin-password').value = '';
+    document.getElementById('auth-modal').style.display = 'block';
+    document.getElementById('admin-password').focus();
+};
 
+const closeAuthModal = () => {
+    document.getElementById('auth-modal').style.display = 'none';
+};
+
+const toggleAdminView = () => {
+    const body = document.body;
+    const btn = document.getElementById('btn-admin-view');
+
+    if (body.classList.contains('admin-mode')) {
+        // Logout
+        sessionStorage.removeItem('isAdminLoggedIn');
+        body.classList.remove('admin-mode');
+        btn.textContent = 'Visão ADM';
+        const activeTabIsAdminOnly = document.querySelector('.tab-link.active.admin-only');
+        if (activeTabIsAdminOnly) {
+            document.querySelector('.tab-link[data-tab="pedidos"]').click();
+        }
+    } else {
+        // Abre o modal para login
+        openAuthModal();
+    }
+};
+    // Handler para o formulário de autenticação
+document.getElementById('auth-form')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const password = document.getElementById('admin-password').value;
+    const errorEl = document.getElementById('auth-error');
+
+    if (password === 'sasse') {
+        sessionStorage.setItem('isAdminLoggedIn', 'true');
+        document.body.classList.add('admin-mode');
+        document.getElementById('btn-admin-view').textContent = 'Sair da Visão ADM';
+        errorEl.style.display = 'none';
+        closeAuthModal();
+    } else {
+        errorEl.textContent = 'Senha incorreta. Tente novamente.';
+        errorEl.style.display = 'block';
+    }
+});
     window.openModal = (modalId, title, contentHTML, callback) => {
         const modal = document.getElementById(modalId);
         const modalTitle = document.getElementById(`${modalId}-title`);
