@@ -1704,7 +1704,7 @@ document.getElementById('auth-form')?.addEventListener('submit', (e) => {
         const formData = new FormData(form);
         const valorFinalInput = form.querySelector('#valor-final-edit-pedido').value;
         const valorCalculado = pedidoEditItems.reduce((acc, item) => acc + (item.preco * item.qtd), 0);
-        const valorFinal = parseFloat(valorFinalInput) || valorCalculado;
+        const valorFinal = parseFloat(valorFinalInput.replace(',', '.')) || valorCalculado;
 
         const updatedPedidoData = {
             cliente: formData.get('cliente'),
