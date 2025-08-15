@@ -6,11 +6,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const LOADER = document.getElementById('loader');
     const SAVE_STATUS = document.getElementById('save-status');
 
-    // Adicione esta verificação no início do seu script
-if (localStorage.getItem('isAdminLoggedIn') === 'true') {
-    document.body.classList.add('admin-mode');
-    document.getElementById('btn-admin-view').textContent = 'Sair da Visão ADM';
-}
+    // Verifica o login de admin ao carregar a página
+    if (localStorage.getItem('isAdminLoggedIn') === 'true') {
+        document.body.classList.add('admin-mode');
+        document.getElementById('btn-admin-view').textContent = 'Sair da Visão ADM';
+    }
 
     let database = {
         ingredientes: [],
@@ -65,9 +65,7 @@ if (localStorage.getItem('isAdminLoggedIn') === 'true') {
     };
 
     const getWeekStart = (dateStr) => {
-        // dateStr format 'YYYY-MM-DD' (Monday) or any date string
         let d = dateStr ? new Date(dateStr + 'T00:00:00') : new Date();
-        // Move to Monday
         const day = d.getDay(); // 0=Sun,1=Mon
         const diff = (day === 0 ? -6 : 1) - day;
         d.setDate(d.getDate() + diff);
@@ -158,7 +156,6 @@ if (localStorage.getItem('isAdminLoggedIn') === 'true') {
         renderEstoque();
         renderReceitas();
         
-        // Definir filtro padrão para 'Pendente'
         const statusSelect = document.getElementById('filter-status');
         if (statusSelect && !statusSelect.value) {
             statusSelect.value = 'Pendente';
@@ -218,13 +215,11 @@ if (localStorage.getItem('isAdminLoggedIn') === 'true') {
         weekSelect.innerHTML = '';
         if (firstOption) weekSelect.appendChild(firstOption);
 
-        let today = new Date();
-        // Reset to today before the loop
         for (let i = 0; i < 12; i++) {
              let weekDate = new Date();
              weekDate.setDate(weekDate.getDate() + (i * 7));
              
-            let startOfWeek = new Date(weekDate.setDate(weekDate.getDate() - weekDate.getDay() + 1));
+            let startOfWeek = new Date(weekDate.setDate(weekDate.getDate() - weekDate.getDay() + (weekDate.getDay() === 0 ? -6 : 1) ));
             let endOfWeek = new Date(startOfWeek);
             endOfWeek.setDate(endOfWeek.getDate() + 6);
 
@@ -249,10 +244,9 @@ if (localStorage.getItem('isAdminLoggedIn') === 'true') {
         const vendedorSelect = document.getElementById('filter-vendedor');
         if (!vendedorSelect) return;
 
-        // Map to first names, normalize to Title Case, then get unique values
         const allFirstNames = database.pedidos
             .map(p => p.vendedor)
-            .filter(Boolean) // Remove null/empty/undefined values
+            .filter(Boolean) 
             .map(vendedor => {
                 const firstName = vendedor.trim().split(' ')[0];
                 return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
@@ -282,54 +276,57 @@ if (localStorage.getItem('isAdminLoggedIn') === 'true') {
         });
     });
 
-    // Funções para o novo Modal de Autenticação
-const openAuthModal = () => {
-    document.getElementById('auth-error').style.display = 'none';
-    document.getElementById('admin-password').value = '';
-    document.getElementById('auth-modal').style.display = 'block';
-    document.getElementById('admin-password').focus();
-};
+    // --- Lógica do Modal de ADM ---
+    const openAuthModal = () => {
+        document.getElementById('auth-error').style.display = 'none';
+        document.getElementById('admin-password').value = '';
+        document.getElementById('auth-modal').style.display = 'block';
+        document.getElementById('admin-password').focus();
+    };
 
-const closeAuthModal = () => {
-    document.getElementById('auth-modal').style.display = 'none';
-};
+    const closeAuthModal = () => {
+        document.getElementById('auth-modal').style.display = 'none';
+    };
 
-const toggleAdminView = () => {
-    const body = document.body;
-    const btn = document.getElementById('btn-admin-view');
-
-    if (body.classList.contains('admin-mode')) {
-        // Logout
-        localStorage.removeItem('isAdminLoggedIn');
-        body.classList.remove('admin-mode');
-        btn.textContent = 'Visão ADM';
-        const activeTabIsAdminOnly = document.querySelector('.tab-link.active.admin-only');
-        if (activeTabIsAdminOnly) {
-            document.querySelector('.tab-link[data-tab="pedidos"]').click();
+    const toggleAdminView = () => {
+        const body = document.body;
+        const btn = document.getElementById('btn-admin-view');
+    
+        if (body.classList.contains('admin-mode')) {
+            // Logout
+            localStorage.removeItem('isAdminLoggedIn');
+            body.classList.remove('admin-mode');
+            btn.textContent = 'Visão ADM';
+            const activeTabIsAdminOnly = document.querySelector('.tab-link.active.admin-only');
+            if (activeTabIsAdminOnly) {
+                document.querySelector('.tab-link[data-tab="pedidos"]').click();
+            }
+        } else {
+            // Abre o modal para login
+            openAuthModal();
         }
-    } else {
-        // Abre o modal para login
-        openAuthModal();
-    }
-};
+    };
+    // ADICIONADO: Conecta o botão 'Visão ADM' à sua função
     document.getElementById('btn-admin-view').addEventListener('click', toggleAdminView);
-    // Handler para o formulário de autenticação
-document.getElementById('auth-form')?.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const password = document.getElementById('admin-password').value;
-    const errorEl = document.getElementById('auth-error');
 
-    if (password === 'sasse') {
-        localStorage.setItem('isAdminLoggedIn', 'true');
-        document.body.classList.add('admin-mode');
-        document.getElementById('btn-admin-view').textContent = 'Sair da Visão ADM';
-        errorEl.style.display = 'none';
-        closeAuthModal();
-    } else {
-        errorEl.textContent = 'Senha incorreta. Tente novamente.';
-        errorEl.style.display = 'block';
-    }
-});
+    // Handler para o formulário de autenticação
+    document.getElementById('auth-form')?.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const password = document.getElementById('admin-password').value;
+        const errorEl = document.getElementById('auth-error');
+    
+        if (password === 'sasse') {
+            localStorage.setItem('isAdminLoggedIn', 'true');
+            document.body.classList.add('admin-mode');
+            document.getElementById('btn-admin-view').textContent = 'Sair da Visão ADM';
+            errorEl.style.display = 'none';
+            closeAuthModal();
+        } else {
+            errorEl.textContent = 'Senha incorreta. Tente novamente.';
+            errorEl.style.display = 'block';
+        }
+    });
+
     window.openModal = (modalId, title, contentHTML, callback) => {
         const modal = document.getElementById(modalId);
         const modalTitle = document.getElementById(`${modalId}-title`);
@@ -345,9 +342,12 @@ document.getElementById('auth-form')?.addEventListener('submit', (e) => {
     };
 
     window.closeModal = (modalId) => {
-        document.getElementById(modalId).style.display = 'none';
-        const contentContainer = document.getElementById(`${modalId}-content`);
-        if (contentContainer) contentContainer.innerHTML = '';
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.style.display = 'none';
+            const contentContainer = document.getElementById(`${modalId}-content`);
+            if (contentContainer) contentContainer.innerHTML = '';
+        }
     };
 
     const renderClientes = () => {
@@ -659,7 +659,6 @@ document.getElementById('auth-form')?.addEventListener('submit', (e) => {
         };
 
         
-        // === Verificação de quotas semanais de massas (CORRIGIDO) ===
         const semanaInicio = getWeekStart(dataEntrega);
         const quotas = database.massas_semanais.find(m => m.semana_inicio === semanaInicio) || { g_semana: 0, p_semana: 0, pc_semana: 0 };
         const used = computeWeeklyUsage(semanaInicio);
@@ -1005,11 +1004,8 @@ document.getElementById('auth-form')?.addEventListener('submit', (e) => {
             });
         }
     });
-
-    // ... (O restante do código, como as funções de Ingredientes, Estoque, Receitas, Dashboard, etc., permanecem as mesmas)
-    // ... (Cole o código restante do seu script.js aqui, pois ele não precisa de alterações para estas correções)
     
-     const renderIngredientes = () => {
+    const renderIngredientes = () => {
         const tbody = document.getElementById('tabela-ingredientes')?.querySelector('tbody');
         if(!tbody) return;
         const searchTerm = document.getElementById('search-ingredientes').value.toLowerCase();
@@ -1720,12 +1716,10 @@ document.getElementById('auth-form')?.addEventListener('submit', (e) => {
         };
 
         
-        // === Verificação de quotas semanais de massas (CORRIGIDO) ===
         const semanaInicio = getWeekStart(originalPedido.dataEntrega);
         const quotas = database.massas_semanais.find(m => m.semana_inicio === semanaInicio) || { g_semana: 0, p_semana: 0, pc_semana: 0 };
         const used = computeWeeklyUsage(semanaInicio);
 
-        // Subtrai o uso do pedido original para recalcular
         originalPedido.items.forEach(item => {
             if (item.isCustom) return;
             const pizza = database.estoque.find(e => e.id === item.pizzaId);
@@ -1828,7 +1822,6 @@ document.getElementById('auth-form')?.addEventListener('submit', (e) => {
             const weekStart = selectSemana.value || getWeekStart();
             const statusFilter = onlyPendentes && onlyPendentes.checked ? ['Pendente'] : null;
 
-            // ----- Massa (G, P, PC) -----
             const quotas = database.massas_semanais.find(m => m.semana_inicio === weekStart) || { g_semana: 0, p_semana: 0, pc_semana: 0 };
             const used = { G:0, P:0, PC:0 };
             database.pedidos.forEach(p => {
@@ -1857,7 +1850,6 @@ document.getElementById('auth-form')?.addEventListener('submit', (e) => {
                 });
             }
 
-            // ----- Pizza (estoque vs pedidos da semana) -----
             const demandByPizza = {};
             database.pedidos.forEach(p => {
                 if (!p.dataEntrega) return;
