@@ -7,7 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const SAVE_STATUS = document.getElementById('save-status');
 
     // Adicione esta verificação no início do seu script
-if (sessionStorage.getItem('isAdminLoggedIn') === 'true') {
+if (localStorage.getItem('isAdminLoggedIn') === 'true') {
     document.body.classList.add('admin-mode');
     document.getElementById('btn-admin-view').textContent = 'Sair da Visão ADM';
 }
@@ -300,7 +300,7 @@ const toggleAdminView = () => {
 
     if (body.classList.contains('admin-mode')) {
         // Logout
-        sessionStorage.removeItem('isAdminLoggedIn');
+        localStorage.removeItem('isAdminLoggedIn');
         body.classList.remove('admin-mode');
         btn.textContent = 'Visão ADM';
         const activeTabIsAdminOnly = document.querySelector('.tab-link.active.admin-only');
@@ -319,7 +319,7 @@ document.getElementById('auth-form')?.addEventListener('submit', (e) => {
     const errorEl = document.getElementById('auth-error');
 
     if (password === 'sasse') {
-        sessionStorage.setItem('isAdminLoggedIn', 'true');
+        localStorage.setItem('isAdminLoggedIn', 'true');
         document.body.classList.add('admin-mode');
         document.getElementById('btn-admin-view').textContent = 'Sair da Visão ADM';
         errorEl.style.display = 'none';
