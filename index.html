@@ -433,6 +433,20 @@
 
     <div id="save-status"></div>
 
+    <div id="auth-modal" class="modal">
+    <div class="modal-content" style="max-width: 400px;">
+        <h2 id="auth-modal-title">Acesso Administrador</h2>
+        <p style="margin-bottom: 1rem; color: var(--text-light-color);">Digite a senha para habilitar a visão de administrador.</p>
+        <form id="auth-form">
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <input type="password" id="admin-password" placeholder="Senha" required>
+            </div>
+            <p id="auth-error" style="color: var(--danger-color); font-size: 0.9rem; margin-bottom: 1rem; display: none;"></p>
+            <button type="submit">Entrar</button>
+        </form>
+    </div>
+</div>
+
     <footer>
         <p>&copy; 2025 Sasse's Pizza</p>
     </footer>
