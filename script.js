@@ -611,7 +611,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const valorCalculado = pedidoAtualItems.reduce((acc, item) => acc + (item.preco * item.qtd), 0);
         const valorFinalInput = document.getElementById('valor-final-pedido').value;
-        const valorFinal = parseFloat(valorFinalInput) || valorCalculado;
+        const valorFinal = parseFloat(valorFinalInput.replace(',', '.')) || valorCalculado;
 
         const newPedidoData = {
             cliente: clienteNome,
