@@ -847,6 +847,14 @@ button:active, .action-btn:active {
   box-shadow: var(--shadow);
 }
 
+#auth-modal .form-group {
+    display: flex;
+    flex-direction: column;
+}
+#auth-form button {
+    width: 100%;
+}
+
 
 /* Painel de Massas Semanais */
 .weekly-massas .form-row { display:flex; align-items:center; gap: 0.75rem; margin: 0.4rem 0; }
