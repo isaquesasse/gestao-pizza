@@ -1537,12 +1537,6 @@ document.addEventListener('DOMContentLoaded', () => {
         showLoader();
         const { data: receita } = await supabaseClient.from('receitas').select('ingredientes').eq('pizzaId', pizzaId).single();
 
-        if (!receita || !receita.ingredientes) {
-            hideLoader();
-            showSaveStatus('Receita não encontrada para esta pizza.', false);
-            return;
-        }
-
         const ingredientUpdates = [];
         for (const itemReceita of receita.ingredientes) {
             const ingredienteDB = database.ingredientes.find(i => i.id === itemReceita.ingredienteId);
