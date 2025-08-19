@@ -1787,6 +1787,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     
     // ===== Consulta Rápida — Sobras (Lógica de Projeção Atualizada) =====
+    // ===== Consulta Rápida — Sobras (Lógica de Projeção Atualizada) =====
     const renderConsultaRapidaSobras = () => {
         const selectSemana = document.getElementById('sobras-semana-select');
         // O checkbox 'sobras-considerar-pendentes' foi removido, pois a lógica agora é fixa.
