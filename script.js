@@ -1526,56 +1526,46 @@ document.addEventListener('DOMContentLoaded', () => {
         const pizzaId = document.getElementById('producao-pizza-select').value;
         const quantidade = parseInt(document.getElementById('producao-qtd').value);
 
-        if(!pizzaId || !quantidade || !quantidade > 0) {
+        if (!pizzaId || !quantidade || quantidade <= 0) {
             alert('Por favor, selecione uma pizza e informe uma quantidade válida.');
             return;
         }
-        
-        const pizza = database.estoque.find(p=>p.id === pizzaId);
-        if(!confirm(`Confirma a produção de ${quantidade}x ${pizza.nome}? Isso dará baixa nos ingredientes.`)) {
+
+        const pizza = database.estoque.find(p => p.id === pizzaId);
+        if (!confirm(`Confirma a produção de ${quantidade}x ${pizza.nome}? \n(Esta ação apenas adicionará ao estoque, sem baixa de ingredientes).`)) {
             return;
         }
 
         showLoader();
-        const { data: receita } = await supabaseClient.from('receitas').select('ingredientes').eq('pizzaId', pizzaId).single();
 
-        // ===== CORREÇÃO DO ERRO =====
-        // Verifica se a receita foi encontrada antes de tentar usá-la
-        if (!receita || !receita.ingredientes) {
-            hideLoader();
-            showSaveStatus(`Não foi encontrada uma receita para a pizza "${pizza.nome}". Cadastre a receita primeiro.`, false);
-            return;
-        }
-
-        const ingredientUpdates = [];
-        for (const itemReceita of receita.ingredientes) {
-            const ingredienteDB = database.ingredientes.find(i => i.id === itemReceita.ingredienteId);
-            const qtdNecessaria = itemReceita.qtd * quantidade;
-            if (!ingredienteDB || ingredienteDB.qtd < qtdNecessaria) {
-                hideLoader();
-                showSaveStatus(`Estoque insuficiente para: ${ingredienteDB ? ingredienteDB.nome : 'desconhecido'}.`, false);
-                return;
-            }
-            ingredientUpdates.push({ id: ingredienteDB.id, newQty: ingredienteDB.qtd - qtdNecessaria });
-        }
-        
         try {
-            await Promise.all(ingredientUpdates.map(upd => 
-                supabaseClient.from('ingredientes').update({ qtd: upd.newQty }).eq('id', upd.id)
-            ));
-            
+            // Pega a quantidade atual da pizza em estoque
             const pizzaEstoque = database.estoque.find(p => p.id === pizzaId);
-            await supabaseClient.from('estoque').update({ qtd: pizzaEstoque.qtd + quantidade }).eq('id', pizzaId);
+            if (!pizzaEstoque) {
+                throw new Error("Pizza não encontrada no banco de dados de estoque.");
+            }
+            
+            const novaQuantidade = pizzaEstoque.qtd + quantidade;
 
-            showSaveStatus('Produção registrada e estoques atualizados!');
+            // Atualiza a quantidade diretamente na tabela 'estoque'
+            const { error } = await supabaseClient
+                .from('estoque')
+                .update({ qtd: novaQuantidade })
+                .eq('id', pizzaId);
+
+            if (error) {
+                throw error;
+            }
+
+            showSaveStatus('Produção registrada e estoque atualizado!');
             await loadDataFromSupabase();
+            e.target.reset();
+
         } catch (error) {
             showSaveStatus(`Erro ao registrar produção: ${error.message}`, false);
         } finally {
             hideLoader();
         }
-        
-        e.target.reset();
     });
 
     document.getElementById('export-demanda')?.addEventListener('click', () => {
