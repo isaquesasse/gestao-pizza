@@ -1786,10 +1786,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     
-    // ===== Consulta Rápida — Sobras =====
+    // ===== Consulta Rápida — Sobras (Lógica de Projeção Atualizada) =====
     const renderConsultaRapidaSobras = () => {
         const selectSemana = document.getElementById('sobras-semana-select');
-        const onlyPendentes = document.getElementById('sobras-considerar-pendentes');
+        // O checkbox 'sobras-considerar-pendentes' foi removido, pois a lógica agora é fixa.
         if (!selectSemana) return;
 
         populateWeekSelector(selectSemana);
@@ -1797,14 +1797,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const refresh = () => {
             const weekStart = selectSemana.value || getWeekStart();
-            const statusFilter = onlyPendentes && onlyPendentes.checked ? ['Pendente'] : null;
 
+            // --- Lógica de Massas ---
+            // Mostra o total de massas COMPROMETIDAS (todos os status) vs. a cota da semana.
             const quotas = database.massas_semanais.find(m => m.semana_inicio === weekStart) || { g_semana: 0, p_semana: 0, pc_semana: 0 };
             const used = { G:0, P:0, PC:0 };
             database.pedidos.forEach(p => {
-                if (!p.dataEntrega) return;
-                if (getWeekStart(p.dataEntrega) !== weekStart) return;
-                if (statusFilter && !statusFilter.includes(p.status)) return;
+                if (!p.dataEntrega || getWeekStart(p.dataEntrega) !== weekStart) return;
                 (p.items || []).forEach(item => {
                     if (item.isCustom) return;
                     const pizza = database.estoque.find(e => e.id === item.pizzaId);
@@ -1822,33 +1821,54 @@ document.addEventListener('DOMContentLoaded', () => {
                 ];
                 rows.forEach(r => {
                     const tr = document.createElement('tr');
-                    tr.innerHTML = `<td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td>`;
+                    tr.innerHTML = `<td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td><b>${r[3]}</b></td>`;
                     tbodyM.appendChild(tr);
                 });
             }
 
+            // --- Lógica de Pizzas (Projeção) ---
+            // Calcula a demanda futura somando apenas pedidos PENDENTES e PRONTOS.
             const demandByPizza = {};
             database.pedidos.forEach(p => {
-                if (!p.dataEntrega) return;
-                if (getWeekStart(p.dataEntrega) !== weekStart) return;
-                if (statusFilter && !statusFilter.includes(p.status)) return;
+                if (!p.dataEntrega || getWeekStart(p.dataEntrega) !== weekStart) return;
+                
+                // ALTERAÇÃO PRINCIPAL: Ignora pedidos já concluídos para projetar as sobras corretamente.
+                if (p.status === 'Concluído') return;
+
                 (p.items || []).forEach(item => {
                     if (item.isCustom) return;
                     demandByPizza[item.pizzaId] = (demandByPizza[item.pizzaId] || 0) + Number(item.qtd || 0);
                 });
             });
+
             const tbodyP = document.querySelector('#tabela-sobras-pizzas tbody');
             if (tbodyP) {
                 tbodyP.innerHTML = '';
-                database.estoque.forEach(e => {
+                // Ordena por sobra projetada, mostrando os itens mais críticos primeiro
+                const sortedEstoque = [...database.estoque].sort((a, b) => {
+                    const sobraA = (a.qtd || 0) - (demandByPizza[a.id] || 0);
+                    const sobraB = (b.qtd || 0) - (demandByPizza[b.id] || 0);
+                    return sobraA - sobraB;
+                });
+
+                sortedEstoque.forEach(e => {
                     const pedidosSemana = demandByPizza[e.id] || 0;
                     const sobraProj = (e.qtd || 0) - pedidosSemana;
                     const tr = document.createElement('tr');
-                    tr.innerHTML = `<td>${e.nome}</td><td>${e.tamanho}</td><td>${e.qtd ?? 0}</td><td>${pedidosSemana}</td><td>${sobraProj}</td>`;
+                    // Adiciona uma classe de estilo se a projeção for negativa
+                    if (sobraProj < 0) {
+                        tr.classList.add('low-stock');
+                    }
+                    tr.innerHTML = `<td>${e.nome} (${e.tamanho})</td><td>${e.qtd ?? 0}</td><td>${pedidosSemana}</td><td><b>${sobraProj}</b></td>`;
                     tbodyP.appendChild(tr);
                 });
             }
         };
+
+        selectSemana.addEventListener('change', refresh);
+        // O event listener do checkbox foi removido.
+        refresh();
+    };
 
         selectSemana.addEventListener('change', refresh);
         if (onlyPendentes) onlyPendentes.addEventListener('change', refresh);
