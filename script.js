@@ -538,14 +538,54 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.updatePedidoStatus = async (id, newStatus) => {
         if (!confirm(`Tem certeza que deseja alterar o status para "${newStatus}"?`)) return;
+        
         showLoader();
-        const { error } = await supabaseClient.from('pedidos').update({ status: newStatus }).eq('id', id);
-        hideLoader();
-        if (error) {
-            showSaveStatus(`Erro ao atualizar status: ${error.message}`, false);
-        } else {
-            showSaveStatus('Status do pedido atualizado!');
+
+        const pedido = database.pedidos.find(p => p.id === id);
+        if (!pedido) {
+            showSaveStatus("Erro: Pedido não encontrado.", false);
+            hideLoader();
+            return;
+        }
+
+        try {
+            // Se o novo status for "Concluído", faz a baixa do estoque
+            if (newStatus === 'Concluído' && pedido.status !== 'Concluído') {
+                const stockUpdatePromises = [];
+                for (const item of pedido.items) {
+                    if (!item.isCustom) {
+                        const pizzaEmEstoque = database.estoque.find(p => p.id === item.pizzaId);
+                        if (pizzaEmEstoque) {
+                            const novaQtd = pizzaEmEstoque.qtd - item.qtd;
+                            stockUpdatePromises.push(
+                                supabaseClient.from('estoque').update({ qtd: novaQtd }).eq('id', item.pizzaId)
+                            );
+                        }
+                    }
+                }
+                
+                // Executa todas as atualizações de estoque
+                const results = await Promise.all(stockUpdatePromises);
+                const stockErrors = results.map(r => r.error).filter(Boolean);
+                if (stockErrors.length > 0) {
+                    throw new Error("Falha ao dar baixa no estoque: " + stockErrors.map(e => e.message).join('\n'));
+                }
+                 showSaveStatus('Estoque atualizado!');
+            }
+
+            // Após a baixa (se aplicável), atualiza o status do pedido
+            const { error: statusError } = await supabaseClient.from('pedidos').update({ status: newStatus }).eq('id', id);
+            if (statusError) {
+                throw statusError; // Se falhar aqui, o catch irá pegar
+            }
+
+            showSaveStatus('Status do pedido atualizado com sucesso!');
             await loadDataFromSupabase();
+
+        } catch (error) {
+            showSaveStatus(`Erro ao atualizar pedido: ${error.message}`, false);
+        } finally {
+            hideLoader();
         }
     };
 
@@ -658,8 +698,7 @@ document.addEventListener('DOMContentLoaded', () => {
             valorFinal: valorFinal
         };
 
-        /*
-        // ===== REMOVIDO: Bloco de verificação de cotas de massa ao criar pedido =====
+        // ===== ADICIONADO DE VOLTA: Bloco de verificação de cotas de massa =====
         const semanaInicio = getWeekStart(dataEntrega);
         const quotas = database.massas_semanais.find(m => m.semana_inicio === semanaInicio) || { g_semana: 0, p_semana: 0, pc_semana: 0 };
         const used = computeWeeklyUsage(semanaInicio);
@@ -690,8 +729,10 @@ document.addEventListener('DOMContentLoaded', () => {
             alert('Limite semanal de massas atingido para: ' + exceeds.join(' | ') + '. Ajuste as quantidades ou a semana.');
             return;
         }
-        */
-
+        // ===== FIM DO BLOCO DE VERIFICAÇÃO =====
+        
+        // ===== REMOVIDO: Baixa de estoque foi movida para a função updatePedidoStatus =====
+        /*
         const stockUpdates = [];
         for (const item of newPedidoData.items) {
             if (!item.isCustom) {
@@ -699,6 +740,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 stockUpdates.push({ id: item.pizzaId, newQty: pizzaEstoque.qtd - item.qtd });
             }
         }
+        */
         
         const { data: pedidoSalvo, error: insertError } = await supabaseClient.from('pedidos').insert(newPedidoData).select().single();
 
@@ -708,21 +750,10 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        try {
-            await Promise.all(stockUpdates.map(upd => 
-                supabaseClient.from('estoque').update({ qtd: upd.newQty }).eq('id', upd.id)
-            ));
-            
-            showSaveStatus('Pedido registrado com sucesso!');
-            resetFormPedido();
-            await loadDataFromSupabase();
-
-        } catch (stockError) {
-            showSaveStatus(`Pedido salvo, mas erro ao dar baixa no estoque: ${stockError.message}. Reconcilie manualmente.`, false);
-            await supabaseClient.from('pedidos').update({ status: 'ERRO_ESTOQUE' }).eq('id', pedidoSalvo.id);
-        } finally {
-            hideLoader();
-        }
+        showSaveStatus('Pedido registrado com sucesso!');
+        resetFormPedido();
+        await loadDataFromSupabase();
+        hideLoader();
     };
     
     const resetFormPedido = () => {
@@ -744,30 +775,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const pedido = database.pedidos.find(p => p.id === id);
         if (!pedido) return;
 
-        if (confirm(`Tem certeza que deseja remover o pedido de ${pedido.cliente}? \nATENÇÃO: Esta ação irá retornar os itens ao estoque.`)) {
+        if (confirm(`Tem certeza que deseja remover o pedido de ${pedido.cliente}?`)) {
             showLoader();
             
-            const stockUpdates = [];
-            if (pedido.status !== 'Concluído') {
-                for (const item of pedido.items) {
-                    if (!item.isCustom) {
-                        const pizzaEstoque = database.estoque.find(p => p.id === item.pizzaId);
-                        if (pizzaEstoque) {
-                            stockUpdates.push({ id: item.pizzaId, newQty: pizzaEstoque.qtd + item.qtd });
-                        }
-                    }
-                }
-            }
+            // ===== REMOVIDO: A lógica de devolver ao estoque não é mais necessária =====
             
             try {
                 const { error: deleteError } = await supabaseClient.from('pedidos').delete().eq('id', id);
                 if (deleteError) throw deleteError;
 
-                await Promise.all(stockUpdates.map(upd => 
-                    supabaseClient.from('estoque').update({ qtd: upd.newQty }).eq('id', upd.id)
-                ));
-
-                showSaveStatus('Pedido removido e estoque atualizado.');
+                showSaveStatus('Pedido removido.');
                 await loadDataFromSupabase();
 
             } catch (error) {
@@ -1688,7 +1705,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const handleUpdatePedido = async (originalPedido) => {
-        if (!confirm('Tem certeza que deseja salvar as alterações? O estoque será reconciliado.')) return;
+        if (!confirm('Tem certeza que deseja salvar as alterações?')) return;
         showLoader();
 
         const form = document.getElementById('edit-pedido-form');
@@ -1709,8 +1726,7 @@ document.addEventListener('DOMContentLoaded', () => {
             valorFinal: valorFinal,
         };
 
-        /*
-        // ===== REMOVIDO: Bloco de verificação de cotas de massa ao editar pedido =====
+        // ===== ADICIONADO DE VOLTA: Bloco de verificação de cotas de massa =====
         const semanaInicio = getWeekStart(originalPedido.dataEntrega);
         const quotas = database.massas_semanais.find(m => m.semana_inicio === semanaInicio) || { g_semana: 0, p_semana: 0, pc_semana: 0 };
         const used = computeWeeklyUsage(semanaInicio);
@@ -1747,51 +1763,16 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (exceeds.length > 0) {
             hideLoader();
-            alert('Limite semanal de massas atingido para: ' + exceeds.join(' | ') + '. Ajuste as quantidades ou a semana.');
+            alert('Limite semanal de massas atingido para: ' + exceeds.join(' | ') + '. Ajuste as quantidades.');
             return;
         }
-        */
+        // ===== FIM DO BLOCO DE VERIFICAÇÃO =====
 
-        const stockUpdates = [];
-
-        for (const item of originalPedido.items) {
-            if (!item.isCustom) {
-                const pizzaEstoque = database.estoque.find(p => p.id === item.pizzaId);
-                if(pizzaEstoque) {
-                    stockUpdates.push({ id: item.pizzaId, change: item.qtd });
-                }
-            }
-        }
-
-        for (const item of updatedPedidoData.items) {
-            if (!item.isCustom) {
-                 const pizzaEstoque = database.estoque.find(p => p.id === item.pizzaId);
-                if(pizzaEstoque) {
-                    stockUpdates.push({ id: item.pizzaId, change: -item.qtd });
-                }
-            }
-        }
-        
-        const finalStockUpdates = new Map();
-        for(const update of stockUpdates) {
-            const existing = finalStockUpdates.get(update.id) || 0;
-            finalStockUpdates.set(update.id, existing + update.change);
-        }
+        // ===== REMOVIDO: A reconciliação de estoque não é mais necessária aqui =====
 
         try {
             const { error: updateError } = await supabaseClient.from('pedidos').update(updatedPedidoData).eq('id', originalPedido.id);
             if (updateError) throw updateError;
-            
-            const stockUpdatePromises = [];
-            finalStockUpdates.forEach((change, id) => {
-                 const pizzaEstoque = database.estoque.find(p => p.id === id);
-                 if(pizzaEstoque) {
-                    stockUpdatePromises.push(
-                        supabaseClient.from('estoque').update({ qtd: pizzaEstoque.qtd + change }).eq('id', id)
-                    );
-                 }
-            });
-            await Promise.all(stockUpdatePromises);
             
             showSaveStatus('Pedido atualizado com sucesso!');
             closeModal('edit-modal');
