@@ -658,7 +658,8 @@ document.addEventListener('DOMContentLoaded', () => {
             valorFinal: valorFinal
         };
 
-        
+        /*
+        // ===== REMOVIDO: Bloco de verificação de cotas de massa ao criar pedido =====
         const semanaInicio = getWeekStart(dataEntrega);
         const quotas = database.massas_semanais.find(m => m.semana_inicio === semanaInicio) || { g_semana: 0, p_semana: 0, pc_semana: 0 };
         const used = computeWeeklyUsage(semanaInicio);
@@ -689,6 +690,7 @@ document.addEventListener('DOMContentLoaded', () => {
             alert('Limite semanal de massas atingido para: ' + exceeds.join(' | ') + '. Ajuste as quantidades ou a semana.');
             return;
         }
+        */
 
         const stockUpdates = [];
         for (const item of newPedidoData.items) {
@@ -1537,6 +1539,14 @@ document.addEventListener('DOMContentLoaded', () => {
         showLoader();
         const { data: receita } = await supabaseClient.from('receitas').select('ingredientes').eq('pizzaId', pizzaId).single();
 
+        // ===== CORREÇÃO DO ERRO =====
+        // Verifica se a receita foi encontrada antes de tentar usá-la
+        if (!receita || !receita.ingredientes) {
+            hideLoader();
+            showSaveStatus(`Não foi encontrada uma receita para a pizza "${pizza.nome}". Cadastre a receita primeiro.`, false);
+            return;
+        }
+
         const ingredientUpdates = [];
         for (const itemReceita of receita.ingredientes) {
             const ingredienteDB = database.ingredientes.find(i => i.id === itemReceita.ingredienteId);
@@ -1709,7 +1719,8 @@ document.addEventListener('DOMContentLoaded', () => {
             valorFinal: valorFinal,
         };
 
-        
+        /*
+        // ===== REMOVIDO: Bloco de verificação de cotas de massa ao editar pedido =====
         const semanaInicio = getWeekStart(originalPedido.dataEntrega);
         const quotas = database.massas_semanais.find(m => m.semana_inicio === semanaInicio) || { g_semana: 0, p_semana: 0, pc_semana: 0 };
         const used = computeWeeklyUsage(semanaInicio);
@@ -1749,6 +1760,7 @@ document.addEventListener('DOMContentLoaded', () => {
             alert('Limite semanal de massas atingido para: ' + exceeds.join(' | ') + '. Ajuste as quantidades ou a semana.');
             return;
         }
+        */
 
         const stockUpdates = [];
 
