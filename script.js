@@ -665,7 +665,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       // Se o novo status for "Concluído", faz a baixa do estoque
-      if (newStatus === "Concluído" && pedido.status !== "Concluído") {
+      if (newStatus === "Pronto" && pedido.status !== "Pronto") {
         const stockUpdatePromises = [];
         for (const item of pedido.items) {
           if (!item.isCustom) {
