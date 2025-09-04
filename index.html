@@ -127,48 +127,54 @@
             </div>
 
             <div class="card" id="consulta-rapida-sobras">
-                <h3>Consulta Rápida — Sobras</h3>
-                <div class="small-muted">Mostra o saldo semanal por <b>massa</b> e um resumo por <b>pizza</b>.</div>
-                <div class="form-row" style="margin-top: .5rem;">
-                    <label for="sobras-semana-select">Semana:</label>
-                    <select id="sobras-semana-select"></select>
-                    <label class="checkbox-inline" style="margin-left:1rem;">
-                        <input type="checkbox" id="sobras-considerar-pendentes" checked>
-                        Considerar apenas pedidos <b>Pendentes</b>
-                    </label>
-                </div>
-                <div class="grid-container" style="margin-top: .5rem;">
-                    <div class="grid-col">
-                        <h4>Sobra por Massa (Semana)</h4>
-                        <table id="tabela-sobras-massas" class="table">
-                            <thead>
-                                <tr>
-                                    <th>Tipo</th>
-                                    <th>Quota</th>
-                                    <th>Usado</th>
-                                    <th>Restante</th>
-                                </tr>
-                            </thead>
-                            <tbody></tbody>
-                        </table>
+                <div class="card" id="consulta-rapida-sobras">
+                    <h3>Consulta Rápida — Sobras</h3>
+                    <div class="small-muted">Mostra o saldo semanal por <b>massa</b> e um resumo por <b>pizza</b>.</div>
+                    <div class="form-row" style="margin-top: .5rem; justify-content: space-between;">
+                        <div style="display: contents;">
+                            <label for="sobras-semana-select">Semana:</label>
+                            <select id="sobras-semana-select"></select>
+                        </div>
+                        <div style="display: contents;">
+                            <input type="search" id="sobras-search-pizza" placeholder="Buscar sabor da pizza..."
+                                style="min-width: 220px;">
+                        </div>
                     </div>
-                    <div class="grid-col">
-                        <h4>Resumo por Pizza (Semana)</h4>
-                        <table id="tabela-sobras-pizzas" class="table">
-                            <thead>
-                                <tr>
-                                    <th>Pizza</th>
-                                    <th>Tam.</th>
-                                    <th>Em estoque</th>
-                                    <th>Pedidos (semana)</th>
-                                    <th>Sobra projetada*</th>
-                                </tr>
-                            </thead>
-                            <tbody></tbody>
-                        </table>
-                        <div class="small-muted">* Observação: no sistema atual o <b>estoque</b> é reduzido no momento
-                            em que o pedido é registrado.
-                            Portanto, a “Sobra projetada” já pode ter sido parcialmente considerada no estoque atual.
+                    <div class="grid-container" style="margin-top: .5rem;">
+                        <div class="grid-col">
+                            <h4>Sobra por Massa (Semana)</h4>
+                            <table id="tabela-sobras-massas" class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Tipo</th>
+                                        <th>Quota</th>
+                                        <th>Usado</th>
+                                        <th>Restante</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                        <div class="grid-col">
+                            <h4>Resumo por Pizza (Semana)</h4>
+                            <div class="table-container">
+                                <table id="tabela-sobras-pizzas" class="table">
+                                    <thead>
+                                        <tr>
+                                            <th data-sort-by="nome">Pizza</th>
+                                            <th data-sort-by="qtd">Em estoque</th>
+                                            <th data-sort-by="pedidosSemana">Pedidos (semana)</th>
+                                            <th data-sort-by="sobraProj">Sobra projetada*</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                            <div class="small-muted">* Observação: O <b>estoque</b> de pizzas é reduzido quando um
+                                pedido tem seu status alterado para <b>"Pronto"</b>.
+                                A “Sobra projetada” calcula o que restará do estoque atual após atender aos pedidos com
+                                status "Pendente" e "Pronto" na semana selecionada.
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -345,7 +351,11 @@
                 <div class="table-header">
                     <h3>Demanda de Produção (Pedidos Pendentes)</h3>
                     <div class="filters-container">
-                        <label for="filter-demanda-tamanho">Tamanho:</label>
+                        <label for="filter-demanda-semana">Semana:</label>
+                        <select id="filter-demanda-semana">
+                            <option value="">Selecione a Semana</option>
+                        </select>
+                        <label for="filter-demanda-tamanho" style="margin-left: 1rem;">Tamanho:</label>
                         <select id="filter-demanda-tamanho">
                             <option value="">Todos</option>
                             <option value="P">Pequena (P)</option>
@@ -430,16 +440,18 @@
             <button id="btn-print-lista" class="action-btn">Imprimir Lista</button>
         </div>
     </div>
-    
+
     <div id="auth-modal" class="modal">
         <div class="modal-content" style="max-width: 400px;">
             <h2 id="auth-modal-title">Acesso Administrador</h2>
-            <p style="margin-bottom: 1rem; color: var(--text-light-color);">Digite a senha para habilitar a visão de administrador.</p>
+            <p style="margin-bottom: 1rem; color: var(--text-light-color);">Digite a senha para habilitar a visão de
+                administrador.</p>
             <form id="auth-form">
                 <div class="form-group" style="margin-bottom: 1rem;">
                     <input type="password" id="admin-password" placeholder="Senha" required>
                 </div>
-                <p id="auth-error" style="color: var(--danger-color); font-size: 0.9rem; margin-bottom: 1rem; display: none;"></p>
+                <p id="auth-error"
+                    style="color: var(--danger-color); font-size: 0.9rem; margin-bottom: 1rem; display: none;"></p>
                 <button type="submit">Entrar</button>
             </form>
         </div>

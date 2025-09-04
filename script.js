@@ -29,6 +29,7 @@ document.addEventListener("DOMContentLoaded", () => {
     estoque: { column: "nome", direction: "asc" },
     ingredientes: { column: "nome", direction: "asc" },
     demanda: { column: "quantidade", direction: "desc" },
+    sobras: { column: "sobraProj", direction: "asc" },
   };
 
   let pedidoAtualItems = [];
@@ -173,6 +174,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const renderAll = () => {
     populateSelects();
     populateWeekSelector();
+    populateWeekSelector(document.getElementById("filter-demanda-semana"));
     renderIngredientes();
     renderEstoque();
     renderReceitas();
@@ -250,8 +252,8 @@ document.addEventListener("DOMContentLoaded", () => {
       let startOfWeek = new Date(
         weekDate.setDate(
           weekDate.getDate() -
-            weekDate.getDay() +
-            (weekDate.getDay() === 0 ? -6 : 1)
+          weekDate.getDay() +
+          (weekDate.getDay() === 0 ? -6 : 1)
         )
       );
       let endOfWeek = new Date(startOfWeek);
@@ -317,6 +319,8 @@ document.addEventListener("DOMContentLoaded", () => {
       link.classList.add("active");
       document.getElementById(tabId).classList.add("active");
       if (tabId === "graficos") {
+        renderProductionDemand();
+
         renderDashboard(
           document.querySelector(".date-filter.active")?.dataset.range || "all"
         );
@@ -324,7 +328,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // --- Lógica do Modal de ADM ---
   const openAuthModal = () => {
     document.getElementById("auth-error").style.display = "none";
     document.getElementById("admin-password").value = "";
@@ -435,12 +438,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 <td data-label="Telefone">${c.telefone || "N/A"}</td>
                 <td data-label="Cidade">${c.cidade || "N/A"}</td>
                 <td data-label="Ações">
-                    <button class="action-btn history-btn" onclick="openHistoryModal('${
-                      c.id
-                    }')">Histórico</button>
-                    <button class="action-btn edit-btn" onclick="openEditClientModal('${
-                      c.id
-                    }')">Editar</button>
+                    <button class="action-btn history-btn" onclick="openHistoryModal('${c.id
+        }')">Histórico</button>
+                    <button class="action-btn edit-btn" onclick="openEditClientModal('${c.id
+        }')">Editar</button>
                 </td>
             `;
     });
@@ -455,21 +456,18 @@ document.addEventListener("DOMContentLoaded", () => {
                 <input type="hidden" name="id" value="${cliente.id}">
                 <div class="form-group">
                     <label for="edit-cliente-nome">Nome</label>
-                    <input type="text" id="edit-cliente-nome" name="nome" value="${
-                      cliente.nome || ""
-                    }" required>
+                    <input type="text" id="edit-cliente-nome" name="nome" value="${cliente.nome || ""
+      }" required>
                 </div>
                 <div class="form-group">
                     <label for="edit-cliente-telefone">Telefone</label>
-                    <input type="text" id="edit-cliente-telefone" name="telefone" value="${
-                      cliente.telefone || ""
-                    }">
+                    <input type="text" id="edit-cliente-telefone" name="telefone" value="${cliente.telefone || ""
+      }">
                 </div>
                 <div class="form-group">
                     <label for="edit-cliente-cidade">Cidade</label>
-                    <input type="text" id="edit-cliente-cidade" name="cidade" value="${
-                      cliente.cidade || ""
-                    }" required>
+                    <input type="text" id="edit-cliente-cidade" name="cidade" value="${cliente.cidade || ""
+      }" required>
                 </div>
                 <button type="submit">Salvar Alterações</button>
             </form>
@@ -538,8 +536,8 @@ document.addEventListener("DOMContentLoaded", () => {
                         <td><ul>${itemsHtml}</ul></td>
                         <td>${formatCurrency(valorExibido)}</td>
                         <td><span class="status-${(
-                          p.status || "pendente"
-                        ).toLowerCase()}">${p.status}</span></td>
+            p.status || "pendente"
+          ).toLowerCase()}">${p.status}</span></td>
                     </tr>
                 `;
       });
@@ -595,8 +593,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const itemsHtml = p.items
         .map(
           (i) =>
-            `<li class="${i.isCustom ? "item-pedido-outro" : ""}">${i.qtd}x ${
-              i.pizzaNome
+            `<li class="${i.isCustom ? "item-pedido-outro" : ""}">${i.qtd}x ${i.pizzaNome
             }</li>`
         )
         .join("");
@@ -611,22 +608,19 @@ document.addEventListener("DOMContentLoaded", () => {
       const valorExibido = p.valorFinal || p.valorTotal;
 
       row.innerHTML = `
-                <td data-label="Cliente">${p.cliente}</b><br><small>${
-        p.telefone || "N/A"
-      }</small></td>
+                <td data-label="Cliente">${p.cliente}</b><br><small>${p.telefone || "N/A"
+        }</small></td>
                 <td data-label="Semana Entrega">${weekStartFormatted}</td>
                 <td data-label="Itens"><ul style="padding-left:15px;margin:0">${itemsHtml}</ul></td>
-                <td data-label="Detalhes"><small>Vend.: ${
-                  p.vendedor
-                }<br>Cid.: ${p.cidade}<br>Pag.: ${p.pagamento}</small></td>
+                <td data-label="Detalhes"><small>Vend.: ${p.vendedor
+        }<br>Cid.: ${p.cidade}<br>Pag.: ${p.pagamento}</small></td>
                 <td data-label="Valores"><b>${formatCurrency(
-                  valorExibido
-                )}</b><br><small class="admin-only">Calc: ${formatCurrency(
-        p.valorTotal
-      )}</small></td>
-                <td data-label="Status"><span class="status-${statusClass}">${
-        p.status
-      }</span></td>
+          valorExibido
+        )}</b><br><small class="admin-only">Calc: ${formatCurrency(
+          p.valorTotal
+        )}</small></td>
+                <td data-label="Status"><span class="status-${statusClass}">${p.status
+        }</span></td>
                 <td data-label="Ações">${renderActionButtons(p)}</td>
             `;
     });
@@ -690,7 +684,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (stockErrors.length > 0) {
           throw new Error(
             "Falha ao dar baixa no estoque: " +
-              stockErrors.map((e) => e.message).join("\n")
+            stockErrors.map((e) => e.message).join("\n")
           );
         }
         showSaveStatus("Estoque atualizado!");
@@ -770,11 +764,9 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     pedidoAtualItems.forEach((item, index) => {
-      container.innerHTML += `<div class="carrinho-item"><p><span>${
-        item.qtd
-      }x</span> ${item.pizzaNome} ${
-        item.isCustom ? '<b class="item-pedido-outro">(Outro)</b>' : ""
-      }</p><button type="button" class="btn-remove-item" onclick="window.removeItemPedido(${index})">X</button></div>`;
+      container.innerHTML += `<div class="carrinho-item"><p><span>${item.qtd
+        }x</span> ${item.pizzaNome} ${item.isCustom ? '<b class="item-pedido-outro">(Outro)</b>' : ""
+        }</p><button type="button" class="btn-remove-item" onclick="window.removeItemPedido(${index})">X</button></div>`;
     });
   };
 
@@ -894,8 +886,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (used.PC + newOrderDoughs.PC > (quotas.pc_semana || 0)) {
       exceeds.push(
-        `P de Chocolate: ${used.PC + newOrderDoughs.PC}/${
-          quotas.pc_semana || 0
+        `P de Chocolate: ${used.PC + newOrderDoughs.PC}/${quotas.pc_semana || 0
         }`
       );
     }
@@ -904,8 +895,8 @@ document.addEventListener("DOMContentLoaded", () => {
       hideLoader();
       alert(
         "Limite semanal de massas atingido para: " +
-          exceeds.join(" | ") +
-          ". Ajuste as quantidades ou a semana."
+        exceeds.join(" | ") +
+        ". Ajuste as quantidades ou a semana."
       );
       return;
     }
@@ -1071,7 +1062,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (pizza.tamanho === "G") return "G";
     if (pizza.tamanho === "P") {
       if (
-        /(choc|brigade|doce|nutella|prest[ií]gio|mm|morango|banana)/i.test(
+        /(chocolate|choc|brigade|doce|nutella|prest[ií]gio|mm|morango|banana|amores)/i.test(
           pizza.nome
         )
       )
@@ -1113,9 +1104,8 @@ document.addEventListener("DOMContentLoaded", () => {
             <b>Uso da Semana:</b><br>
             G: ${used.G}/${q.g_semana || 0} (restante ${remaining.G})<br>
             P: ${used.P}/${q.p_semana || 0} (restante ${remaining.P})<br>
-            P de Chocolate: ${used.PC}/${q.pc_semana || 0} (restante ${
-      remaining.PC
-    })
+            P de Chocolate: ${used.PC}/${q.pc_semana || 0} (restante ${remaining.PC
+      })
         `;
   };
 
@@ -1124,11 +1114,24 @@ document.addEventListener("DOMContentLoaded", () => {
       .getElementById("tabela-demanda-producao")
       ?.querySelector("tbody");
     if (!tbody) return;
+
     const sizeFilter = document.getElementById("filter-demanda-tamanho").value;
+    const weekFilterSelect = document.getElementById("filter-demanda-semana");
+    const selectedWeek = weekFilterSelect.value || getWeekStart();
+
+    if (!weekFilterSelect.value && weekFilterSelect.options.length > 1) {
+      weekFilterSelect.value = selectedWeek;
+    }
+
     const demandMap = new Map();
 
     database.pedidos
-      .filter((p) => p.status === "Pendente")
+      .filter((p) => {
+        return (
+          p.status === "Pendente" &&
+          getWeekStart(p.dataEntrega) === selectedWeek
+        );
+      })
       .forEach((p) => {
         p.items.forEach((item) => {
           if (!item.isCustom) {
@@ -1166,7 +1169,7 @@ document.addEventListener("DOMContentLoaded", () => {
     tbody.innerHTML = "";
     if (demandArray.length === 0) {
       tbody.innerHTML =
-        '<tr><td colspan="3" style="text-align: center;">Nenhuma demanda de produção no momento.</td></tr>';
+        '<tr><td colspan="3" style="text-align: center;">Nenhuma demanda de produção para a semana selecionada.</td></tr>';
       return;
     }
 
@@ -1203,6 +1206,10 @@ document.addEventListener("DOMContentLoaded", () => {
     .getElementById("filter-demanda-tamanho")
     ?.addEventListener("input", renderProductionDemand);
 
+  document
+    .getElementById("filter-demanda-semana")
+    ?.addEventListener("change", renderProductionDemand);
+
   const handleSort = (tableKey, column) => {
     const state = sortState[tableKey];
     if (state.column === column) {
@@ -1218,6 +1225,7 @@ document.addEventListener("DOMContentLoaded", () => {
       estoque: renderEstoque,
       ingredientes: renderIngredientes,
       demanda: renderProductionDemand,
+      sobras: renderConsultaRapidaSobras,
     }[tableKey];
 
     if (renderFunction) renderFunction();
@@ -1241,13 +1249,16 @@ document.addEventListener("DOMContentLoaded", () => {
     "tabela-clientes",
     "tabela-pedidos",
     "tabela-demanda-producao",
+    "tabela-sobras-pizzas",
   ].forEach((id) => {
     const table = document.getElementById(id);
     if (table) {
       table.querySelector("thead")?.addEventListener("click", (e) => {
         const header = e.target.closest("th");
         if (header && header.dataset.sortBy) {
-          const tableKey = id.replace("tabela-", "").replace("-producao", "");
+          const tableKey = id.includes("sobras")
+            ? "sobras"
+            : id.replace("tabela-", "").replace("-producao", "");
           handleSort(tableKey, header.dataset.sortBy);
         }
       });
@@ -1279,21 +1290,18 @@ document.addEventListener("DOMContentLoaded", () => {
     filteredData.forEach((item) => {
       const row = tbody.insertRow();
       if (item.qtd < item.estoqueMinimo) row.classList.add("low-stock");
-      row.innerHTML = `<td data-label="Nome">${
-        item.nome
-      }</td><td data-label="Qtd. em Estoque">${(item.qtd || 0).toFixed(
-        3
-      )}</td><td data-label="Estoque Mínimo">${(
-        item.estoqueMinimo || 0
-      ).toFixed(
-        3
-      )}</td><td data-label="Custo (p/ Unidade)" class="admin-only">${formatCurrency(
-        item.custo
-      )}</td><td data-label="Ações"><button class="action-btn edit-btn" onclick="window.editIngrediente('${
-        item.id
-      }')">Editar</button><button class="action-btn remove-btn" onclick="window.removeIngrediente('${
-        item.id
-      }')">Remover</button></td>`;
+      row.innerHTML = `<td data-label="Nome">${item.nome
+        }</td><td data-label="Qtd. em Estoque">${(item.qtd || 0).toFixed(
+          3
+        )}</td><td data-label="Estoque Mínimo">${(
+          item.estoqueMinimo || 0
+        ).toFixed(
+          3
+        )}</td><td data-label="Custo (p/ Unidade)" class="admin-only">${formatCurrency(
+          item.custo
+        )}</td><td data-label="Ações"><button class="action-btn edit-btn" onclick="window.editIngrediente('${item.id
+        }')">Editar</button><button class="action-btn remove-btn" onclick="window.removeIngrediente('${item.id
+        }')">Remover</button></td>`;
     });
     updateSortHeaders("tabela-ingredientes", column, direction);
   };
@@ -1434,25 +1442,19 @@ document.addEventListener("DOMContentLoaded", () => {
       const lucro = item.precoVenda - custo;
       const row = tbody.insertRow();
       if (item.qtd <= 0) row.classList.add("low-stock");
-      row.innerHTML = `<td data-label="Sabor da Pizza">${
-        item.nome
-      }</td><td data-label="Tamanho">${
-        item.tamanho || "N/A"
-      }</td><td data-label="Qtd.">${
-        item.qtd
-      }</td><td data-label="Custo Produção" class="admin-only">${formatCurrency(
-        custo
-      )}</td><td data-label="Preço Venda">${formatCurrency(
-        item.precoVenda
-      )}</td><td data-label="Lucro Bruto" class="admin-only" style="color:${
-        lucro >= 0 ? "green" : "red"
-      };font-weight:bold;">${formatCurrency(
-        lucro
-      )}</td><td data-label="Ações"><button class="action-btn edit-btn" onclick="window.editEstoque('${
-        item.id
-      }')">Editar</button><button class="action-btn remove-btn" onclick="window.removeEstoque('${
-        item.id
-      }')">Remover</button></td>`;
+      row.innerHTML = `<td data-label="Sabor da Pizza">${item.nome
+        }</td><td data-label="Tamanho">${item.tamanho || "N/A"
+        }</td><td data-label="Qtd.">${item.qtd
+        }</td><td data-label="Custo Produção" class="admin-only">${formatCurrency(
+          custo
+        )}</td><td data-label="Preço Venda">${formatCurrency(
+          item.precoVenda
+        )}</td><td data-label="Lucro Bruto" class="admin-only" style="color:${lucro >= 0 ? "green" : "red"
+        };font-weight:bold;">${formatCurrency(
+          lucro
+        )}</td><td data-label="Ações"><button class="action-btn edit-btn" onclick="window.editEstoque('${item.id
+        }')">Editar</button><button class="action-btn remove-btn" onclick="window.removeEstoque('${item.id
+        }')">Remover</button></td>`;
     });
     updateSortHeaders("tabela-estoque", column, direction);
   };
@@ -1468,7 +1470,8 @@ document.addEventListener("DOMContentLoaded", () => {
         tamanho: document.getElementById("estoque-tamanho").value,
         qtd: parseInt(document.getElementById("estoque-qtd").value) || 0,
         precoVenda:
-          parseFloat(document.getElementById("estoque-preco-venda").value) || 0,
+          parseFloat(document.getElementById("estoque-preco-venda").value) ||
+          0,
       };
 
       let error;
@@ -1497,25 +1500,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const formHTML = `
             <form id="edit-estoque-form">
-                <div class="form-group"><label>Sabor da Pizza</label><input type="text" name="nome" value="${
-                  item.nome
-                }" required></div>
+                <div class="form-group"><label>Sabor da Pizza</label><input type="text" name="nome" value="${item.nome
+      }" required></div>
                 <div class="form-group"><label>Tamanho</label>
                     <select name="tamanho" required>
-                        <option value="P" ${
-                          item.tamanho === "P" ? "selected" : ""
-                        }>Pequena</option>
-                        <option value="G" ${
-                          item.tamanho === "G" ? "selected" : ""
-                        }>Grande</option>
+                        <option value="P" ${item.tamanho === "P" ? "selected" : ""
+      }>Pequena</option>
+                        <option value="G" ${item.tamanho === "G" ? "selected" : ""
+      }>Grande</option>
                     </select>
                 </div>
-                <div class="form-group"><label>Quantidade</label><input type="number" name="qtd" value="${
-                  item.qtd
-                }" required></div>
-                <div class="form-group"><label>Preço de Venda</label><input type="number" name="precoVenda" value="${
-                  item.precoVenda
-                }" step="0.01" required></div>
+                <div class="form-group"><label>Quantidade</label><input type="number" name="qtd" value="${item.qtd
+      }" required></div>
+                <div class="form-group"><label>Preço de Venda</label><input type="number" name="precoVenda" value="${item.precoVenda
+      }" step="0.01" required></div>
                 <button type="submit">Salvar</button>
             </form>
         `;
@@ -1580,9 +1578,8 @@ document.addEventListener("DOMContentLoaded", () => {
         );
         container.innerHTML += `<div class="receita-ingrediente-item"><p><span>${(
           item.qtd || 0
-        ).toFixed(3)} x</span> ${
-          ingrediente ? ingrediente.nome : "Ingrediente removido"
-        }</p><button type="button" class="btn-remove-item" onclick="window.removeIngredienteDaReceita(${index})">X</button></div>`;
+        ).toFixed(3)} x</span> ${ingrediente ? ingrediente.nome : "Ingrediente removido"
+          }</p><button type="button" class="btn-remove-item" onclick="window.removeIngredienteDaReceita(${index})">X</button></div>`;
       });
     }
   };
@@ -1599,7 +1596,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const filteredData = database.receitas.filter((receita) => {
       const pizza = database.estoque.find((p) => p.id === receita.pizzaId);
       if (!pizza) return false;
-      const nomePizza = `${pizza.nome} (${pizza.tamanho || ""})`.toLowerCase();
+      const nomePizza = `${pizza.nome} (${pizza.tamanho || ""
+        })`.toLowerCase();
       return nomePizza.includes(searchTerm);
     });
 
@@ -1619,15 +1617,12 @@ document.addEventListener("DOMContentLoaded", () => {
           .join(", ") || "Sem ingredientes";
       const custoTotal = calculatePizzaCost(pizza.id);
       const row = tbody.insertRow();
-      row.innerHTML = `<td data-label="Pizza">${pizza.nome} (${
-        pizza.tamanho || ""
-      })</td><td data-label="Ingredientes"><small>${ingredientesList}</small></td><td data-label="Custo Total" class="admin-only">${formatCurrency(
-        custoTotal
-      )}</td><td data-label="Ações"><button class="action-btn edit-btn" onclick="window.editReceita('${
-        receita.pizzaId
-      }')">Editar</button><button class="action-btn remove-btn" onclick="window.removeReceita('${
-        receita.pizzaId
-      }')">Remover</button></td>`;
+      row.innerHTML = `<td data-label="Pizza">${pizza.nome} (${pizza.tamanho || ""
+        })</td><td data-label="Ingredientes"><small>${ingredientesList}</small></td><td data-label="Custo Total" class="admin-only">${formatCurrency(
+          custoTotal
+        )}</td><td data-label="Ações"><button class="action-btn edit-btn" onclick="window.editReceita('${receita.pizzaId
+        }')">Editar</button><button class="action-btn remove-btn" onclick="window.removeReceita('${receita.pizzaId
+        }')">Remover</button></td>`;
     });
   };
 
@@ -1798,13 +1793,13 @@ document.addEventListener("DOMContentLoaded", () => {
   };
   const renderPizzasMaisLucrativasChart = (t) => {
     const e = t
-        .flatMap((t) => t.items)
-        .reduce((t, e) => {
-          if (e.isCustom) return t;
-          const a = calculatePizzaCost(e.pizzaId),
-            r = (e.preco - a) * e.qtd;
-          return (t[e.pizzaNome] = (t[e.pizzaNome] || 0) + r), t;
-        }, {}),
+      .flatMap((t) => t.items)
+      .reduce((t, e) => {
+        if (e.isCustom) return t;
+        const a = calculatePizzaCost(e.pizzaId),
+          r = (e.preco - a) * e.qtd;
+        return (t[e.pizzaNome] = (t[e.pizzaNome] || 0) + r), t;
+      }, {}),
       a = Object.keys(e)
         .sort((t, a) => e[a] - e[t])
         .slice(0, 10),
@@ -1845,10 +1840,10 @@ document.addEventListener("DOMContentLoaded", () => {
   };
   const renderVendasPorVendedorChart = (t) => {
     const e = t.reduce((t, e) => {
-        if (e.vendedor)
-          t[e.vendedor] = (t[e.vendedor] || 0) + Number(e.valorFinal);
-        return t;
-      }, {}),
+      if (e.vendedor)
+        t[e.vendedor] = (t[e.vendedor] || 0) + Number(e.valorFinal);
+      return t;
+    }, {}),
       a = Object.keys(e).sort((t, a) => e[a] - e[t]),
       r = a.map((t) => e[t]);
     if (!document.getElementById("vendasPorVendedorChart")) return;
@@ -1872,12 +1867,12 @@ document.addEventListener("DOMContentLoaded", () => {
   };
   const renderPizzasMaisVendidasChart = (t) => {
     const e = t
-        .flatMap((t) => t.items)
-        .reduce((t, e) => {
-          return e.isCustom
-            ? t
-            : ((t[e.pizzaNome] = (t[e.pizzaNome] || 0) + e.qtd), t);
-        }, {}),
+      .flatMap((t) => t.items)
+      .reduce((t, e) => {
+        return e.isCustom
+          ? t
+          : ((t[e.pizzaNome] = (t[e.pizzaNome] || 0) + e.qtd), t);
+      }, {}),
       a = Object.keys(e)
         .sort((t, a) => e[a] - e[t])
         .slice(0, 10),
@@ -1969,9 +1964,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const ctx = canvasElement.getContext("2d");
     const vendasPorDia = pedidos.reduce((acc, pedido) => {
       if (!pedido.dataEntrega) return acc;
-      const dia = new Date(pedido.dataEntrega + "T00:00:00").toLocaleDateString(
-        "pt-BR"
-      );
+      const dia = new Date(
+        pedido.dataEntrega + "T00:00:00"
+      ).toLocaleDateString("pt-BR");
       acc[dia] = (acc[dia] || 0) + Number(pedido.valorFinal);
       return acc;
     }, {});
@@ -2231,51 +2226,40 @@ document.addEventListener("DOMContentLoaded", () => {
     const formHTML = `
             <form id="edit-pedido-form" class="form-vertical">
                 <input type="hidden" name="id" value="${pedido.id}">
-                <div class="form-group"><label>Cliente</label><input type="text" name="cliente" value="${
-                  pedido.cliente
-                }" required></div>
-                <div class="form-group"><label>Telefone</label><input type="text" name="telefone" value="${
-                  pedido.telefone || ""
-                }"></div>
-                <div class="form-group"><label>Cidade</label><input type="text" name="cidade" value="${
-                  pedido.cidade
-                }" required></div>
-                <div class="form-group"><label>Vendedor</label><input type="text" name="vendedor" value="${
-                  pedido.vendedor
-                }" required></div>
+                <div class="form-group"><label>Cliente</label><input type="text" name="cliente" value="${pedido.cliente
+      }" required></div>
+                <div class="form-group"><label>Telefone</label><input type="text" name="telefone" value="${pedido.telefone || ""
+      }"></div>
+                <div class="form-group"><label>Cidade</label><input type="text" name="cidade" value="${pedido.cidade
+      }" required></div>
+                <div class="form-group"><label>Vendedor</label><input type="text" name="vendedor" value="${pedido.vendedor
+      }" required></div>
                 <div class="form-group">
                     <label>Pagamento</label>
                     <select name="pagamento" required>
-                        <option value="Dinheiro" ${
-                          pedido.pagamento === "Dinheiro" ? "selected" : ""
-                        }>Dinheiro</option>
-                        <option value="Cartão de Crédito" ${
-                          pedido.pagamento === "Cartão de Crédito"
-                            ? "selected"
-                            : ""
-                        }>Cartão de Crédito</option>
-                        <option value="Cartão de Débito" ${
-                          pedido.pagamento === "Cartão de Débito"
-                            ? "selected"
-                            : ""
-                        }>Cartão de Débito</option>
-                        <option value="Pix" ${
-                          pedido.pagamento === "Pix" ? "selected" : ""
-                        }>Pix</option>
+                        <option value="Dinheiro" ${pedido.pagamento === "Dinheiro" ? "selected" : ""
+      }>Dinheiro</option>
+                        <option value="Cartão de Crédito" ${pedido.pagamento === "Cartão de Crédito"
+        ? "selected"
+        : ""
+      }>Cartão de Crédito</option>
+                        <option value="Cartão de Débito" ${pedido.pagamento === "Cartão de Débito"
+        ? "selected"
+        : ""
+      }>Cartão de Débito</option>
+                        <option value="Pix" ${pedido.pagamento === "Pix" ? "selected" : ""
+      }>Pix</option>
                     </select>
                 </div>
                  <div class="form-group">
                     <label>Status</label>
                     <select name="status" required>
-                        <option value="Pendente" ${
-                          pedido.status === "Pendente" ? "selected" : ""
-                        }>Pendente</option>
-                        <option value="Pronto" ${
-                          pedido.status === "Pronto" ? "selected" : ""
-                        }>Pronto</option>
-                        <option value="Concluído" ${
-                          pedido.status === "Concluído" ? "selected" : ""
-                        }>Concluído</option>
+                        <option value="Pendente" ${pedido.status === "Pendente" ? "selected" : ""
+      }>Pendente</option>
+                        <option value="Pronto" ${pedido.status === "Pronto" ? "selected" : ""
+      }>Pronto</option>
+                        <option value="Concluído" ${pedido.status === "Concluído" ? "selected" : ""
+      }>Concluído</option>
                     </select>
                 </div>
                 <hr>
@@ -2288,9 +2272,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div id="edit-pedido-itens-carrinho" class="carrinho-container"></div>
                  <div class="resumo-pedido">
                     <span>Total Calculado: <b id="total-calculado-edit-pedido">R$ 0,00</b></span>
-                    <input type="number" id="valor-final-edit-pedido" placeholder="Valor Final" step="0.01" value="${
-                      pedido.valorFinal || ""
-                    }">
+                    <input type="number" id="valor-final-edit-pedido" placeholder="Valor Final" step="0.01" value="${pedido.valorFinal || ""
+      }">
                 </div>
                 <button type="submit">Salvar Alterações</button>
             </form>
@@ -2434,8 +2417,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (used.PC + newOrderDoughs.PC > (quotas.pc_semana || 0)) {
       exceeds.push(
-        `P de Chocolate: ${used.PC + newOrderDoughs.PC}/${
-          quotas.pc_semana || 0
+        `P de Chocolate: ${used.PC + newOrderDoughs.PC}/${quotas.pc_semana || 0
         }`
       );
     }
@@ -2444,8 +2426,8 @@ document.addEventListener("DOMContentLoaded", () => {
       hideLoader();
       alert(
         "Limite semanal de massas atingido para: " +
-          exceeds.join(" | ") +
-          ". Ajuste as quantidades."
+        exceeds.join(" | ") +
+        ". Ajuste as quantidades."
       );
       return;
     }
@@ -2471,97 +2453,91 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
-  // ===== Consulta Rápida — Sobras (Lógica de Projeção Atualizada) =====
   const renderConsultaRapidaSobras = () => {
     const selectSemana = document.getElementById("sobras-semana-select");
-    // O checkbox 'sobras-considerar-pendentes' foi removido, pois a lógica agora é fixa.
+    const searchInput = document.getElementById("sobras-search-pizza");
     if (!selectSemana) return;
 
-    populateWeekSelector(selectSemana);
-    if (!selectSemana.value) selectSemana.value = getWeekStart();
+    if (!selectSemana.value) {
+      populateWeekSelector(selectSemana);
+      selectSemana.value = getWeekStart();
+    }
 
     const refresh = () => {
       const weekStart = selectSemana.value || getWeekStart();
+      const searchTerm = searchInput.value.toLowerCase();
 
-      // --- Lógica de Massas ---
-      // Mostra o total de massas COMPROMETIDAS (todos os status) vs. a cota da semana.
+      // --- Lógica de Massas (sem alteração) ---
       const quotas = database.massas_semanais.find(
         (m) => m.semana_inicio === weekStart
       ) || { g_semana: 0, p_semana: 0, pc_semana: 0 };
-      const used = { G: 0, P: 0, PC: 0 };
-      database.pedidos.forEach((p) => {
-        if (!p.dataEntrega || getWeekStart(p.dataEntrega) !== weekStart) return;
-        (p.items || []).forEach((item) => {
-          if (item.isCustom) return;
-          const pizza = database.estoque.find((e) => e.id === item.pizzaId);
-          const d = mapPizzaToDough(pizza);
-          if (d) used[d] += Number(item.qtd || 0);
-        });
-      });
+      const used = computeWeeklyUsage(weekStart, true); // true para todos status
       const tbodyM = document.querySelector("#tabela-sobras-massas tbody");
       if (tbodyM) {
-        tbodyM.innerHTML = "";
-        const rows = [
-          ["G", quotas.g_semana || 0, used.G, (quotas.g_semana || 0) - used.G],
-          ["P", quotas.p_semana || 0, used.P, (quotas.p_semana || 0) - used.P],
-          [
-            "P de Chocolate",
-            quotas.pc_semana || 0,
-            used.PC,
-            (quotas.pc_semana || 0) - used.PC,
-          ],
-        ];
-        rows.forEach((r) => {
-          const tr = document.createElement("tr");
-          tr.innerHTML = `<td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td><b>${r[3]}</b></td>`;
-          tbodyM.appendChild(tr);
-        });
+        tbodyM.innerHTML = `
+          <tr><td>G</td><td>${quotas.g_semana || 0
+          }</td><td>${used.G}</td><td><b>${(quotas.g_semana || 0) - used.G
+          }</b></td></tr>
+          <tr><td>P</td><td>${quotas.p_semana || 0
+          }</td><td>${used.P}</td><td><b>${(quotas.p_semana || 0) - used.P
+          }</b></td></tr>
+          <tr><td>P de Chocolate</td><td>${quotas.pc_semana || 0
+          }</td><td>${used.PC}</td><td><b>${(quotas.pc_semana || 0) - used.PC
+          }</b></td></tr>
+        `;
       }
 
-      // --- Lógica de Pizzas (Projeção) ---
-      // Calcula a demanda futura somando apenas pedidos PENDENTES e PRONTOS.
-      const demandByPizza = {};
-      database.pedidos.forEach((p) => {
-        if (!p.dataEntrega || getWeekStart(p.dataEntrega) !== weekStart) return;
+      // --- Lógica de Pizzas (com filtro e ordenação) ---
+      const demandByPizza = computeWeeklyUsage(weekStart, false); // false para pendentes/prontos
 
-        // ALTERAÇÃO PRINCIPAL: Ignora pedidos já concluídos para projetar as sobras corretamente.
-        if (p.status === "Concluído") return;
+      let pizzaData = database.estoque.map((e) => {
+        const pedidosSemana = demandByPizza[e.id] || 0;
+        const sobraProj = (e.qtd || 0) - pedidosSemana;
+        return { ...e, pedidosSemana, sobraProj };
+      });
 
-        (p.items || []).forEach((item) => {
-          if (item.isCustom) return;
-          demandByPizza[item.pizzaId] =
-            (demandByPizza[item.pizzaId] || 0) + Number(item.qtd || 0);
-        });
+      if (searchTerm) {
+        pizzaData = pizzaData.filter((p) =>
+          p.nome.toLowerCase().includes(searchTerm)
+        );
+      }
+
+      const { column, direction } = sortState.sobras;
+      pizzaData.sort((a, b) => {
+        const valA = a[column];
+        const valB = b[column];
+        if (typeof valA === "number") {
+          return direction === "asc" ? valA - valB : valB - valA;
+        }
+        return direction === "asc"
+          ? String(valA).localeCompare(String(valB))
+          : String(valB).localeCompare(String(valA));
       });
 
       const tbodyP = document.querySelector("#tabela-sobras-pizzas tbody");
       if (tbodyP) {
         tbodyP.innerHTML = "";
-        // Ordena por sobra projetada, mostrando os itens mais críticos primeiro
-        const sortedEstoque = [...database.estoque].sort((a, b) => {
-          const sobraA = (a.qtd || 0) - (demandByPizza[a.id] || 0);
-          const sobraB = (b.qtd || 0) - (demandByPizza[b.id] || 0);
-          return sobraA - sobraB;
-        });
-
-        sortedEstoque.forEach((e) => {
-          const pedidosSemana = demandByPizza[e.id] || 0;
-          const sobraProj = (e.qtd || 0) - pedidosSemana;
+        pizzaData.forEach((e) => {
           const tr = document.createElement("tr");
-          // Adiciona uma classe de estilo se a projeção for negativa
-          if (sobraProj < 0) {
+          if (e.sobraProj < 0) {
             tr.classList.add("low-stock");
           }
-          tr.innerHTML = `<td>${e.nome} (${e.tamanho})</td><td>${
-            e.qtd ?? 0
-          }</td><td>${pedidosSemana}</td><td><b>${sobraProj}</b></td>`;
+          tr.innerHTML = `
+              <td data-label="Pizza">${e.nome} (${e.tamanho})</td>
+              <td data-label="Em estoque">${e.qtd ?? 0}</td>
+              <td data-label="Pedidos (semana)">${e.pedidosSemana}</td>
+              <td data-label="Sobra projetada"><b>${e.sobraProj}</b></td>`;
           tbodyP.appendChild(tr);
         });
+        updateSortHeaders("tabela-sobras-pizzas", column, direction);
       }
     };
 
+    selectSemana.removeEventListener("change", refresh);
+    searchInput.removeEventListener("input", refresh);
     selectSemana.addEventListener("change", refresh);
-    // O event listener do checkbox foi removido.
+    searchInput.addEventListener("input", refresh);
+
     refresh();
   };
 
