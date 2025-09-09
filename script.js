@@ -67,11 +67,15 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const getWeekStart = (dateStr) => {
-    let d = dateStr ? new Date(dateStr + "T00:00:00") : new Date();
-    const day = d.getDay(); // 0=Sun,1=Mon
-    const diff = (day === 0 ? -6 : 1) - day;
-    d.setDate(d.getDate() + diff);
-    return formatDateToYYYYMMDD(d);
+    const d = dateStr ? new Date(dateStr) : new Date();
+    const day = d.getUTCDay();
+    const diff = d.getUTCDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(d.setUTCDate(diff));
+    const year = monday.getUTCFullYear();
+    const month = String(monday.getUTCMonth() + 1).padStart(2, "0");
+    const dayOfMonth = String(monday.getUTCDate()).padStart(2, "0");
+
+    return `${year}-${month}-${dayOfMonth}`;
   };
 
   const calculatePizzaCost = (
