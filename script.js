@@ -1128,63 +1128,63 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const demandMap = new Map();
-
     database.pedidos
-      .filter((p) => {
-        return (
-          p.status === "Pendente" &&
-          getWeekStart(p.dataEntrega) === selectedWeek
-        );
-      })
-      .forEach((p) => {
-        p.items.forEach((item) => {
-          if (!item.isCustom) {
-            const pizzaEstoque = database.estoque.find(
-              (e) => e.id === item.pizzaId
-            );
-            if (pizzaEstoque) {
-              if (sizeFilter && pizzaEstoque.tamanho !== sizeFilter) {
-                return;
-              }
-              const key = pizzaEstoque.id;
-              const existing = demandMap.get(key) || {
-                sabor: `${pizzaEstoque.nome} (${pizzaEstoque.tamanho})`,
-                quantidade: 0,
-                estoqueAtual: pizzaEstoque.qtd,
-              };
-              existing.quantidade += item.qtd;
-              demandMap.set(key, existing);
-            }
+      .filter(p => p.status === "Pendente" && getWeekStart(p.dataEntrega) === selectedWeek)
+      .forEach(p => {
+        p.items.forEach(item => {
+          if (!item.isCustom && item.pizzaId) {
+            const currentDemand = demandMap.get(item.pizzaId) || 0;
+            demandMap.set(item.pizzaId, currentDemand + item.qtd);
           }
         });
       });
 
-    let demandArray = Array.from(demandMap.values());
+    let productionData = database.estoque
+      .filter(pizza => {
+        return !sizeFilter || pizza.tamanho === sizeFilter;
+      })
+      .map(pizza => {
+        const quantidadePedidos = demandMap.get(pizza.id) || 0;
+        const estoqueAtual = pizza.qtd;
+        const sobraProjetada = estoqueAtual - quantidadePedidos;
+
+        return {
+          sabor: `${pizza.nome} (${pizza.tamanho})`,
+          quantidade: quantidadePedidos,
+          estoqueAtual: estoqueAtual,
+          sobraProjetada: sobraProjetada
+        };
+      })
+      .filter(data => {
+        // NOVO FILTRO: Mostra a pizza apenas se ela tiver pedidos OU se a sobra for positiva.
+        return data.quantidade > 0 || data.sobraProjetada > 0;
+      });
 
     const { column, direction } = sortState.demanda;
-    demandArray.sort((a, b) => {
+    productionData.sort((a, b) => {
       const valA = a[column];
       const valB = b[column];
       if (typeof valA === "number") return valA - valB;
-      return valA.localeCompare(valB);
+      return (valA || "").localeCompare(valB || "");
     });
-    if (direction === "desc") demandArray.reverse();
+    if (direction === "desc") productionData.reverse();
 
     tbody.innerHTML = "";
-    if (demandArray.length === 0) {
+    if (productionData.length === 0) {
       tbody.innerHTML =
-        '<tr><td colspan="3" style="text-align: center;">Nenhuma demanda de produção para a semana selecionada.</td></tr>';
+        '<tr><td colspan="4" style="text-align: center;">Nenhuma pizza com pedidos ou sobras para a semana selecionada.</td></tr>';
       return;
     }
 
-    demandArray.forEach(({ sabor, quantidade, estoqueAtual }) => {
+    productionData.forEach((data) => {
       const row = tbody.insertRow();
-      const estoqueClass = estoqueAtual < quantidade ? "low-stock" : "";
+      const surplusClass = data.sobraProjetada < 0 ? "low-stock" : "";
       row.innerHTML = `
-                <td data-label="Sabor da Pizza">${sabor}</td>
-                <td data-label="Quantidade a Produzir">${quantidade}x</td>
-                <td data-label="Estoque Atual" class="${estoqueClass}">${estoqueAtual}</td>
-            `;
+          <td data-label="Sabor da Pizza">${data.sabor}</td>
+          <td data-label="Pedidos (Pendentes)">${data.quantidade}x</td>
+          <td data-label="Estoque Atual">${data.estoqueAtual}</td>
+          <td data-label="Sobra Projetada" class="${surplusClass}"><b>${data.sobraProjetada}</b></td>
+      `;
     });
     updateSortHeaders("tabela-demanda-producao", column, direction);
   };
@@ -2457,6 +2457,25 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
+  const computePizzaDemandForWeek = (weekStart) => {
+    const demand = {}; // Cria um mapa para armazenar a demanda
+    database.pedidos
+      .filter(p => {
+        if (!p.dataEntrega) return false;
+        const ws = getWeekStart(p.dataEntrega);
+        // CORREÇÃO: Filtra pela semana correta e APENAS pelo status 'Pendente'
+        return ws === weekStart && p.status === 'Pendente';
+      })
+      .forEach(p => {
+        (p.items || []).forEach(item => {
+          if (item.isCustom || !item.pizzaId) return;
+          // Soma a quantidade para cada ID de pizza
+          demand[item.pizzaId] = (demand[item.pizzaId] || 0) + Number(item.qtd || 0);
+        });
+      });
+    return demand;
+  };
+
   const renderConsultaRapidaSobras = () => {
     const selectSemana = document.getElementById("sobras-semana-select");
     const searchInput = document.getElementById("sobras-search-pizza");
@@ -2492,7 +2511,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       // --- Lógica de Pizzas (com filtro e ordenação) ---
-      const demandByPizza = computeWeeklyUsage(weekStart, false); // false para pendentes/prontos
+      const demandByPizza = computePizzaDemandForWeek(weekStart); // CORREÇÃO: Usa a nova função correta
 
       let pizzaData = database.estoque.map((e) => {
         const pedidosSemana = demandByPizza[e.id] || 0;
