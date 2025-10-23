@@ -95,17 +95,11 @@
                     <h3>Histórico de Pedidos</h3>
                     <div class="filters-container">
                         <input type="search" id="search-pedidos" class="search-input"
-                            placeholder="Buscar por cliente...">
-                        <select id="filter-vendedor">
-                            <option value="">Todos Vendedores</option>
-                        </select>
-                        <select id="filter-status">
-                            <option value="">Todos Status</option>
-                            <option value="Pendente">Pendente</option>
-                            <option value="Pronto">Pronto</option>
-                            <option value="Concluído">Concluído</option>
-                        </select>
+                            placeholder="Buscar rápido por cliente...">
                     </div>
+                    <button id="btn-open-filter-modal" class="action-btn" style="background-color: var(--accent-color);">
+                        Filtros Avançados
+                    </button>
                     <button id="export-pedidos">Baixar Excel</button>
                 </div>
                 <div class="table-container">
@@ -371,6 +365,7 @@
                                 <th data-sort-by="sabor">Sabor da Pizza</th>
                                 <th data-sort-by="quantidade">Quantidade a Produzir</th>
                                 <th data-sort-by="estoqueAtual">Estoque Atual</th>
+                                <th data-sort-by="sobraProjetada">Sobra Projetada</th>
                             </tr>
                         </thead>
                         <tbody></tbody>
@@ -438,6 +433,54 @@
             <p>Itens que estão abaixo do estoque mínimo.</p>
             <div id="lista-compras-content"></div>
             <button id="btn-print-lista" class="action-btn">Imprimir Lista</button>
+        </div>
+    </div>
+
+    <div id="filter-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-button" onclick="closeModal('filter-modal')">&times;</span>
+            <h2 id="filter-modal-title">Filtrar Pedidos</h2>
+            <form id="filter-pedidos-form">
+                <div class="form-group">
+                    <label for="filter-modal-cliente">Cliente</label>
+                    <input type="text" id="filter-modal-cliente" placeholder="Nome do cliente...">
+                </div>
+                <div class="form-group">
+                    <label for="filter-modal-cidade">Cidade</label>
+                    <input type="text" id="filter-modal-cidade" placeholder="Nome da cidade...">
+                </div>
+                <div class="form-group">
+                    <label for="filter-modal-vendedor">Vendedor</label>
+                    <select id="filter-modal-vendedor">
+                        <option value="">Todos</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="filter-modal-semana">Semana de Entrega</label>
+                    <select id="filter-modal-semana">
+                        <option value="">Todas</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="filter-modal-status">Status</label>
+                    <select id="filter-modal-status">
+                        <option value="">Todos</option>
+                        <option value="Pendente">Pendente</option>
+                        <option value="Pronto">Pronto</option>
+                        <option value="Concluído">Concluído</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="filter-modal-valor-min">Valor Mínimo (R$)</label>
+                    <input type="number" id="filter-modal-valor-min" placeholder="Ex: 50.00" step="0.01">
+                </div>
+                <div class="form-group">
+                    <label for="filter-modal-valor-max">Valor Máximo (R$)</label>
+                    <input type="number" id="filter-modal-valor-max" placeholder="Ex: 150.00" step="0.01">
+                </div>
+                <button type="submit" id="btn-apply-filters">Aplicar Filtros</button>
+                <button type="button" id="btn-clear-filters" style="background-color: var(--text-light-color);">Limpar Filtros</button>
+            </form>
         </div>
     </div>
 

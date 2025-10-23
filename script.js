@@ -7,7 +7,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const LOADER = document.getElementById("loader");
   const SAVE_STATUS = document.getElementById("save-status");
 
-  // Verifica o login de admin ao carregar a página
+ 
   if (localStorage.getItem("isAdminLoggedIn") === "true") {
     document.body.classList.add("admin-mode");
     document.getElementById("btn-admin-view").textContent = "Sair da Visão ADM";
@@ -183,9 +183,8 @@ document.addEventListener("DOMContentLoaded", () => {
     renderEstoque();
     renderReceitas();
 
-    const statusSelect = document.getElementById("filter-status");
+    const statusSelect = document.getElementById("filter-modal-status"); 
     if (statusSelect && !statusSelect.value) {
-      statusSelect.value = "Pendente";
     }
 
     renderPedidos();
@@ -194,7 +193,6 @@ document.addEventListener("DOMContentLoaded", () => {
     renderWeeklyMassasPanel();
     renderConsultaRapidaSobras();
     populateClienteDatalist();
-    populateFilterDropdowns();
     renderDashboard(
       document.querySelector(".date-filter.active")?.dataset.range || "all"
     );
@@ -286,30 +284,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   };
 
-  const populateFilterDropdowns = () => {
-    const vendedorSelect = document.getElementById("filter-vendedor");
-    if (!vendedorSelect) return;
-
-    const allFirstNames = database.pedidos
-      .map((p) => p.vendedor)
-      .filter(Boolean)
-      .map((vendedor) => {
-        const firstName = vendedor.trim().split(" ")[0];
-        return (
-          firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase()
-        );
-      });
-
-    const vendedores = [...new Set(allFirstNames)];
-
-    const firstOption = vendedorSelect.options[0];
-    vendedorSelect.innerHTML = "";
-    if (firstOption) vendedorSelect.appendChild(firstOption);
-
-    vendedores.sort().forEach((v) => {
-      vendedorSelect.innerHTML += `<option value="${v}">${v}</option>`;
-    });
-  };
 
   document.querySelectorAll(".tab-link").forEach((link) => {
     link.addEventListener("click", () => {
@@ -348,7 +322,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const btn = document.getElementById("btn-admin-view");
 
     if (body.classList.contains("admin-mode")) {
-      // Logout
       localStorage.removeItem("isAdminLoggedIn");
       body.classList.remove("admin-mode");
       btn.textContent = "Visão ADM";
@@ -359,16 +332,13 @@ document.addEventListener("DOMContentLoaded", () => {
         document.querySelector('.tab-link[data-tab="pedidos"]').click();
       }
     } else {
-      // Abre o modal para login
       openAuthModal();
     }
   };
-  // ADICIONADO: Conecta o botão 'Visão ADM' à sua função
   document
     .getElementById("btn-admin-view")
     .addEventListener("click", toggleAdminView);
 
-  // Handler para o formulário de autenticação
   document.getElementById("auth-form")?.addEventListener("submit", (e) => {
     e.preventDefault();
     const password = document.getElementById("admin-password").value;
@@ -563,68 +533,81 @@ document.addEventListener("DOMContentLoaded", () => {
     const searchTerm = document
       .getElementById("search-pedidos")
       .value.toLowerCase();
-    const vendedorFilterInput =
-      document.getElementById("filter-vendedor").value;
-    const statusFilter = document.getElementById("filter-status").value;
+
+    const clienteFilter = document.getElementById("filter-modal-cliente").value.toLowerCase();
+    const cidadeFilter = document.getElementById("filter-modal-cidade").value.toLowerCase();
+    const vendedorFilter = document.getElementById("filter-modal-vendedor").value;
+    const semanaFilter = document.getElementById("filter-modal-semana").value;
+    const statusFilter = document.getElementById("filter-modal-status").value;
+    const valorMin = parseFloat(document.getElementById("filter-modal-valor-min").value) || 0;
+    const valorMax = parseFloat(document.getElementById("filter-modal-valor-max").value) || Infinity;
 
     let filteredData = database.pedidos.filter((p) => {
-      const searchMatch = (p.cliente || "").toLowerCase().includes(searchTerm);
+        const searchMatch = (p.cliente || "").toLowerCase().includes(searchTerm);
 
-      const vendedorFirstName = (p.vendedor || "").trim().split(" ")[0];
-      const normalizedVendedor =
-        vendedorFirstName.charAt(0).toUpperCase() +
-        vendedorFirstName.slice(1).toLowerCase();
-      const vendedorMatch =
-        !vendedorFilterInput || normalizedVendedor === vendedorFilterInput;
+        const clienteMatch = !clienteFilter || (p.cliente || "").toLowerCase().includes(clienteFilter);
+        const cidadeMatch = !cidadeFilter || (p.cidade || "").toLowerCase().includes(cidadeFilter);
 
-      const statusMatch = !statusFilter || p.status === statusFilter;
-      return searchMatch && vendedorMatch && statusMatch;
+        const vendedorFirstName = (p.vendedor || "").trim().split(" ")[0];
+        const normalizedVendedor =
+            vendedorFirstName.charAt(0).toUpperCase() +
+            vendedorFirstName.slice(1).toLowerCase();
+        const vendedorMatch =
+            !vendedorFilter || normalizedVendedor === vendedorFilter;
+        
+        const semanaMatch = !semanaFilter || (p.dataEntrega && getWeekStart(p.dataEntrega) === semanaFilter);
+        const statusMatch = !statusFilter || p.status === statusFilter;
+
+        const valorExibido = p.valorFinal || p.valorTotal;
+        const valorMatch = valorExibido >= valorMin && valorExibido <= valorMax;
+
+        return searchMatch && clienteMatch && cidadeMatch && vendedorMatch && semanaMatch && statusMatch && valorMatch;
     });
 
     const { column, direction } = sortState.pedidos;
     filteredData.sort((a, b) => {
-      const valA = a[column] ?? "";
-      const valB = b[column] ?? "";
-      if (column === "dataEntrega") return new Date(valA) - new Date(valB);
-      if (typeof valA === "number") return valA - valB;
-      return (valA || "").localeCompare(valB || "");
+        const valA = a[column] ?? "";
+        const valB = b[column] ?? "";
+        if (column === "dataEntrega") return new Date(valA) - new Date(valB);
+        if (typeof valA === "number") return valA - valB;
+        return (valA || "").localeCompare(valB || "");
     });
     if (direction === "desc") filteredData.reverse();
 
     tbody.innerHTML = "";
     filteredData.forEach((p) => {
-      const row = tbody.insertRow();
-      const itemsHtml = p.items
-        .map(
-          (i) =>
-            `<li class="${i.isCustom ? "item-pedido-outro" : ""}">${i.qtd}x ${i.pizzaNome
-            }</li>`
-        )
-        .join("");
-      const statusClass = (p.status || "pendente")
-        .toLowerCase()
-        .replace(/ /g, "-");
-      const startOfWeek = new Date(p.dataEntrega);
-      const weekStartFormatted = startOfWeek.toLocaleDateString("pt-BR", {
-        day: "2-digit",
-        month: "short",
-      });
-      const valorExibido = p.valorFinal || p.valorTotal;
+        const row = tbody.insertRow();
+        const itemsHtml = p.items
+            .map(
+                (i) =>
+                    `<li class="${i.isCustom ? "item-pedido-outro" : ""}">${i.qtd}x ${i.pizzaNome
+                    }</li>`
+            )
+            .join("");
+        const statusClass = (p.status || "pendente")
+            .toLowerCase()
+            .replace(/ /g, "-");
+        const startOfWeek = new Date(p.dataEntrega);
+        const weekStartFormatted = startOfWeek.toLocaleDateString("pt-BR", {
+            day: "2-digit",
+            month: "short",
+        });
+        const valorExibido = p.valorFinal || p.valorTotal;
 
-      row.innerHTML = `
+        row.innerHTML = `
                 <td data-label="Cliente">${p.cliente}</b><br><small>${p.telefone || "N/A"
-        }</small></td>
+            }</small></td>
                 <td data-label="Semana Entrega">${weekStartFormatted}</td>
                 <td data-label="Itens"><ul style="padding-left:15px;margin:0">${itemsHtml}</ul></td>
                 <td data-label="Detalhes"><small>Vend.: ${p.vendedor
-        }<br>Cid.: ${p.cidade}<br>Pag.: ${p.pagamento}</small></td>
+            }<br>Cid.: ${p.cidade}<br>Pag.: ${p.pagamento}</small></td>
                 <td data-label="Valores"><b>${formatCurrency(
-          valorExibido
-        )}</b><br><small class="admin-only">Calc: ${formatCurrency(
-          p.valorTotal
-        )}</small></td>
+                valorExibido
+            )}</b><br><small class="admin-only">Calc: ${formatCurrency(
+                p.valorTotal
+            )}</small></td>
                 <td data-label="Status"><span class="status-${statusClass}">${p.status
-        }</span></td>
+            }</span></td>
                 <td data-label="Ações">${renderActionButtons(p)}</td>
             `;
     });
@@ -662,7 +645,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     try {
-      // Se o novo status for "Concluído", faz a baixa do estoque
       if (newStatus === "Pronto" && pedido.status !== "Pronto") {
         const stockUpdatePromises = [];
         for (const item of pedido.items) {
@@ -682,7 +664,6 @@ document.addEventListener("DOMContentLoaded", () => {
           }
         }
 
-        // Executa todas as atualizações de estoque
         const results = await Promise.all(stockUpdatePromises);
         const stockErrors = results.map((r) => r.error).filter(Boolean);
         if (stockErrors.length > 0) {
@@ -694,13 +675,12 @@ document.addEventListener("DOMContentLoaded", () => {
         showSaveStatus("Estoque atualizado!");
       }
 
-      // Após a baixa (se aplicável), atualiza o status do pedido
       const { error: statusError } = await supabaseClient
         .from("pedidos")
         .update({ status: newStatus })
         .eq("id", id);
       if (statusError) {
-        throw statusError; // Se falhar aqui, o catch irá pegar
+        throw statusError;
       }
 
       showSaveStatus("Status do pedido atualizado com sucesso!");
@@ -864,7 +844,6 @@ document.addEventListener("DOMContentLoaded", () => {
       valorFinal: valorFinal,
     };
 
-    // ===== ADICIONADO DE VOLTA: Bloco de verificação de cotas de massa =====
     const semanaInicio = getWeekStart(dataEntrega);
     const quotas = database.massas_semanais.find(
       (m) => m.semana_inicio === semanaInicio
@@ -904,18 +883,6 @@ document.addEventListener("DOMContentLoaded", () => {
       );
       return;
     }
-    // ===== FIM DO BLOCO DE VERIFICAÇÃO =====
-
-    // ===== REMOVIDO: Baixa de estoque foi movida para a função updatePedidoStatus =====
-    /*
-        const stockUpdates = [];
-        for (const item of newPedidoData.items) {
-            if (!item.isCustom) {
-                const pizzaEstoque = database.estoque.find(p => p.id === item.pizzaId);
-                stockUpdates.push({ id: item.pizzaId, newQty: pizzaEstoque.qtd - item.qtd });
-            }
-        }
-        */
 
     const { data: pedidoSalvo, error: insertError } = await supabaseClient
       .from("pedidos")
@@ -958,8 +925,6 @@ document.addEventListener("DOMContentLoaded", () => {
       confirm(`Tem certeza que deseja remover o pedido de ${pedido.cliente}?`)
     ) {
       showLoader();
-
-      // ===== REMOVIDO: A lógica de devolver ao estoque não é mais necessária =====
 
       try {
         const { error: deleteError } = await supabaseClient
@@ -1156,7 +1121,6 @@ document.addEventListener("DOMContentLoaded", () => {
         };
       })
       .filter(data => {
-        // NOVO FILTRO: Mostra a pizza apenas se ela tiver pedidos OU se a sobra for positiva.
         return data.quantidade > 0 || data.sobraProjetada > 0;
       });
 
@@ -1199,11 +1163,6 @@ document.addEventListener("DOMContentLoaded", () => {
         cliente.telefone || "";
       document.getElementById("pedido-cidade").value = cliente.cidade || "";
     }
-  });
-
-  ["search-pedidos", "filter-vendedor", "filter-status"].forEach((id) => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener("input", renderPedidos);
   });
 
   document
@@ -2168,7 +2127,6 @@ document.addEventListener("DOMContentLoaded", () => {
       showLoader();
 
       try {
-        // Pega a quantidade atual da pizza em estoque
         const pizzaEstoque = database.estoque.find((p) => p.id === pizzaId);
         if (!pizzaEstoque) {
           throw new Error("Pizza não encontrada no banco de dados de estoque.");
@@ -2176,7 +2134,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const novaQuantidade = pizzaEstoque.qtd + quantidade;
 
-        // Atualiza a quantidade diretamente na tabela 'estoque'
         const { error } = await supabaseClient
           .from("estoque")
           .update({ qtd: novaQuantidade })
@@ -2386,7 +2343,6 @@ document.addEventListener("DOMContentLoaded", () => {
       valorFinal: valorFinal,
     };
 
-    // ===== ADICIONADO DE VOLTA: Bloco de verificação de cotas de massa =====
     const semanaInicio = getWeekStart(originalPedido.dataEntrega);
     const quotas = database.massas_semanais.find(
       (m) => m.semana_inicio === semanaInicio
@@ -2435,41 +2391,96 @@ document.addEventListener("DOMContentLoaded", () => {
       );
       return;
     }
-    // ===== FIM DO BLOCO DE VERIFICAÇÃO =====
 
-    // ===== REMOVIDO: A reconciliação de estoque não é mais necessária aqui =====
+    const originalStatus = originalPedido.status;
+    const newStatus = updatedPedidoData.status;
+    const stockUpdatePromises = [];
+
+    const getItemsMap = (items) => {
+        const map = new Map();
+        (items || []).forEach(item => {
+            if (!item.isCustom && item.pizzaId) {
+                map.set(item.pizzaId, (map.get(item.pizzaId) || 0) + Number(item.qtd || 0));
+            }
+        });
+        return map;
+    };
+
+    const originalItemsMap = getItemsMap(originalPedido.items);
+    const newItemsMap = getItemsMap(updatedPedidoData.items);
+    const allPizzaIds = new Set([...originalItemsMap.keys(), ...newItemsMap.keys()]);
+
+    allPizzaIds.forEach(pizzaId => {
+        const originalQtd = originalItemsMap.get(pizzaId) || 0;
+        const newQtd = newItemsMap.get(pizzaId) || 0;
+        const diff = newQtd - originalQtd; 
+
+        const pizzaEstoque = database.estoque.find(p => p.id === pizzaId);
+        if (!pizzaEstoque) return; 
+
+        let stockAdjustment = 0;
+
+        if (originalStatus !== 'Pronto' && newStatus === 'Pronto') {
+            stockAdjustment = -newQtd;
+        } else if (originalStatus === 'Pronto' && newStatus !== 'Pronto') {
+            stockAdjustment = +originalQtd;
+        } else if (originalStatus === 'Pronto' && newStatus === 'Pronto') {
+            stockAdjustment = -diff; 
+        }
+
+        if (stockAdjustment !== 0) {
+            const novaQtd = pizzaEstoque.qtd + stockAdjustment;
+            stockUpdatePromises.push(
+                supabaseClient
+                    .from("estoque")
+                    .update({ qtd: novaQtd })
+                    .eq("id", pizzaId)
+            );
+        }
+    });
 
     try {
-      const { error: updateError } = await supabaseClient
-        .from("pedidos")
-        .update(updatedPedidoData)
-        .eq("id", originalPedido.id);
-      if (updateError) throw updateError;
+        if (stockUpdatePromises.length > 0) {
+            const results = await Promise.all(stockUpdatePromises);
+            const stockErrors = results.map(r => r.error).filter(Boolean);
+            if (stockErrors.length > 0) {
+                throw new Error(
+                    "Falha ao reconciliar o estoque: " +
+                    stockErrors.map(e => e.message).join("\n")
+                );
+            }
+            showSaveStatus("Estoque reconciliado!");
+        }
 
-      showSaveStatus("Pedido atualizado com sucesso!");
-      closeModal("edit-modal");
-      await loadDataFromSupabase();
+        const { error: updateError } = await supabaseClient
+            .from("pedidos")
+            .update(updatedPedidoData)
+            .eq("id", originalPedido.id);
+        if (updateError) throw updateError;
+
+        showSaveStatus("Pedido atualizado com sucesso!");
+        closeModal("edit-modal");
+        await loadDataFromSupabase();
+
     } catch (error) {
-      console.error("Erro ao atualizar pedido:", error);
-      showSaveStatus(`Erro ao atualizar pedido: ${error.message}`, false);
+        console.error("Erro ao atualizar pedido:", error);
+        showSaveStatus(`Erro ao atualizar pedido: ${error.message}`, false);
     } finally {
-      hideLoader();
+        hideLoader();
     }
   };
 
   const computePizzaDemandForWeek = (weekStart) => {
-    const demand = {}; // Cria um mapa para armazenar a demanda
+    const demand = {};
     database.pedidos
       .filter(p => {
         if (!p.dataEntrega) return false;
         const ws = getWeekStart(p.dataEntrega);
-        // CORREÇÃO: Filtra pela semana correta e APENAS pelo status 'Pendente'
         return ws === weekStart && p.status === 'Pendente';
       })
       .forEach(p => {
         (p.items || []).forEach(item => {
           if (item.isCustom || !item.pizzaId) return;
-          // Soma a quantidade para cada ID de pizza
           demand[item.pizzaId] = (demand[item.pizzaId] || 0) + Number(item.qtd || 0);
         });
       });
@@ -2489,12 +2500,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const refresh = () => {
       const weekStart = selectSemana.value || getWeekStart();
       const searchTerm = searchInput.value.toLowerCase();
-
-      // --- Lógica de Massas (sem alteração) ---
       const quotas = database.massas_semanais.find(
         (m) => m.semana_inicio === weekStart
       ) || { g_semana: 0, p_semana: 0, pc_semana: 0 };
-      const used = computeWeeklyUsage(weekStart, true); // true para todos status
+      const used = computeWeeklyUsage(weekStart, true); 
       const tbodyM = document.querySelector("#tabela-sobras-massas tbody");
       if (tbodyM) {
         tbodyM.innerHTML = `
@@ -2510,8 +2519,7 @@ document.addEventListener("DOMContentLoaded", () => {
         `;
       }
 
-      // --- Lógica de Pizzas (com filtro e ordenação) ---
-      const demandByPizza = computePizzaDemandForWeek(weekStart); // CORREÇÃO: Usa a nova função correta
+      const demandByPizza = computePizzaDemandForWeek(weekStart);
 
       let pizzaData = database.estoque.map((e) => {
         const pedidosSemana = demandByPizza[e.id] || 0;
@@ -2563,6 +2571,65 @@ document.addEventListener("DOMContentLoaded", () => {
 
     refresh();
   };
+
+  document.getElementById("btn-open-filter-modal")?.addEventListener("click", () => {
+      const vendedorSelect = document.getElementById("filter-modal-vendedor");
+      if (vendedorSelect) {
+          const currentVal = vendedorSelect.value;
+          const firstOption = vendedorSelect.options[0];
+          vendedorSelect.innerHTML = "";
+          if (firstOption) vendedorSelect.appendChild(firstOption);
+          
+          const allFirstNames = database.pedidos.map(p => p.vendedor).filter(Boolean).map(vendedor => {
+              const firstName = vendedor.trim().split(" ")[0];
+              return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+          });
+          const vendedores = [...new Set(allFirstNames)];
+          vendedores.sort().forEach(v => {
+              vendedorSelect.innerHTML += `<option value="${v}">${v}</option>`;
+          });
+          vendedorSelect.value = currentVal;
+      }
+
+      const semanaSelect = document.getElementById("filter-modal-semana");
+      if (semanaSelect) {
+          const currentVal = semanaSelect.value; 
+          populateWeekSelector(semanaSelect); 
+          
+          const semanasPassadas = [...new Set(database.pedidos
+              .filter(p => p.dataEntrega)
+              .map(p => getWeekStart(p.dataEntrega))
+          )].sort().reverse();
+          
+          semanasPassadas.forEach(semana => {
+              if (!Array.from(semanaSelect.options).some(opt => opt.value === semana)) {
+                   const d = new Date(semana + "T00:00:00");
+                   const label = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
+                   semanaSelect.innerHTML += `<option value="${semana}">Semana de ${label}</option>`;
+              }
+          });
+          
+          semanaSelect.value = currentVal;
+      }
+      
+      openModal('filter-modal', 'Filtrar Pedidos'); 
+  });
+
+  document.getElementById("filter-pedidos-form")?.addEventListener("submit", (e) => {
+      e.preventDefault();
+      renderPedidos();
+      closeModal('filter-modal');
+  });
+
+  document.getElementById("btn-clear-filters")?.addEventListener("click", () => {
+      document.getElementById("filter-pedidos-form").reset();
+      renderPedidos();
+  });
+
+  document
+      .getElementById("search-pedidos")
+      ?.addEventListener("input", renderPedidos);
+
 
   loadDataFromSupabase();
 });
