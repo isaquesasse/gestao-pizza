@@ -7,7 +7,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const LOADER = document.getElementById("loader");
   const SAVE_STATUS = document.getElementById("save-status");
 
- 
+
   if (localStorage.getItem("isAdminLoggedIn") === "true") {
     document.body.classList.add("admin-mode");
     document.getElementById("btn-admin-view").textContent = "Sair da Visão ADM";
@@ -183,8 +183,9 @@ document.addEventListener("DOMContentLoaded", () => {
     renderEstoque();
     renderReceitas();
 
-    const statusSelect = document.getElementById("filter-modal-status"); 
+    const statusSelect = document.getElementById("filter-modal-status");
     if (statusSelect && !statusSelect.value) {
+      statusSelect.value = "Pendente";
     }
 
     renderPedidos();
@@ -543,71 +544,71 @@ document.addEventListener("DOMContentLoaded", () => {
     const valorMax = parseFloat(document.getElementById("filter-modal-valor-max").value) || Infinity;
 
     let filteredData = database.pedidos.filter((p) => {
-        const searchMatch = (p.cliente || "").toLowerCase().includes(searchTerm);
+      const searchMatch = (p.cliente || "").toLowerCase().includes(searchTerm);
 
-        const clienteMatch = !clienteFilter || (p.cliente || "").toLowerCase().includes(clienteFilter);
-        const cidadeMatch = !cidadeFilter || (p.cidade || "").toLowerCase().includes(cidadeFilter);
+      const clienteMatch = !clienteFilter || (p.cliente || "").toLowerCase().includes(clienteFilter);
+      const cidadeMatch = !cidadeFilter || (p.cidade || "").toLowerCase().includes(cidadeFilter);
 
-        const vendedorFirstName = (p.vendedor || "").trim().split(" ")[0];
-        const normalizedVendedor =
-            vendedorFirstName.charAt(0).toUpperCase() +
-            vendedorFirstName.slice(1).toLowerCase();
-        const vendedorMatch =
-            !vendedorFilter || normalizedVendedor === vendedorFilter;
-        
-        const semanaMatch = !semanaFilter || (p.dataEntrega && getWeekStart(p.dataEntrega) === semanaFilter);
-        const statusMatch = !statusFilter || p.status === statusFilter;
+      const vendedorFirstName = (p.vendedor || "").trim().split(" ")[0];
+      const normalizedVendedor =
+        vendedorFirstName.charAt(0).toUpperCase() +
+        vendedorFirstName.slice(1).toLowerCase();
+      const vendedorMatch =
+        !vendedorFilter || normalizedVendedor === vendedorFilter;
 
-        const valorExibido = p.valorFinal || p.valorTotal;
-        const valorMatch = valorExibido >= valorMin && valorExibido <= valorMax;
+      const semanaMatch = !semanaFilter || (p.dataEntrega && getWeekStart(p.dataEntrega) === semanaFilter);
+      const statusMatch = !statusFilter || p.status === statusFilter;
 
-        return searchMatch && clienteMatch && cidadeMatch && vendedorMatch && semanaMatch && statusMatch && valorMatch;
+      const valorExibido = p.valorFinal || p.valorTotal;
+      const valorMatch = valorExibido >= valorMin && valorExibido <= valorMax;
+
+      return searchMatch && clienteMatch && cidadeMatch && vendedorMatch && semanaMatch && statusMatch && valorMatch;
     });
 
     const { column, direction } = sortState.pedidos;
     filteredData.sort((a, b) => {
-        const valA = a[column] ?? "";
-        const valB = b[column] ?? "";
-        if (column === "dataEntrega") return new Date(valA) - new Date(valB);
-        if (typeof valA === "number") return valA - valB;
-        return (valA || "").localeCompare(valB || "");
+      const valA = a[column] ?? "";
+      const valB = b[column] ?? "";
+      if (column === "dataEntrega") return new Date(valA) - new Date(valB);
+      if (typeof valA === "number") return valA - valB;
+      return (valA || "").localeCompare(valB || "");
     });
     if (direction === "desc") filteredData.reverse();
 
     tbody.innerHTML = "";
     filteredData.forEach((p) => {
-        const row = tbody.insertRow();
-        const itemsHtml = p.items
-            .map(
-                (i) =>
-                    `<li class="${i.isCustom ? "item-pedido-outro" : ""}">${i.qtd}x ${i.pizzaNome
-                    }</li>`
-            )
-            .join("");
-        const statusClass = (p.status || "pendente")
-            .toLowerCase()
-            .replace(/ /g, "-");
-        const startOfWeek = new Date(p.dataEntrega);
-        const weekStartFormatted = startOfWeek.toLocaleDateString("pt-BR", {
-            day: "2-digit",
-            month: "short",
-        });
-        const valorExibido = p.valorFinal || p.valorTotal;
+      const row = tbody.insertRow();
+      const itemsHtml = p.items
+        .map(
+          (i) =>
+            `<li class="${i.isCustom ? "item-pedido-outro" : ""}">${i.qtd}x ${i.pizzaNome
+            }</li>`
+        )
+        .join("");
+      const statusClass = (p.status || "pendente")
+        .toLowerCase()
+        .replace(/ /g, "-");
+      const startOfWeek = new Date(p.dataEntrega);
+      const weekStartFormatted = startOfWeek.toLocaleDateString("pt-BR", {
+        day: "2-digit",
+        month: "short",
+      });
+      const valorExibido = p.valorFinal || p.valorTotal;
 
-        row.innerHTML = `
+      row.innerHTML = `
                 <td data-label="Cliente">${p.cliente}</b><br><small>${p.telefone || "N/A"
-            }</small></td>
+        }</small></td>
                 <td data-label="Semana Entrega">${weekStartFormatted}</td>
                 <td data-label="Itens"><ul style="padding-left:15px;margin:0">${itemsHtml}</ul></td>
                 <td data-label="Detalhes"><small>Vend.: ${p.vendedor
-            }<br>Cid.: ${p.cidade}<br>Pag.: ${p.pagamento}</small></td>
+        }<br>Cid.: ${p.cidade}<br>Pag.: ${p.pagamento}</small></td>
                 <td data-label="Valores"><b>${formatCurrency(
-                valorExibido
-            )}</b><br><small class="admin-only">Calc: ${formatCurrency(
-                p.valorTotal
-            )}</small></td>
+          valorExibido
+        )}</b><br><small class="admin-only">Calc: ${formatCurrency(
+          p.valorTotal
+        )}</small></td>
                 <td data-label="Status"><span class="status-${statusClass}">${p.status
-            }</span></td>
+        }</span></td>
                 <td data-label="Ações">${renderActionButtons(p)}</td>
             `;
     });
@@ -2397,13 +2398,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const stockUpdatePromises = [];
 
     const getItemsMap = (items) => {
-        const map = new Map();
-        (items || []).forEach(item => {
-            if (!item.isCustom && item.pizzaId) {
-                map.set(item.pizzaId, (map.get(item.pizzaId) || 0) + Number(item.qtd || 0));
-            }
-        });
-        return map;
+      const map = new Map();
+      (items || []).forEach(item => {
+        if (!item.isCustom && item.pizzaId) {
+          map.set(item.pizzaId, (map.get(item.pizzaId) || 0) + Number(item.qtd || 0));
+        }
+      });
+      return map;
     };
 
     const originalItemsMap = getItemsMap(originalPedido.items);
@@ -2411,62 +2412,62 @@ document.addEventListener("DOMContentLoaded", () => {
     const allPizzaIds = new Set([...originalItemsMap.keys(), ...newItemsMap.keys()]);
 
     allPizzaIds.forEach(pizzaId => {
-        const originalQtd = originalItemsMap.get(pizzaId) || 0;
-        const newQtd = newItemsMap.get(pizzaId) || 0;
-        const diff = newQtd - originalQtd; 
+      const originalQtd = originalItemsMap.get(pizzaId) || 0;
+      const newQtd = newItemsMap.get(pizzaId) || 0;
+      const diff = newQtd - originalQtd;
 
-        const pizzaEstoque = database.estoque.find(p => p.id === pizzaId);
-        if (!pizzaEstoque) return; 
+      const pizzaEstoque = database.estoque.find(p => p.id === pizzaId);
+      if (!pizzaEstoque) return;
 
-        let stockAdjustment = 0;
+      let stockAdjustment = 0;
 
-        if (originalStatus !== 'Pronto' && newStatus === 'Pronto') {
-            stockAdjustment = -newQtd;
-        } else if (originalStatus === 'Pronto' && newStatus !== 'Pronto') {
-            stockAdjustment = +originalQtd;
-        } else if (originalStatus === 'Pronto' && newStatus === 'Pronto') {
-            stockAdjustment = -diff; 
-        }
+      if (originalStatus !== 'Pronto' && newStatus === 'Pronto') {
+        stockAdjustment = -newQtd;
+      } else if (originalStatus === 'Pronto' && newStatus !== 'Pronto') {
+        stockAdjustment = +originalQtd;
+      } else if (originalStatus === 'Pronto' && newStatus === 'Pronto') {
+        stockAdjustment = -diff;
+      }
 
-        if (stockAdjustment !== 0) {
-            const novaQtd = pizzaEstoque.qtd + stockAdjustment;
-            stockUpdatePromises.push(
-                supabaseClient
-                    .from("estoque")
-                    .update({ qtd: novaQtd })
-                    .eq("id", pizzaId)
-            );
-        }
+      if (stockAdjustment !== 0) {
+        const novaQtd = pizzaEstoque.qtd + stockAdjustment;
+        stockUpdatePromises.push(
+          supabaseClient
+            .from("estoque")
+            .update({ qtd: novaQtd })
+            .eq("id", pizzaId)
+        );
+      }
     });
 
     try {
-        if (stockUpdatePromises.length > 0) {
-            const results = await Promise.all(stockUpdatePromises);
-            const stockErrors = results.map(r => r.error).filter(Boolean);
-            if (stockErrors.length > 0) {
-                throw new Error(
-                    "Falha ao reconciliar o estoque: " +
-                    stockErrors.map(e => e.message).join("\n")
-                );
-            }
-            showSaveStatus("Estoque reconciliado!");
+      if (stockUpdatePromises.length > 0) {
+        const results = await Promise.all(stockUpdatePromises);
+        const stockErrors = results.map(r => r.error).filter(Boolean);
+        if (stockErrors.length > 0) {
+          throw new Error(
+            "Falha ao reconciliar o estoque: " +
+            stockErrors.map(e => e.message).join("\n")
+          );
         }
+        showSaveStatus("Estoque reconciliado!");
+      }
 
-        const { error: updateError } = await supabaseClient
-            .from("pedidos")
-            .update(updatedPedidoData)
-            .eq("id", originalPedido.id);
-        if (updateError) throw updateError;
+      const { error: updateError } = await supabaseClient
+        .from("pedidos")
+        .update(updatedPedidoData)
+        .eq("id", originalPedido.id);
+      if (updateError) throw updateError;
 
-        showSaveStatus("Pedido atualizado com sucesso!");
-        closeModal("edit-modal");
-        await loadDataFromSupabase();
+      showSaveStatus("Pedido atualizado com sucesso!");
+      closeModal("edit-modal");
+      await loadDataFromSupabase();
 
     } catch (error) {
-        console.error("Erro ao atualizar pedido:", error);
-        showSaveStatus(`Erro ao atualizar pedido: ${error.message}`, false);
+      console.error("Erro ao atualizar pedido:", error);
+      showSaveStatus(`Erro ao atualizar pedido: ${error.message}`, false);
     } finally {
-        hideLoader();
+      hideLoader();
     }
   };
 
@@ -2503,7 +2504,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const quotas = database.massas_semanais.find(
         (m) => m.semana_inicio === weekStart
       ) || { g_semana: 0, p_semana: 0, pc_semana: 0 };
-      const used = computeWeeklyUsage(weekStart, true); 
+      const used = computeWeeklyUsage(weekStart, true);
       const tbodyM = document.querySelector("#tabela-sobras-massas tbody");
       if (tbodyM) {
         tbodyM.innerHTML = `
@@ -2573,62 +2574,62 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   document.getElementById("btn-open-filter-modal")?.addEventListener("click", () => {
-      const vendedorSelect = document.getElementById("filter-modal-vendedor");
-      if (vendedorSelect) {
-          const currentVal = vendedorSelect.value;
-          const firstOption = vendedorSelect.options[0];
-          vendedorSelect.innerHTML = "";
-          if (firstOption) vendedorSelect.appendChild(firstOption);
-          
-          const allFirstNames = database.pedidos.map(p => p.vendedor).filter(Boolean).map(vendedor => {
-              const firstName = vendedor.trim().split(" ")[0];
-              return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
-          });
-          const vendedores = [...new Set(allFirstNames)];
-          vendedores.sort().forEach(v => {
-              vendedorSelect.innerHTML += `<option value="${v}">${v}</option>`;
-          });
-          vendedorSelect.value = currentVal;
-      }
+    const vendedorSelect = document.getElementById("filter-modal-vendedor");
+    if (vendedorSelect) {
+      const currentVal = vendedorSelect.value;
+      const firstOption = vendedorSelect.options[0];
+      vendedorSelect.innerHTML = "";
+      if (firstOption) vendedorSelect.appendChild(firstOption);
 
-      const semanaSelect = document.getElementById("filter-modal-semana");
-      if (semanaSelect) {
-          const currentVal = semanaSelect.value; 
-          populateWeekSelector(semanaSelect); 
-          
-          const semanasPassadas = [...new Set(database.pedidos
-              .filter(p => p.dataEntrega)
-              .map(p => getWeekStart(p.dataEntrega))
-          )].sort().reverse();
-          
-          semanasPassadas.forEach(semana => {
-              if (!Array.from(semanaSelect.options).some(opt => opt.value === semana)) {
-                   const d = new Date(semana + "T00:00:00");
-                   const label = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
-                   semanaSelect.innerHTML += `<option value="${semana}">Semana de ${label}</option>`;
-              }
-          });
-          
-          semanaSelect.value = currentVal;
-      }
-      
-      openModal('filter-modal', 'Filtrar Pedidos'); 
+      const allFirstNames = database.pedidos.map(p => p.vendedor).filter(Boolean).map(vendedor => {
+        const firstName = vendedor.trim().split(" ")[0];
+        return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+      });
+      const vendedores = [...new Set(allFirstNames)];
+      vendedores.sort().forEach(v => {
+        vendedorSelect.innerHTML += `<option value="${v}">${v}</option>`;
+      });
+      vendedorSelect.value = currentVal;
+    }
+
+    const semanaSelect = document.getElementById("filter-modal-semana");
+    if (semanaSelect) {
+      const currentVal = semanaSelect.value;
+      populateWeekSelector(semanaSelect);
+
+      const semanasPassadas = [...new Set(database.pedidos
+        .filter(p => p.dataEntrega)
+        .map(p => getWeekStart(p.dataEntrega))
+      )].sort().reverse();
+
+      semanasPassadas.forEach(semana => {
+        if (!Array.from(semanaSelect.options).some(opt => opt.value === semana)) {
+          const d = new Date(semana + "T00:00:00");
+          const label = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
+          semanaSelect.innerHTML += `<option value="${semana}">Semana de ${label}</option>`;
+        }
+      });
+
+      semanaSelect.value = currentVal;
+    }
+
+    openModal('filter-modal', 'Filtrar Pedidos');
   });
 
   document.getElementById("filter-pedidos-form")?.addEventListener("submit", (e) => {
-      e.preventDefault();
-      renderPedidos();
-      closeModal('filter-modal');
+    e.preventDefault();
+    renderPedidos();
+    closeModal('filter-modal');
   });
 
   document.getElementById("btn-clear-filters")?.addEventListener("click", () => {
-      document.getElementById("filter-pedidos-form").reset();
-      renderPedidos();
+    document.getElementById("filter-pedidos-form").reset();
+    renderPedidos();
   });
 
   document
-      .getElementById("search-pedidos")
-      ?.addEventListener("input", renderPedidos);
+    .getElementById("search-pedidos")
+    ?.addEventListener("input", renderPedidos);
 
 
   loadDataFromSupabase();
