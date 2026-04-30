@@ -2959,3 +2959,1593 @@ button {
     margin-bottom: -.3rem;
   }
 }
+
+/* === V14: mobile app mode definitivo === */
+@media (max-width: 900px) {
+  * {
+    box-sizing: border-box !important;
+  }
+
+  html,
+  body {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow-x: hidden !important;
+    overscroll-behavior-x: none;
+  }
+
+  body {
+    background: #f3f6fa !important;
+  }
+
+  body::before,
+  body::after {
+    display: none !important;
+  }
+
+  /* Header de app: sem nada empurrando a página para o lado */
+  .app-header {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 1200 !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 14px 14px 12px !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+    overflow: hidden !important;
+    border-radius: 0 !important;
+  }
+
+  .header-brand {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    text-align: left !important;
+  }
+
+  .header-brand h1 {
+    font-size: 1.48rem !important;
+    line-height: 1.05 !important;
+    margin: 0 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  .header-brand p {
+    font-size: .82rem !important;
+    margin-top: 3px !important;
+  }
+
+  .header-tools {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 46px !important;
+    gap: 8px !important;
+    align-items: center !important;
+  }
+
+  .global-search-wrap {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    display: block !important;
+    padding: 0 !important;
+    background: transparent !important;
+    border: 0 !important;
+  }
+
+  .global-search-wrap input {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 42px !important;
+    padding: 0 12px !important;
+    border-radius: 14px !important;
+    background: rgba(255,255,255,.16) !important;
+    border: 1px solid rgba(255,255,255,.2) !important;
+    color: #fff !important;
+    font-size: 16px !important;
+  }
+
+  .global-search-wrap input::placeholder {
+    color: rgba(255,255,255,.72) !important;
+  }
+
+  .global-search-wrap .ghost-btn {
+    display: none !important;
+  }
+
+  .profile-pill,
+  #btn-profile {
+    width: 46px !important;
+    height: 42px !important;
+    min-width: 46px !important;
+    max-width: 46px !important;
+    padding: 0 !important;
+    border-radius: 14px !important;
+    display: grid !important;
+    place-items: center !important;
+    background: rgba(255,255,255,.16) !important;
+    border: 1px solid rgba(255,255,255,.2) !important;
+  }
+
+  .profile-avatar {
+    width: 34px !important;
+    height: 34px !important;
+    display: grid !important;
+    place-items: center !important;
+    font-size: 1rem !important;
+  }
+
+  #current-seller-name,
+  .profile-pill span:not(.profile-avatar) {
+    display: none !important;
+  }
+
+  /* No celular fica só a barra inferior. */
+  .main-nav {
+    display: none !important;
+  }
+
+  .mobile-bottom-nav {
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    z-index: 1400 !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    padding: 7px 6px calc(7px + env(safe-area-inset-bottom)) !important;
+    gap: 4px !important;
+    background: rgba(255,255,255,.98) !important;
+    border-top: 1px solid #d8e2ee !important;
+    box-shadow: 0 -8px 28px rgba(15,23,42,.12) !important;
+    overflow: hidden !important;
+  }
+
+  .mobile-bottom-nav .tab-link {
+    min-width: 0 !important;
+    width: 100% !important;
+    height: 44px !important;
+    padding: 0 2px !important;
+    margin: 0 !important;
+    border-radius: 14px !important;
+    font-size: .7rem !important;
+    line-height: 1.05 !important;
+    display: grid !important;
+    place-items: center !important;
+    white-space: normal !important;
+    overflow: hidden !important;
+    text-align: center !important;
+  }
+
+  /* Área útil sem scroll horizontal */
+  main {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 12px 12px 78px !important;
+    overflow-x: hidden !important;
+    display: block !important;
+  }
+
+  .tab-content,
+  .tab-content.active {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow-x: hidden !important;
+  }
+
+  .tab-content:not(.active) {
+    display: none !important;
+  }
+
+  .tab-content.active {
+    display: block !important;
+  }
+
+  section,
+  .grid-container,
+  .grid-col,
+  .home-grid,
+  .home-kpis,
+  .home-hero,
+  .charts-container,
+  .card,
+  .table-container,
+  .table-header,
+  .filters-container,
+  .profile-layout,
+  .filter-grid,
+  .filter-grid.two,
+  .smart-clients,
+  .quick-pizzas-grid,
+  .available-pizzas-grid,
+  .pedido-pizza-atalhos,
+  .kitchen-list,
+  .notice-list,
+  #caixa-resumo,
+  .dashboard-kpis {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+    overflow-x: hidden !important;
+  }
+
+  .card,
+  .home-hero.card,
+  .chart-card,
+  .chart-container,
+  .modal-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 0 10px !important;
+    padding: 14px !important;
+    border-radius: 18px !important;
+    overflow: hidden !important;
+  }
+
+  h2,
+  h3,
+  h4,
+  p,
+  small,
+  span,
+  b,
+  label,
+  li,
+  td,
+  th {
+    max-width: 100% !important;
+    overflow-wrap: anywhere !important;
+    word-break: normal !important;
+  }
+
+  h2 {
+    font-size: 1.18rem !important;
+    line-height: 1.2 !important;
+    margin: 0 0 10px !important;
+    padding-bottom: 8px !important;
+  }
+
+  h3 {
+    font-size: 1rem !important;
+    line-height: 1.25 !important;
+  }
+
+  .home-hero h2 {
+    font-size: 1.15rem !important;
+    margin-bottom: 4px !important;
+  }
+
+  .home-hero p,
+  .small-muted {
+    font-size: .86rem !important;
+    line-height: 1.4 !important;
+  }
+
+  .home-actions {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+  }
+
+  .home-actions button,
+  .home-action {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 44px !important;
+    padding: 8px 10px !important;
+    font-size: .86rem !important;
+    white-space: normal !important;
+  }
+
+  .home-kpis {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  .kpi-tile,
+  .kpi-card {
+    width: 100% !important;
+    min-width: 0 !important;
+    padding: 12px !important;
+    border-radius: 16px !important;
+  }
+
+  .kpi-tile b,
+  .kpi-card b {
+    font-size: 1.3rem !important;
+  }
+
+  .home-list-item,
+  .kitchen-item,
+  .smart-client,
+  .search-result-item,
+  .quick-pizza,
+  .available-pizza-card,
+  .carrinho-item,
+  .receita-ingrediente-item {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 12px !important;
+    border-radius: 16px !important;
+    overflow: hidden !important;
+    display: block !important;
+  }
+
+  .home-list-item small {
+    display: block !important;
+    max-height: 5.8em !important;
+    overflow: hidden !important;
+    line-height: 1.45 !important;
+  }
+
+  .badge-inline,
+  .payment-tag,
+  [class^="status-"],
+  [class*=" status-"] {
+    display: inline-flex !important;
+    align-items: center !important;
+    width: auto !important;
+    max-width: 100% !important;
+    margin: 4px 4px 4px 0 !important;
+    white-space: nowrap !important;
+  }
+
+  /* Formulários realmente usáveis no celular */
+  form,
+  #form-pedido-principal,
+  #form-item-pedido,
+  #form-add-ingrediente-receita,
+  #form-producao,
+  #form-caixa,
+  .form-producao-container,
+  .resumo-pedido,
+  .filter-actions,
+  .filter-chips,
+  .profile-current-card,
+  .weekly-massas .form-row {
+    width: 100% !important;
+    max-width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 9px !important;
+    align-items: stretch !important;
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    min-height: 44px !important;
+    font-size: 16px !important;
+  }
+
+  button,
+  .action-btn {
+    padding: 10px 12px !important;
+    border-radius: 14px !important;
+  }
+
+  /* Tabelas viram cards bons de tocar */
+  .table-container {
+    border: 0 !important;
+    overflow: visible !important;
+  }
+
+  .table-container table,
+  .table-container thead,
+  .table-container tbody,
+  .table-container tr,
+  .table-container th,
+  .table-container td,
+  table,
+  thead,
+  tbody,
+  tr,
+  th,
+  td {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .table-container thead,
+  table thead {
+    display: none !important;
+  }
+
+  .table-container tr,
+  table tr {
+    background: #fff !important;
+    border: 1px solid #dfe8f3 !important;
+    border-radius: 16px !important;
+    box-shadow: 0 4px 12px rgba(15,23,42,.04) !important;
+    margin: 0 0 10px !important;
+    padding: 8px 10px !important;
+    overflow: hidden !important;
+  }
+
+  .table-container td,
+  table td {
+    border: 0 !important;
+    border-bottom: 1px dashed #e2e8f0 !important;
+    padding: 8px 0 !important;
+    display: grid !important;
+    grid-template-columns: 108px minmax(0,1fr) !important;
+    gap: 10px !important;
+    align-items: start !important;
+    text-align: left !important;
+  }
+
+  .table-container td:last-child,
+  table td:last-child {
+    border-bottom: 0 !important;
+  }
+
+  .table-container td::before,
+  table td::before {
+    position: static !important;
+    display: block !important;
+    content: attr(data-label) !important;
+    width: auto !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+    color: #64748b !important;
+    font-weight: 800 !important;
+    font-size: .78rem !important;
+    text-align: left !important;
+    white-space: normal !important;
+  }
+
+  td[data-label="Ações"],
+  .table-container td[data-label="Ações"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  td[data-label="Ações"]::before,
+  .table-container td[data-label="Ações"]::before {
+    display: none !important;
+  }
+
+  td[data-label="Ações"] button,
+  td[data-label="Ações"] .action-btn,
+  .table-container td[data-label="Ações"] button,
+  .table-container td[data-label="Ações"] .action-btn {
+    width: 100% !important;
+    margin: 0 0 6px !important;
+  }
+
+  .table-container td ul,
+  .table-container td small,
+  .table-container td b,
+  .table-container td span,
+  table td ul,
+  table td small,
+  table td b,
+  table td span {
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  .table-container td ul,
+  table td ul {
+    padding-left: 16px !important;
+    margin: 0 !important;
+  }
+
+  /* Modais e filtros no celular */
+  .modal {
+    padding: 0 !important;
+    overflow-x: hidden !important;
+  }
+
+  .modal-content,
+  .filter-modal-content,
+  .profile-modal-content {
+    width: calc(100vw - 20px) !important;
+    max-width: calc(100vw - 20px) !important;
+    min-width: 0 !important;
+    margin: 10px auto 86px !important;
+    padding: 14px !important;
+    border-radius: 20px !important;
+    overflow-x: hidden !important;
+  }
+
+  .close-button {
+    top: 10px !important;
+    right: 14px !important;
+  }
+
+  .floating-alert-btn {
+    width: 48px !important;
+    height: 48px !important;
+    right: 12px !important;
+    bottom: 84px !important;
+  }
+}
+
+@media (max-width: 430px) {
+  .home-kpis,
+  .home-actions {
+    grid-template-columns: 1fr !important;
+  }
+
+  .table-container td,
+  table td {
+    grid-template-columns: 1fr !important;
+    gap: 2px !important;
+  }
+
+  .table-container td::before,
+  table td::before {
+    margin-bottom: 2px !important;
+  }
+}
+
+/* === V15: mobile app shell real === */
+.mobile-app { display: none; }
+@media (max-width: 900px) {
+  html, body {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow-x: hidden !important;
+    background: #f3f6fa !important;
+  }
+  body > .app-header,
+  body > .main-nav,
+  body > main,
+  body > footer,
+  body > .mobile-bottom-nav,
+  #btn-notificacoes {
+    display: none !important;
+  }
+  .mobile-app {
+    display: grid !important;
+    grid-template-rows: auto auto 1fr auto;
+    min-height: 100dvh;
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+    background: #f3f6fa;
+    color: #0f172a;
+  }
+  .mobile-app * { box-sizing: border-box !important; max-width: 100% !important; }
+  .mobile-app-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 16px 14px 12px;
+    background: linear-gradient(130deg, #0f172a, #1e293b 60%, #1d4ed8);
+    color: #fff;
+    width: 100%;
+  }
+  .mobile-brand-btn {
+    display: grid !important;
+    gap: 2px !important;
+    text-align: left !important;
+    background: transparent !important;
+    border: 0 !important;
+    color: #fff !important;
+    padding: 0 !important;
+    min-width: 0 !important;
+    width: auto !important;
+    flex: 1 !important;
+  }
+  .mobile-brand-btn strong { font-size: 1.42rem; line-height: 1.08; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mobile-brand-btn small { opacity: .85; font-size: .84rem; }
+  .mobile-icon-btn {
+    width: 44px !important; height: 44px !important; min-width: 44px !important;
+    display: grid !important; place-items: center !important;
+    border-radius: 14px !important; border: 1px solid rgba(255,255,255,.2) !important;
+    background: rgba(255,255,255,.14) !important; padding: 0 !important;
+  }
+  .mobile-search-row {
+    padding: 10px 12px;
+    background: #fff;
+    border-bottom: 1px solid #d9e2ec;
+  }
+  .mobile-search-row input {
+    width: 100% !important; min-width: 0 !important; height: 44px !important;
+    border-radius: 14px !important; border: 1px solid #d7e2ef !important;
+    background: #f8fafc !important; color: #0f172a !important;
+    padding: 0 12px !important; font-size: 16px !important;
+  }
+  .mobile-screen {
+    width: 100% !important;
+    min-width: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    padding: 12px 12px 92px !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  .mobile-app-nav {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 3000;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 5px;
+    padding: 7px 6px calc(7px + env(safe-area-inset-bottom));
+    background: rgba(255,255,255,.98);
+    border-top: 1px solid #d9e2ec;
+    box-shadow: 0 -10px 28px rgba(15,23,42,.10);
+  }
+  .mobile-app-nav button {
+    height: 46px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    border: 0 !important;
+    border-radius: 14px !important;
+    background: transparent !important;
+    color: #64748b !important;
+    padding: 2px !important;
+    font-size: .72rem !important;
+    font-weight: 800 !important;
+    line-height: 1.05 !important;
+  }
+  .mobile-app-nav button.active {
+    background: #eff6ff !important;
+    color: #1d4ed8 !important;
+  }
+  .m-section { display: grid; gap: 12px; width: 100%; min-width: 0; }
+  .m-card {
+    width: 100% !important; min-width: 0 !important;
+    background: #fff;
+    border: 1px solid #dfe8f3;
+    border-radius: 18px;
+    padding: 14px;
+    box-shadow: 0 8px 24px rgba(15,23,42,.05);
+    overflow: hidden;
+  }
+  .m-card h2, .m-card h3 { margin: 0 0 8px !important; padding: 0 !important; border: 0 !important; line-height: 1.2 !important; }
+  .m-card h2 { font-size: 1.15rem !important; }
+  .m-card h3 { font-size: 1rem !important; }
+  .m-muted { color: #64748b; font-size: .86rem; line-height: 1.45; }
+  .m-kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .m-kpi { background: #fff; border: 1px solid #dfe8f3; border-radius: 18px; padding: 12px; overflow: hidden; }
+  .m-kpi span { display: block; color: #64748b; font-size: .84rem; }
+  .m-kpi b { display: block; font-size: 1.35rem; color: #0f172a; margin-top: 4px; }
+  .m-list { display: grid; gap: 10px; }
+  .m-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; padding: 12px; overflow: hidden; }
+  .m-item-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+  .m-item b { overflow-wrap: anywhere; }
+  .m-line { color: #475569; font-size: .88rem; line-height: 1.45; overflow-wrap: anywhere; }
+  .m-badge { display:inline-flex; align-items:center; border-radius: 999px; padding: 3px 8px; font-size: .72rem; font-weight: 800; white-space: nowrap; border: 1px solid #cbd5e1; background: #fff; color: #334155; }
+  .m-badge.warn { background: #fff7ed; color:#c2410c; border-color:#fed7aa; }
+  .m-badge.ok { background: #ecfdf5; color:#047857; border-color:#a7f3d0; }
+  .m-badge.bad { background:#fef2f2; color:#b91c1c; border-color:#fecaca; }
+  .m-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .m-actions.single { grid-template-columns: 1fr; }
+  .m-btn { width:100% !important; min-height:44px !important; border-radius:14px !important; background:#1d4ed8 !important; color:#fff !important; border:0 !important; padding:10px 12px !important; font-weight:800 !important; font-size:.95rem !important; }
+  .m-btn.secondary { background:#f1f5f9 !important; color:#0f172a !important; border:1px solid #dbe5ef !important; }
+  .m-btn.green { background:#16a34a !important; }
+  .m-btn.orange { background:#f97316 !important; }
+  .m-form { display:grid; gap:10px; }
+  .m-form input, .m-form select, .m-form textarea {
+    width:100% !important; min-width:0 !important; min-height:46px !important;
+    border:1px solid #d7e2ef !important; border-radius:14px !important;
+    background:#fff !important; padding:0 12px !important; font-size:16px !important; color:#0f172a !important;
+  }
+  .m-form textarea { padding:10px 12px !important; min-height:96px !important; }
+  .m-two { display:grid; grid-template-columns: 1fr 92px; gap:8px; }
+  .m-cart { display:grid; gap:8px; }
+  .m-cart-row { display:grid; grid-template-columns: 1fr auto; gap:8px; align-items:center; background:#f8fafc; border:1px solid #e2e8f0; border-radius:14px; padding:10px; }
+  .m-mini-btn { width:36px !important; height:36px !important; min-height:36px !important; padding:0 !important; border-radius:12px !important; background:#e2e8f0 !important; color:#0f172a !important; }
+  .m-pizza-grid { display:grid; gap:8px; }
+  .m-pizza-row { display:grid; grid-template-columns: 1fr auto auto; gap:8px; align-items:center; background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; padding:10px; }
+  .m-pizza-row input { width:52px !important; text-align:center; padding:0 !important; min-height:38px !important; }
+  .m-total-sticky { position: sticky; bottom: 78px; background:#0f172a; color:#fff; border-radius:18px; padding:12px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 8px 24px rgba(15,23,42,.2); z-index:10; }
+  .m-total-sticky b { font-size:1.2rem; }
+}
+@media (max-width: 430px) { .m-kpis, .m-actions { grid-template-columns: 1fr; } }
+
+/* === V16: correção real do mobile no DevTools / celulares === */
+@media (max-width: 900px) {
+  html,
+  body {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100svh !important;
+    min-height: 100svh !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overscroll-behavior: none !important;
+  }
+
+  body > *:not(#mobile-app):not(.modal):not(.loader-container):not(#loader):not(#save-status) {
+    display: none !important;
+  }
+
+  #mobile-app.mobile-app {
+    display: grid !important;
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100svh !important;
+    min-height: 100svh !important;
+    grid-template-rows: auto auto minmax(0, 1fr) auto !important;
+    overflow: hidden !important;
+    background: #f3f6fa !important;
+    transform: none !important;
+  }
+
+  #mobile-app,
+  #mobile-app * {
+    box-sizing: border-box !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    word-break: normal !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  #mobile-app .mobile-app-header {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    min-height: 72px !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 44px !important;
+    align-items: center !important;
+    gap: 10px !important;
+    padding: 14px 14px 12px !important;
+    flex: none !important;
+  }
+
+  #mobile-app .mobile-brand-btn {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+  }
+
+  #mobile-app .mobile-brand-btn strong,
+  #mobile-app .mobile-brand-btn small {
+    display: block !important;
+    max-width: 100% !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  #mobile-app .mobile-icon-btn {
+    display: grid !important;
+    width: 44px !important;
+    min-width: 44px !important;
+    height: 44px !important;
+    max-width: 44px !important;
+    justify-self: end !important;
+  }
+
+  #mobile-app .mobile-search-row {
+    display: block !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    padding: 9px 12px !important;
+    background: #ffffff !important;
+    border-bottom: 1px solid #dbe5ef !important;
+  }
+
+  #mobile-app .mobile-search-row input {
+    display: block !important;
+    width: 100% !important;
+    height: 44px !important;
+    max-width: 100% !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+  }
+
+  #mobile-app .mobile-screen {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    min-height: 0 !important;
+    height: auto !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    padding: 12px 10px 14px !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  #mobile-app .mobile-app-nav {
+    position: static !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: 5px !important;
+    padding: 7px 6px calc(7px + env(safe-area-inset-bottom)) !important;
+    flex: none !important;
+  }
+
+  #mobile-app .mobile-app-nav button {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    height: 46px !important;
+    min-height: 46px !important;
+    padding: 2px !important;
+    white-space: normal !important;
+  }
+
+  #mobile-app .m-section,
+  #mobile-app .m-list,
+  #mobile-app .m-form,
+  #mobile-app .m-pizza-grid,
+  #mobile-app .m-cart {
+    width: 100% !important;
+    max-width: 100% !important;
+    display: grid !important;
+  }
+
+  #mobile-app .m-card,
+  #mobile-app .m-item,
+  #mobile-app .m-kpi,
+  #mobile-app .m-cart-row,
+  #mobile-app .m-pizza-row {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+  }
+
+  #mobile-app .m-muted,
+  #mobile-app .m-line {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    line-height: 1.35 !important;
+  }
+
+  #mobile-app .m-item-head {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    align-items: start !important;
+  }
+
+  #mobile-app .m-item-head b {
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+
+  #mobile-app .m-badge {
+    justify-self: end !important;
+    max-width: 108px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  #mobile-app .m-kpis {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  #mobile-app .m-actions {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  #mobile-app .m-actions.single {
+    grid-template-columns: 1fr !important;
+  }
+
+  #mobile-app .m-two {
+    grid-template-columns: minmax(0, 1fr) 86px !important;
+  }
+
+  #mobile-app .m-pizza-row {
+    grid-template-columns: minmax(0, 1fr) 38px 52px 38px !important;
+  }
+
+  #mobile-app .m-total-sticky {
+    position: sticky !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .modal {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+  }
+
+  .modal-content {
+    width: calc(100vw - 20px) !important;
+    max-width: calc(100vw - 20px) !important;
+    margin: 10px auto !important;
+    max-height: calc(100svh - 20px) !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+  }
+}
+
+@media (max-width: 430px) {
+  #mobile-app .m-kpis,
+  #mobile-app .m-actions {
+    grid-template-columns: 1fr !important;
+  }
+
+  #mobile-app .m-pizza-row {
+    grid-template-columns: minmax(0, 1fr) 34px 48px 34px !important;
+    gap: 6px !important;
+    padding: 9px !important;
+  }
+
+  #mobile-app .m-mini-btn {
+    width: 34px !important;
+    max-width: 34px !important;
+  }
+}
+
+/* === V18: mobile app definitivo e planejamento de massas === */
+@media (max-width: 900px) {
+  html,
+  body {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    min-height: 100% !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #f3f6fa !important;
+  }
+
+  body:not(.force-desktop-mobile) > .app-header,
+  body:not(.force-desktop-mobile) > .main-nav,
+  body:not(.force-desktop-mobile) > main,
+  body:not(.force-desktop-mobile) > footer,
+  body:not(.force-desktop-mobile) > .mobile-bottom-nav,
+  body:not(.force-desktop-mobile) > #btn-notificacoes {
+    display: none !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app.mobile-app {
+    display: grid !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100dvh !important;
+    min-height: 100dvh !important;
+    grid-template-rows: auto auto minmax(0, 1fr) auto !important;
+    overflow: hidden !important;
+    background: #f3f6fa !important;
+    color: #0f172a !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app,
+  body:not(.force-desktop-mobile) #mobile-app * {
+    box-sizing: border-box !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app .mobile-app-header {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 70px !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 44px !important;
+    gap: 10px !important;
+    align-items: center !important;
+    padding: 13px 12px !important;
+    background: linear-gradient(130deg, #0f172a, #172033 70%, #1d4ed8) !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app .mobile-brand-btn {
+    width: 100% !important;
+    text-align: left !important;
+    background: transparent !important;
+    color: #fff !important;
+    padding: 0 !important;
+    border: 0 !important;
+    overflow: hidden !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app .mobile-brand-btn strong,
+  body:not(.force-desktop-mobile) #mobile-app .mobile-brand-btn small {
+    display: block !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app .mobile-brand-btn strong {
+    font-size: 1.32rem !important;
+    line-height: 1.12 !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app .mobile-icon-btn {
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    max-width: 44px !important;
+    padding: 0 !important;
+    display: grid !important;
+    place-items: center !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app .mobile-search-row {
+    width: 100% !important;
+    padding: 8px 10px !important;
+    background: #fff !important;
+    border-bottom: 1px solid #dce6f1 !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app .mobile-search-row input {
+    width: 100% !important;
+    height: 42px !important;
+    min-height: 42px !important;
+    font-size: 16px !important;
+    border-radius: 14px !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app .mobile-screen {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    padding: 10px 9px 12px !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app .mobile-app-nav {
+    position: static !important;
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: 4px !important;
+    padding: 6px 5px calc(6px + env(safe-area-inset-bottom)) !important;
+    background: #fff !important;
+    border-top: 1px solid #dce6f1 !important;
+    box-shadow: 0 -8px 18px rgba(15,23,42,.08) !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app .mobile-app-nav button {
+    width: 100% !important;
+    height: 44px !important;
+    min-height: 44px !important;
+    padding: 2px !important;
+    border-radius: 12px !important;
+    white-space: normal !important;
+    font-size: .72rem !important;
+    line-height: 1.05 !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app .m-section,
+  body:not(.force-desktop-mobile) #mobile-app .m-list,
+  body:not(.force-desktop-mobile) #mobile-app .m-form,
+  body:not(.force-desktop-mobile) #mobile-app .m-cart,
+  body:not(.force-desktop-mobile) #mobile-app .m-pizza-grid {
+    display: grid !important;
+    width: 100% !important;
+    gap: 10px !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app .m-card,
+  body:not(.force-desktop-mobile) #mobile-app .m-item,
+  body:not(.force-desktop-mobile) #mobile-app .m-kpi,
+  body:not(.force-desktop-mobile) #mobile-app .m-cart-row,
+  body:not(.force-desktop-mobile) #mobile-app .m-pizza-row {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-radius: 16px !important;
+    overflow: hidden !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app .m-card *,
+  body:not(.force-desktop-mobile) #mobile-app .m-item *,
+  body:not(.force-desktop-mobile) #mobile-app .m-muted,
+  body:not(.force-desktop-mobile) #mobile-app .m-line {
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+    text-overflow: clip !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app .m-card h2 {
+    font-size: 1.08rem !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app .m-muted,
+  body:not(.force-desktop-mobile) #mobile-app .m-line {
+    font-size: .82rem !important;
+    line-height: 1.35 !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app .m-kpis,
+  body:not(.force-desktop-mobile) #mobile-app .m-actions {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app .m-item-head {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    gap: 8px !important;
+    align-items: start !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app .m-badge {
+    max-width: 104px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app .m-form input,
+  body:not(.force-desktop-mobile) #mobile-app .m-form select,
+  body:not(.force-desktop-mobile) #mobile-app .m-form textarea {
+    width: 100% !important;
+    min-height: 44px !important;
+    font-size: 16px !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app .m-two {
+    grid-template-columns: minmax(0, 1fr) 82px !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app .m-pizza-row {
+    grid-template-columns: minmax(0, 1fr) 36px 50px 36px !important;
+    gap: 6px !important;
+    align-items: center !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app .m-pizza-row input {
+    width: 50px !important;
+    min-width: 50px !important;
+    height: 36px !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app .m-mini-btn {
+    width: 36px !important;
+    min-width: 36px !important;
+    height: 36px !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app .m-total-sticky {
+    bottom: 0 !important;
+  }
+}
+
+@media (max-width: 390px) {
+  body:not(.force-desktop-mobile) #mobile-app .m-kpis,
+  body:not(.force-desktop-mobile) #mobile-app .m-actions {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+
+/* === V19 CORREÇÃO AUTORITATIVA DO MOBILE ===
+   Este bloco fica no fim do CSS para vencer todas as regras antigas.
+*/
+@media (max-width: 900px) {
+  html,
+  body {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    min-width: 0 !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    min-height: 100dvh !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    overscroll-behavior: none !important;
+    background: #f3f6fa !important;
+  }
+
+  body {
+    position: fixed !important;
+    inset: 0 !important;
+  }
+
+  body > header,
+  body > nav.main-nav,
+  body > main,
+  body > footer,
+  body > nav.mobile-bottom-nav,
+  body > .mobile-bottom-nav,
+  #btn-notificacoes {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    max-height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  #mobile-app.mobile-app {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    position: fixed !important;
+    z-index: 10 !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    min-width: 0 !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    min-height: 100dvh !important;
+    overflow: hidden !important;
+    flex-direction: column !important;
+    background: #f3f6fa !important;
+    color: #0f172a !important;
+    transform: none !important;
+  }
+
+  #mobile-app,
+  #mobile-app * {
+    box-sizing: border-box !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+
+  #mobile-app .mobile-app-header {
+    flex: 0 0 auto !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 44px !important;
+    align-items: center !important;
+    gap: 10px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 12px 12px 11px !important;
+    background: linear-gradient(130deg, #0f172a, #172033 70%, #1d4ed8) !important;
+    color: #fff !important;
+    overflow: hidden !important;
+  }
+
+  #mobile-app .mobile-brand-btn {
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    color: #fff !important;
+    text-align: left !important;
+    overflow: hidden !important;
+    box-shadow: none !important;
+    transform: none !important;
+  }
+
+  #mobile-app .mobile-brand-btn strong {
+    display: block !important;
+    font-size: 1.35rem !important;
+    line-height: 1.12 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  #mobile-app .mobile-brand-btn small {
+    display: block !important;
+    margin-top: 2px !important;
+    font-size: .84rem !important;
+    line-height: 1.2 !important;
+    opacity: .86 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  #mobile-app .mobile-icon-btn {
+    width: 44px !important;
+    min-width: 44px !important;
+    max-width: 44px !important;
+    height: 44px !important;
+    min-height: 44px !important;
+    max-height: 44px !important;
+    padding: 0 !important;
+    border: 1px solid rgba(255,255,255,.22) !important;
+    border-radius: 14px !important;
+    display: grid !important;
+    place-items: center !important;
+    background: rgba(255,255,255,.14) !important;
+    box-shadow: none !important;
+    transform: none !important;
+  }
+
+  #mobile-app .mobile-search-row {
+    flex: 0 0 auto !important;
+    display: block !important;
+    width: 100% !important;
+    padding: 8px 10px !important;
+    background: #ffffff !important;
+    border-bottom: 1px solid #dce6f1 !important;
+    overflow: hidden !important;
+  }
+
+  #mobile-app .mobile-search-row input {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    height: 42px !important;
+    min-height: 42px !important;
+    max-height: 42px !important;
+    border-radius: 14px !important;
+    border: 1px solid #d7e2ef !important;
+    background: #f8fafc !important;
+    color: #0f172a !important;
+    font-size: 16px !important;
+    padding: 0 12px !important;
+  }
+
+  #mobile-app .mobile-screen {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    padding: 10px 10px 78px !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  #mobile-app .mobile-app-nav {
+    position: fixed !important;
+    z-index: 50 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: calc(64px + env(safe-area-inset-bottom)) !important;
+    min-height: calc(64px + env(safe-area-inset-bottom)) !important;
+    max-height: calc(64px + env(safe-area-inset-bottom)) !important;
+    padding: 7px 6px calc(7px + env(safe-area-inset-bottom)) !important;
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    align-items: center !important;
+    gap: 5px !important;
+    background: rgba(255,255,255,.98) !important;
+    border-top: 1px solid #dce6f1 !important;
+    box-shadow: 0 -8px 18px rgba(15,23,42,.08) !important;
+    overflow: hidden !important;
+  }
+
+  #mobile-app .mobile-app-nav button,
+  #mobile-app .mobile-app-nav button.active,
+  #mobile-app .mobile-app-nav button:hover,
+  #mobile-app .mobile-app-nav button:active,
+  #mobile-app .mobile-app-nav button:focus {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    height: 48px !important;
+    min-height: 48px !important;
+    max-height: 48px !important;
+    margin: 0 !important;
+    padding: 0 2px !important;
+    border: 0 !important;
+    border-radius: 12px !important;
+    box-shadow: none !important;
+    transform: none !important;
+    font-size: 11px !important;
+    line-height: 1 !important;
+    font-weight: 800 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  #mobile-app .mobile-app-nav button {
+    background: transparent !important;
+    color: #64748b !important;
+  }
+
+  #mobile-app .mobile-app-nav button.active {
+    background: #eaf2ff !important;
+    color: #1d4ed8 !important;
+  }
+
+  #mobile-app .m-section,
+  #mobile-app .m-list,
+  #mobile-app .m-form,
+  #mobile-app .m-cart,
+  #mobile-app .m-pizza-grid,
+  #mobile-app .m-actions,
+  #mobile-app .m-kpis {
+    display: grid !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    gap: 10px !important;
+    overflow: visible !important;
+  }
+
+  #mobile-app .m-card,
+  #mobile-app .m-item,
+  #mobile-app .m-kpi,
+  #mobile-app .m-cart-row,
+  #mobile-app .m-pizza-row {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    border-radius: 16px !important;
+    overflow: hidden !important;
+  }
+
+  #mobile-app .m-card *,
+  #mobile-app .m-item *,
+  #mobile-app .m-muted,
+  #mobile-app .m-line {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+    text-overflow: clip !important;
+  }
+
+  #mobile-app .m-item-head {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    gap: 8px !important;
+    align-items: start !important;
+  }
+
+  #mobile-app .m-badge {
+    max-width: 110px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  #mobile-app .m-kpis,
+  #mobile-app .m-actions {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  #mobile-app .m-form input,
+  #mobile-app .m-form select,
+  #mobile-app .m-form textarea {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    font-size: 16px !important;
+  }
+
+  #mobile-app .m-pizza-row {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 36px 50px 36px !important;
+    gap: 6px !important;
+    align-items: center !important;
+  }
+
+  #mobile-app .m-mini-btn {
+    width: 36px !important;
+    min-width: 36px !important;
+    max-width: 36px !important;
+    height: 36px !important;
+    min-height: 36px !important;
+    max-height: 36px !important;
+    padding: 0 !important;
+  }
+
+  #mobile-app .m-pizza-row input {
+    width: 50px !important;
+    min-width: 50px !important;
+    max-width: 50px !important;
+    height: 36px !important;
+    min-height: 36px !important;
+    padding: 0 !important;
+    text-align: center !important;
+  }
+
+  #mobile-app .m-total-sticky {
+    position: sticky !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    border-radius: 14px !important;
+  }
+
+  .modal {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+  }
+
+  .modal-content {
+    width: calc(100vw - 20px) !important;
+    max-width: calc(100vw - 20px) !important;
+    margin: 10px auto !important;
+    max-height: calc(100dvh - 20px) !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    border-radius: 18px !important;
+  }
+}
+
+@media (max-width: 420px) {
+  #mobile-app .m-kpis,
+  #mobile-app .m-actions {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+
+/* === V20: Pix automático no mobile === */
+@media (max-width: 900px) {
+  #mobile-app .m-pix-box {
+    display: grid !important;
+    width: 100% !important;
+    gap: 10px !important;
+  }
+
+  #mobile-app .m-pix-card {
+    display: grid !important;
+    gap: 10px !important;
+    width: 100% !important;
+    padding: 12px !important;
+    border-radius: 16px !important;
+    background: #ffffff !important;
+    border: 1px solid #dbe5ef !important;
+    box-shadow: 0 8px 20px rgba(15,23,42,.05) !important;
+  }
+
+  #mobile-app .m-pix-card img {
+    display: block !important;
+    width: 220px !important;
+    max-width: 100% !important;
+    height: auto !important;
+    margin: 0 auto !important;
+    border-radius: 12px !important;
+    background: #fff !important;
+  }
+
+  #mobile-app .m-pix-card textarea {
+    width: 100% !important;
+    min-height: 92px !important;
+    max-height: 140px !important;
+    resize: vertical !important;
+    font-size: 12px !important;
+    line-height: 1.35 !important;
+    border-radius: 12px !important;
+    padding: 10px !important;
+    background: #f8fafc !important;
+  }
+}
