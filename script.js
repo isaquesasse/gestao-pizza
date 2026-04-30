@@ -1,4 +1,6 @@
 document.addEventListener("DOMContentLoaded", () => {
+  window.SASSES_VERSION = "v20-mobile-pix";
+  console.log("Sasse's Pizza", window.SASSES_VERSION);
   const SUPABASE_URL = "https://iprnfzevdfmnraexthpy.supabase.co";
   const SUPABASE_ANON_KEY =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlwcm5memV2ZGZtbnJhZXh0aHB5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE2NTE1NTAsImV4cCI6MjA2NzIyNzU1MH0.h5Omsd0XsRtAmOErRCpaqg91OkF53lB8WE9dYlVdRbo";
@@ -535,6 +537,40 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       weekSelect.value = currentWeek;
       if (weekSelect.value !== currentWeek && weekSelect.options.length > 1) weekSelect.selectedIndex = 1;
     }
+  };
+
+  const populateMassasWeekSelector = (weekSelect) => {
+    if (!weekSelect) return;
+    weekSelect.innerHTML = "";
+
+    const formatWeekOption = (startDate, extraLabel = "") => {
+      const start = new Date(startDate);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 6);
+      const startFormatted = start.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
+      const endFormatted = end.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
+      const value = formatDateToYYYYMMDD(start);
+      return `<option value="${value}">Semana de ${startFormatted} a ${endFormatted}${extraLabel}</option>`;
+    };
+
+    const current = new Date(getWeekStart() + "T00:00:00");
+
+    // 1) Atual como padrão
+    weekSelect.innerHTML += formatWeekOption(current);
+
+    // 2) Futuras
+    for (let i = 1; i <= 24; i++) {
+      const future = new Date(current);
+      future.setDate(future.getDate() + i * 7);
+      weekSelect.innerHTML += formatWeekOption(future);
+    }
+
+    // 3) Só a última passada, no fim
+    const previous = new Date(current);
+    previous.setDate(previous.getDate() - 7);
+    weekSelect.innerHTML += formatWeekOption(previous, " — semana passada");
+
+    weekSelect.value = getWeekStart();
   };
 
   const populateClienteDatalist = () => {
@@ -1366,6 +1402,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
                     <label for="${weekOptionsId}">Semana:</label>
                     <select id="${weekOptionsId}"><option value="">Selecione a Semana</option></select>
                 </div>
+                <div class="small-muted">Mostra a semana atual, as próximas semanas e somente a última semana passada.</div>
                 <div class="form-row"><label>Massas G (semana)</label><input type="number" id="quota-g" min="0" value="0"></div>
                 <div class="form-row"><label>Massas P (semana)</label><input type="number" id="quota-p" min="0" value="0"></div>
                 <div class="form-row"><label>Massas P Chocolate (semana)</label><input type="number" id="quota-pc" min="0" value="0"></div>
@@ -1375,7 +1412,8 @@ Deseja adicionar esse frete ao Valor Final?`)) {
         `;
 
     const sel = document.getElementById(weekOptionsId);
-    populateWeekSelector(sel);
+    // Planejamento de massas: semana atual por padrão, semanas futuras e só a última passada.
+    populateMassasWeekSelector(sel);
 
     sel.addEventListener("change", () => {
       loadQuotasIntoForm(sel.value);
@@ -3956,5 +3994,400 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
   };
   window.addEventListener("resize", keepMobileViewportLocked);
   window.addEventListener("orientationchange", () => setTimeout(keepMobileViewportLocked, 80));
+
+
+  // ===== V15: Mobile app shell (separado do layout desktop) =====
+  let mobilePage = "inicio";
+  let mobileOrderItems = [];
+  let mobileSaleItems = {};
+
+  const isMobileViewport = () => window.matchMedia && window.matchMedia("(max-width: 900px)").matches;
+  const syncMobileRuntimeClass = () => document.body.classList.toggle("mobile-runtime", isMobileViewport());
+  syncMobileRuntimeClass();
+  window.addEventListener("resize", syncMobileRuntimeClass);
+
+  const mobileWeekOptionsHTML = (futureWeeks = 4) => {
+    const current = new Date(getWeekStart() + "T00:00:00");
+    let html = "";
+    for (let i = 0; i <= futureWeeks; i++) {
+      const start = new Date(current);
+      start.setDate(start.getDate() + i * 7);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 6);
+      const value = getWeekStart(start.toISOString().slice(0, 10));
+      const label = `Semana de ${start.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })} a ${end.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}`;
+      html += `<option value="${value}">${label}</option>`;
+    }
+    return html;
+  };
+
+  const getMobileSellerName = () => getCurrentSeller()?.nome || document.getElementById("pedido-vendedor")?.value || "";
+
+  const renderMobileShell = (html) => {
+    const screen = document.getElementById("mobile-screen");
+    if (screen) screen.innerHTML = html;
+    document.querySelectorAll(".mobile-app-nav button").forEach((btn) => btn.classList.toggle("active", btn.dataset.mobilePage === mobilePage));
+  };
+
+  const mPizzaOptions = () => database.estoque.map((p) => `<option value="${p.id}">${escapeHTML(p.nome)} (${escapeHTML(p.tamanho || "")}) · Est. ${p.qtd}</option>`).join("");
+
+  const renderMobilePixPreview = (containerId, amount, title = "Pix") => {
+    const box = document.getElementById(containerId);
+    if (!box) return;
+    const value = Number(amount || 0);
+    if (!value || value <= 0) {
+      box.dataset.visible = "1";
+      box.innerHTML = `<div class="m-card"><p class="m-muted">Adicione pizzas para gerar o Pix.</p></div>`;
+      return;
+    }
+    const payload = makePixPayload(value);
+    box.dataset.visible = "1";
+    box.innerHTML = `
+      <div class="m-pix-card">
+        <div class="m-item-head">
+          <b>${escapeHTML(title)}</b>
+          <span class="m-badge ok">${formatCurrency(value)}</span>
+        </div>
+        <img alt="QR Code Pix" src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(payload)}">
+        <textarea readonly>${escapeHTML(payload)}</textarea>
+        <button type="button" class="m-btn secondary" data-copy-mobile-pix>Copiar Pix copia e cola</button>
+      </div>`;
+    box.querySelector("[data-copy-mobile-pix]")?.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(payload);
+        showSaveStatus("Pix copiado!");
+      } catch (e) {
+        alert("Copie o código manualmente.");
+      }
+    });
+  };
+
+  const openMobilePixModal = (amount, cliente = "Cliente") => {
+    const value = Number(amount || 0);
+    if (!value || value <= 0) return;
+    const payload = makePixPayload(value);
+    openModal("edit-modal", "Pix do pedido", `
+      <div class="pix-box m-pix-card">
+        <h4>${escapeHTML(cliente)}</h4>
+        <p class="small-muted">Valor: <b>${formatCurrency(value)}</b></p>
+        <img alt="QR Code Pix" src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(payload)}">
+        <textarea readonly style="width:100%;min-height:120px;">${escapeHTML(payload)}</textarea>
+        <button type="button" id="copy-mobile-pix-modal">Copiar código Pix</button>
+      </div>
+    `, () => {
+      document.getElementById("copy-mobile-pix-modal")?.addEventListener("click", async () => {
+        await navigator.clipboard.writeText(payload);
+        showSaveStatus("Pix copiado!");
+      });
+    });
+  };
+
+  const calcMobileOrderTotal = () => mobileOrderItems.reduce((acc, it) => acc + Number(it.preco || 0) * Number(it.qtd || 0), 0);
+
+  const updateMobileOrderTotal = () => {
+    const total = calcMobileOrderTotal();
+    const discount = parsePercent(document.getElementById("m-pedido-desconto")?.value);
+    const final = applyDiscount(total, discount);
+    const totalEl = document.getElementById("m-pedido-total");
+    const finalInput = document.getElementById("m-pedido-valor-final");
+    if (totalEl) totalEl.textContent = formatCurrency(final);
+    if (finalInput && !finalInput.dataset.userEdited) finalInput.value = final.toFixed(2);
+    const pixBox = document.getElementById("m-pedido-pix-box");
+    if (pixBox?.dataset.visible === "1") {
+      const amount = safeNumber(finalInput?.value, final);
+      renderMobilePixPreview("m-pedido-pix-box", amount, "Pix do pedido");
+    }
+  };
+
+  const renderMobileOrderCart = () => {
+    const box = document.getElementById("m-pedido-carrinho");
+    if (!box) return;
+    box.innerHTML = mobileOrderItems.map((it, idx) => `<div class="m-cart-row"><div><b>${escapeHTML(it.qtd)}x ${escapeHTML(it.pizzaNome)}</b><div class="m-line">${formatCurrency(it.preco)} cada</div></div><button type="button" class="m-mini-btn" data-remove-mobile-order="${idx}">×</button></div>`).join("") || `<div class="m-muted">Nenhuma pizza adicionada.</div>`;
+    box.querySelectorAll("[data-remove-mobile-order]").forEach((btn) => btn.onclick = () => {
+      mobileOrderItems.splice(Number(btn.dataset.removeMobileOrder), 1);
+      renderMobileOrderCart();
+      updateMobileOrderTotal();
+    });
+  };
+
+  const summarizeMobileItems = (items, max = 3) => {
+    const list = (items || []).map((it) => `${it.qtd}x ${it.pizzaNome}`);
+    if (list.length <= max) return escapeHTML(list.join(" · "));
+    return escapeHTML(list.slice(0, max).join(" · ") + ` · +${list.length - max} item(ns)`);
+  };
+
+  const renderMobileInicio = () => {
+    const week = getWeekStart();
+    const pedidosSemana = database.pedidos.filter((p) => p.dataEntrega && getWeekStart(p.dataEntrega) === week);
+    const pendentes = pedidosSemana.filter((p) => p.status !== "Concluído");
+    const receitaPaga = pedidosSemana.filter(isPedidoPago).reduce((a, p) => a + Number(p.valorFinal || p.valorTotal || 0), 0);
+    const pizzasSemana = pedidosSemana.reduce((a, p) => a + (p.items || []).reduce((n, it) => n + Number(it.qtd || 0), 0), 0);
+    const prod = getProductionSuggestion(week).filter((x) => x.produzirPedidos > 0).slice(0, 5);
+    const alerts = getSystemAlerts();
+    renderMobileShell(`<section class="m-section">
+      <div class="m-card"><h2>Visão geral</h2><p class="m-muted">Resumo da semana atual. Use a barra de baixo para vender, produzir e consultar.</p></div>
+      <div class="m-kpis">
+        <div class="m-kpi"><span>Pedidos pendentes</span><b>${pendentes.length}</b></div>
+        <div class="m-kpi"><span>Pizzas da semana</span><b>${pizzasSemana}</b></div>
+        <div class="m-kpi"><span>Receita paga</span><b>${formatCurrency(receitaPaga)}</b></div>
+        <div class="m-kpi"><span>Alertas</span><b>${alerts.total}</b></div>
+      </div>
+      <div class="m-actions"><button class="m-btn" data-mobile-page-go="pedido">Novo pedido</button><button class="m-btn orange" data-mobile-page-go="venda">Venda rápida</button></div>
+      <div class="m-card"><h3>Pedidos pendentes</h3><div class="m-list">${pendentes.slice(0, 5).map((p) => { const items = (p.items || []); const resumo = items.slice(0, 2).map((it) => `${it.qtd}x ${it.pizzaNome}`).join(" · ") + (items.length > 2 ? ` · +${items.length - 2} item(ns)` : ""); return `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(p.cliente || "Cliente")}</b><span class="m-badge warn">${escapeHTML(p.status || "Pendente")}</span></div><div class="m-line">${escapeHTML(resumo)}</div><div class="m-line"><b>${formatCurrency(p.valorFinal || p.valorTotal || 0)}</b></div></div>`; }).join("") || `<p class="m-muted">Sem pedidos pendentes.</p>`}</div></div>
+      <div class="m-card"><h3>Produzir agora</h3><div class="m-list">${prod.map((x) => `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(x.pizza.nome)} (${escapeHTML(x.pizza.tamanho)})</b><span class="m-badge bad">${x.produzirPedidos}</span></div><div class="m-line">Pedidos: ${x.pedidos} · Estoque: ${x.estoque} · Sobra: ${x.sobra}</div></div>`).join("") || `<p class="m-muted">Nada urgente para produzir.</p>`}</div></div>
+    </section>`);
+  };
+
+  const renderMobilePedido = () => {
+    renderMobileShell(`<section class="m-section">
+      <div class="m-card"><h2>Novo pedido</h2><p class="m-muted">Cadastro rápido otimizado para celular.</p></div>
+      <div class="m-card"><form class="m-form" id="m-pedido-form">
+        <input id="m-pedido-cliente" placeholder="Cliente" list="clientes-list" required>
+        <input id="m-pedido-telefone" placeholder="Telefone">
+        <input id="m-pedido-cidade" placeholder="Cidade" required>
+        <input id="m-pedido-endereco" placeholder="Endereço">
+        <input id="m-pedido-vendedor" placeholder="Vendedor" value="${escapeAttr(getMobileSellerName())}" required>
+        <select id="m-pedido-pagamento"><option value="Pix">Pix</option><option value="Dinheiro">Dinheiro</option><option value="Cartão de Crédito">Cartão de Crédito</option><option value="Cartão de Débito">Cartão de Débito</option></select>
+        <select id="m-pedido-semana">${mobileWeekOptionsHTML(24)}</select>
+        <div class="m-two"><select id="m-pedido-pizza"><option value="">Pizza...</option>${mPizzaOptions()}</select><input id="m-pedido-qtd" type="number" min="1" value="1"></div>
+        <button type="button" id="m-add-pizza" class="m-btn secondary">Adicionar pizza</button>
+        <div id="m-pedido-carrinho" class="m-cart"></div>
+        <input id="m-pedido-desconto" placeholder="Desconto %" inputmode="decimal">
+        <input id="m-pedido-valor-final" placeholder="Valor final" inputmode="decimal">
+        <div class="m-total-sticky"><span>Total</span><b id="m-pedido-total">R$ 0,00</b></div>
+        <button type="button" id="m-pedido-pix" class="m-btn secondary">Gerar QR Pix</button>
+        <div id="m-pedido-pix-box" class="m-pix-box"></div>
+        <button type="submit" class="m-btn green">Registrar pedido</button>
+      </form></div>
+    </section>`);
+    renderMobileOrderCart();
+    updateMobileOrderTotal();
+    const clienteInput = document.getElementById("m-pedido-cliente");
+    clienteInput?.addEventListener("input", () => {
+      const c = database.clientes.find((x) => (x.nome || "").toLowerCase() === clienteInput.value.toLowerCase());
+      if (c) {
+        document.getElementById("m-pedido-telefone").value = c.telefone || "";
+        document.getElementById("m-pedido-cidade").value = c.cidade || "";
+        document.getElementById("m-pedido-endereco").value = c.endereco || "";
+      }
+    });
+    document.getElementById("m-pedido-pagamento")?.addEventListener("change", () => {
+      const pagamento = document.getElementById("m-pedido-pagamento").value;
+      mobileOrderItems = mobileOrderItems.map((it) => {
+        const pizza = database.estoque.find((p) => p.id === it.pizzaId);
+        return { ...it, preco: getPrecoPorPagamento(pizza?.precoVenda || it.preco, pagamento) };
+      });
+      renderMobileOrderCart(); updateMobileOrderTotal();
+    });
+    document.getElementById("m-add-pizza")?.addEventListener("click", () => {
+      const pizzaId = document.getElementById("m-pedido-pizza").value;
+      const qtd = parseInt(document.getElementById("m-pedido-qtd").value) || 1;
+      const pizza = database.estoque.find((p) => p.id === pizzaId);
+      if (!pizza) return alert("Selecione uma pizza.");
+      const pagamento = document.getElementById("m-pedido-pagamento").value;
+      mobileOrderItems.push({ pizzaId, pizzaNome: `${pizza.nome} (${pizza.tamanho || ""})`, qtd, isCustom: false, preco: getPrecoPorPagamento(pizza.precoVenda, pagamento) });
+      renderMobileOrderCart(); updateMobileOrderTotal();
+    });
+    document.getElementById("m-pedido-desconto")?.addEventListener("input", updateMobileOrderTotal);
+    const finalInput = document.getElementById("m-pedido-valor-final");
+    finalInput?.addEventListener("input", () => {
+      finalInput.dataset.userEdited = "1";
+      const pixBox = document.getElementById("m-pedido-pix-box");
+      if (pixBox?.dataset.visible === "1") renderMobilePixPreview("m-pedido-pix-box", safeNumber(finalInput.value, 0), "Pix do pedido");
+    });
+    document.getElementById("m-pedido-pix")?.addEventListener("click", () => {
+      const amount = safeNumber(document.getElementById("m-pedido-valor-final")?.value, applyDiscount(calcMobileOrderTotal(), document.getElementById("m-pedido-desconto")?.value));
+      renderMobilePixPreview("m-pedido-pix-box", amount, "Pix do pedido");
+    });
+    document.getElementById("m-pedido-form")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!mobileOrderItems.length) return alert("Adicione pelo menos uma pizza.");
+      await saveMobilePedido({
+        cliente: document.getElementById("m-pedido-cliente").value.trim(),
+        telefone: document.getElementById("m-pedido-telefone").value.trim(),
+        cidade: document.getElementById("m-pedido-cidade").value.trim(),
+        endereco: document.getElementById("m-pedido-endereco").value.trim(),
+        vendedor: document.getElementById("m-pedido-vendedor").value.trim(),
+        pagamento: document.getElementById("m-pedido-pagamento").value,
+        dataEntrega: document.getElementById("m-pedido-semana").value,
+        items: mobileOrderItems,
+        valorTotal: calcMobileOrderTotal(),
+        valorFinal: safeNumber(document.getElementById("m-pedido-valor-final").value, applyDiscount(calcMobileOrderTotal(), document.getElementById("m-pedido-desconto").value)),
+      });
+    });
+  };
+
+  const saveMobilePedido = async (pedidoData) => {
+    if (!pedidoData.cliente || !pedidoData.cidade || !pedidoData.vendedor) return alert("Preencha cliente, cidade e vendedor.");
+    showLoader();
+    try {
+      let cliente = database.clientes.find((c) => (c.nome || "").toLowerCase() === pedidoData.cliente.toLowerCase() && (c.cidade || "").toLowerCase() === pedidoData.cidade.toLowerCase());
+      let clienteId = cliente?.id;
+      if (!clienteId) {
+        const r = await supabaseClient.from("clientes").insert({ nome: pedidoData.cliente, telefone: pedidoData.telefone, cidade: pedidoData.cidade, endereco: pedidoData.endereco }).select().single();
+        if (r.error) throw r.error;
+        clienteId = r.data.id;
+      }
+      const newPedido = { ...pedidoData, clienteId, status: "Pendente", pago: false };
+      const r = await supabaseClient.from("pedidos").insert(newPedido).select().single();
+      if (r.error) throw r.error;
+      mobileOrderItems = [];
+      showSaveStatus("Pedido registrado pelo celular!");
+      await loadDataFromSupabase();
+      if ((pedidoData.pagamento || "").toLowerCase() === "pix") {
+        openMobilePixModal(pedidoData.valorFinal || pedidoData.valorTotal, pedidoData.cliente);
+      }
+      mobilePage = "inicio";
+      renderMobileApp();
+    } catch (err) {
+      showSaveStatus("Erro ao registrar pedido: " + err.message, false);
+    } finally { hideLoader(); }
+  };
+
+  const renderMobileVenda = () => {
+    const week = getWeekStart();
+    const pagamento = "Pix";
+    renderMobileShell(`<section class="m-section">
+      <div class="m-card"><h2>Venda rápida</h2><p class="m-muted">Escolha as quantidades, confirme cliente e gere pedido.</p></div>
+      <div class="m-card"><form class="m-form" id="m-venda-form">
+        <input id="m-venda-cliente" placeholder="Cliente" list="clientes-list" required>
+        <input id="m-venda-cidade" placeholder="Cidade" required>
+        <input id="m-venda-vendedor" placeholder="Vendedor" value="${escapeAttr(getMobileSellerName())}" required>
+        <select id="m-venda-pagamento"><option value="Pix">Pix</option><option value="Dinheiro">Dinheiro</option><option value="Cartão de Crédito">Cartão de Crédito</option><option value="Cartão de Débito">Cartão de Débito</option></select>
+        <select id="m-venda-semana">${mobileWeekOptionsHTML(24)}</select>
+        <input id="m-venda-busca-pizza" placeholder="Buscar pizza...">
+        <div id="m-venda-pizzas" class="m-pizza-grid"></div>
+        <div class="m-total-sticky"><span>Total</span><b id="m-venda-total">R$ 0,00</b></div>
+        <button type="button" id="m-venda-pix" class="m-btn secondary">Gerar QR Pix</button>
+        <div id="m-venda-pix-box" class="m-pix-box"></div>
+        <button class="m-btn green" type="submit">Registrar venda</button>
+      </form></div>
+    </section>`);
+    const renderRows = () => {
+      const term = (document.getElementById("m-venda-busca-pizza")?.value || "").toLowerCase();
+      const box = document.getElementById("m-venda-pizzas");
+      if (!box) return;
+      const pay = document.getElementById("m-venda-pagamento")?.value || pagamento;
+      box.innerHTML = database.estoque.filter((p) => !term || (p.nome || "").toLowerCase().includes(term)).slice(0, 60).map((p) => `<div class="m-pizza-row"><div><b>${escapeHTML(p.nome)} (${escapeHTML(p.tamanho)})</b><div class="m-line">Estoque ${p.qtd} · ${formatCurrency(getPrecoPorPagamento(p.precoVenda, pay))}</div></div><button type="button" class="m-mini-btn" data-pizza-minus="${p.id}">−</button><input type="number" min="0" value="${mobileSaleItems[p.id] || 0}" data-pizza-qty="${p.id}"><button type="button" class="m-mini-btn" data-pizza-plus="${p.id}">+</button></div>`).join("");
+      box.querySelectorAll("[data-pizza-plus]").forEach((btn) => btn.onclick = () => { mobileSaleItems[btn.dataset.pizzaPlus] = Number(mobileSaleItems[btn.dataset.pizzaPlus] || 0) + 1; renderRows(); updateSaleTotal(); });
+      box.querySelectorAll("[data-pizza-minus]").forEach((btn) => btn.onclick = () => { mobileSaleItems[btn.dataset.pizzaMinus] = Math.max(0, Number(mobileSaleItems[btn.dataset.pizzaMinus] || 0) - 1); renderRows(); updateSaleTotal(); });
+      box.querySelectorAll("[data-pizza-qty]").forEach((inp) => inp.oninput = () => { mobileSaleItems[inp.dataset.pizzaQty] = Math.max(0, parseInt(inp.value) || 0); updateSaleTotal(); });
+    };
+    const updateSaleTotal = () => {
+      const pay = document.getElementById("m-venda-pagamento")?.value || pagamento;
+      const total = Object.entries(mobileSaleItems).reduce((acc, [id, q]) => {
+        const pizza = database.estoque.find((p) => p.id === id);
+        return acc + (pizza ? getPrecoPorPagamento(pizza.precoVenda, pay) * Number(q || 0) : 0);
+      }, 0);
+      const el = document.getElementById("m-venda-total"); if (el) el.textContent = formatCurrency(total);
+      const pixBox = document.getElementById("m-venda-pix-box");
+      if (pixBox?.dataset.visible === "1") renderMobilePixPreview("m-venda-pix-box", total, "Pix da venda");
+    };
+    renderRows(); updateSaleTotal();
+    document.getElementById("m-venda-pix")?.addEventListener("click", () => {
+      const pay = document.getElementById("m-venda-pagamento")?.value || pagamento;
+      const total = Object.entries(mobileSaleItems).reduce((acc, [id, q]) => {
+        const pizza = database.estoque.find((p) => p.id === id);
+        return acc + (pizza ? getPrecoPorPagamento(pizza.precoVenda, pay) * Number(q || 0) : 0);
+      }, 0);
+      renderMobilePixPreview("m-venda-pix-box", total, "Pix da venda");
+    });
+    document.getElementById("m-venda-busca-pizza")?.addEventListener("input", renderRows);
+    document.getElementById("m-venda-pagamento")?.addEventListener("change", () => { renderRows(); updateSaleTotal(); });
+    document.getElementById("m-venda-cliente")?.addEventListener("input", (e) => {
+      const c = database.clientes.find((x) => (x.nome || "").toLowerCase() === e.target.value.toLowerCase());
+      if (c) document.getElementById("m-venda-cidade").value = c.cidade || "";
+    });
+    document.getElementById("m-venda-form")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const pay = document.getElementById("m-venda-pagamento").value;
+      const items = Object.entries(mobileSaleItems).filter(([,q]) => Number(q) > 0).map(([id,q]) => {
+        const p = database.estoque.find((x) => x.id === id);
+        return { pizzaId: id, pizzaNome: `${p.nome} (${p.tamanho || ""})`, qtd: Number(q), isCustom: false, preco: getPrecoPorPagamento(p.precoVenda, pay) };
+      });
+      if (!items.length) return alert("Selecione pelo menos uma pizza.");
+      const valorTotal = items.reduce((a,it) => a + it.preco * it.qtd, 0);
+      await saveMobilePedido({ cliente: document.getElementById("m-venda-cliente").value.trim(), telefone: "", cidade: document.getElementById("m-venda-cidade").value.trim(), endereco: "", vendedor: document.getElementById("m-venda-vendedor").value.trim(), pagamento: pay, dataEntrega: document.getElementById("m-venda-semana").value || week, items, valorTotal, valorFinal: valorTotal });
+      mobileSaleItems = {};
+    });
+  };
+
+  const renderMobileProducao = () => {
+    const week = getWeekStart();
+    const data = getProductionSuggestion(week).filter((x) => x.produzirPedidos > 0 || x.produzirSugerido > 0);
+    renderMobileShell(`<section class="m-section"><div class="m-card"><h2>Produção</h2><p class="m-muted">Semana atual. Quantidade grande = sugestão mais segura.</p></div><div class="m-list">${data.map((x) => `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(x.pizza.nome)} (${escapeHTML(x.pizza.tamanho)})</b><span class="m-badge ${x.produzirPedidos > 0 ? 'bad' : 'warn'}">${Math.max(x.produzirPedidos, x.produzirSugerido)}</span></div><div class="m-line">Pedidos: ${x.pedidos} · Estoque: ${x.estoque} · Sobra: ${x.sobra} · Média: ${x.mediaAnterior.toFixed(1)}</div></div>`).join("") || `<div class="m-card"><p class="m-muted">Nada para produzir agora.</p></div>`}</div></section>`);
+  };
+
+  const renderMobileMais = () => {
+    const sobras = database.estoque.filter((p) => Number(p.qtd || 0) > 0).slice(0, 12);
+    renderMobileShell(`<section class="m-section"><div class="m-card"><h2>Mais</h2><div class="m-actions single"><button class="m-btn secondary" id="m-open-profile">Perfil do vendedor</button><button class="m-btn secondary" id="m-open-desktop-pedidos">Abrir pedidos completos</button><button class="m-btn secondary" id="m-copy-sobras">Copiar disponíveis</button></div></div><div class="m-card"><h3>Disponíveis</h3><div class="m-list">${sobras.map((p) => `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(p.nome)} (${escapeHTML(p.tamanho)})</b><span class="m-badge ok">${p.qtd}</span></div></div>`).join("") || `<p class="m-muted">Sem pizzas disponíveis.</p>`}</div></div></section>`);
+    document.getElementById("m-open-profile")?.addEventListener("click", openSellerProfileModal);
+    document.getElementById("m-open-desktop-pedidos")?.addEventListener("click", () => { document.body.classList.add('force-desktop-mobile'); openTab('pedidos'); });
+    document.getElementById("m-copy-sobras")?.addEventListener("click", async () => {
+      const msg = sobras.map((p) => `🍕 ${p.nome} (${p.tamanho}) — ${p.qtd} un.`).join("\n");
+      await navigator.clipboard.writeText(msg || "Sem disponíveis no momento.");
+      showSaveStatus("Lista copiada!");
+    });
+  };
+
+  const renderMobileSearch = () => {
+    const term = (document.getElementById("mobile-search")?.value || "").toLowerCase().trim();
+    if (!term) return renderMobileInicio();
+    const clientes = database.clientes.filter((c) => [c.nome,c.cidade,c.telefone].some((v) => String(v||"").toLowerCase().includes(term))).slice(0,8);
+    const pedidos = database.pedidos.filter((p) => [p.cliente,p.cidade,p.vendedor,...(p.items||[]).map(i=>i.pizzaNome)].some((v) => String(v||"").toLowerCase().includes(term))).slice(0,8);
+    const pizzas = database.estoque.filter((p) => [p.nome,p.tamanho].some((v) => String(v||"").toLowerCase().includes(term))).slice(0,8);
+    renderMobileShell(`<section class="m-section"><div class="m-card"><h2>Busca</h2><p class="m-muted">Resultados para: <b>${escapeHTML(term)}</b></p></div><div class="m-card"><h3>Clientes</h3><div class="m-list">${clientes.map(c=>`<div class="m-item"><b>${escapeHTML(c.nome)}</b><div class="m-line">${escapeHTML(c.cidade||'')} · ${escapeHTML(c.telefone||'')}</div></div>`).join('') || '<p class="m-muted">Nenhum cliente.</p>'}</div></div><div class="m-card"><h3>Pedidos</h3><div class="m-list">${pedidos.map(p=>`<div class="m-item"><b>${escapeHTML(p.cliente)}</b><div class="m-line">${summarizeMobileItems(p.items, 3)}</div><div class="m-line">${formatCurrency(p.valorFinal||p.valorTotal||0)} · ${escapeHTML(p.status||'')}</div></div>`).join('') || '<p class="m-muted">Nenhum pedido.</p>'}</div></div><div class="m-card"><h3>Pizzas</h3><div class="m-list">${pizzas.map(p=>`<div class="m-item"><b>${escapeHTML(p.nome)} (${escapeHTML(p.tamanho)})</b><div class="m-line">Estoque ${p.qtd} · ${formatCurrency(p.precoVenda)}</div></div>`).join('') || '<p class="m-muted">Nenhuma pizza.</p>'}</div></div></section>`);
+  };
+
+  const renderMobileApp = () => {
+    if (!document.getElementById("mobile-app")) return;
+    const searchTerm = (document.getElementById("mobile-search")?.value || "").trim();
+    if (searchTerm) return renderMobileSearch();
+    if (mobilePage === "pedido") return renderMobilePedido();
+    if (mobilePage === "venda") return renderMobileVenda();
+    if (mobilePage === "producao") return renderMobileProducao();
+    if (mobilePage === "mais") return renderMobileMais();
+    return renderMobileInicio();
+  };
+
+  document.querySelectorAll(".mobile-app-nav button").forEach((btn) => btn.addEventListener("click", () => {
+    mobilePage = btn.dataset.mobilePage;
+    const search = document.getElementById("mobile-search");
+    if (search) search.value = "";
+    renderMobileApp();
+  }));
+  document.getElementById("mobile-home-brand")?.addEventListener("click", () => { mobilePage = "inicio"; renderMobileApp(); });
+  document.getElementById("mobile-profile-btn")?.addEventListener("click", openSellerProfileModal);
+  document.getElementById("mobile-search")?.addEventListener("input", () => renderMobileApp());
+  window.addEventListener("resize", () => { if (isMobileViewport()) renderMobileApp(); });
+
+  const hardFixMobileLayout = () => {
+    if (window.innerWidth > 900) return;
+    document.querySelectorAll(".mobile-bottom-nav").forEach((el) => {
+      el.style.display = "none";
+      el.style.visibility = "hidden";
+      el.style.pointerEvents = "none";
+      el.style.width = "0";
+      el.style.height = "0";
+      el.style.maxHeight = "0";
+      el.style.overflow = "hidden";
+    });
+    const app = document.getElementById("mobile-app");
+    if (app) {
+      app.style.display = "flex";
+      app.style.position = "fixed";
+      app.style.inset = "0";
+      app.style.width = "100vw";
+      app.style.maxWidth = "100vw";
+      app.style.height = "100dvh";
+      app.style.overflow = "hidden";
+    }
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+  };
+  window.addEventListener("resize", hardFixMobileLayout);
+  window.addEventListener("orientationchange", () => setTimeout(hardFixMobileLayout, 80));
+  setTimeout(hardFixMobileLayout, 0);
+
 loadDataFromSupabase();
 });
