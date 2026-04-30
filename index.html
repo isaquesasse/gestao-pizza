@@ -16,23 +16,61 @@
         <div class="loader-spinner"></div>
     </div>
 
-    <header>
-        <h1>Sasse's Pizza</h1>
-        <p>Sistema de Gestão</p>
-        <button id="btn-admin-view">Visão ADM</button>
+    <header class="app-header">
+        <div class="header-brand" id="brand-home" role="button" tabindex="0" title="Abrir página inicial">
+            <h1>Sasse's Pizza</h1>
+            <p>Sistema de Gestão</p>
+        </div>
+        <div class="header-tools">
+            <div class="global-search-wrap">
+                <input type="search" id="global-search" placeholder="Buscar cliente, pedido, pizza...">
+                <button type="button" id="global-search-btn" class="ghost-btn">Buscar</button>
+            </div>
+            <button id="btn-profile" class="profile-pill" type="button" title="Perfil do vendedor">
+                <span class="profile-avatar">👤</span>
+                <span id="current-seller-name">Perfil</span>
+            </button>
+        </div>
     </header>
 
-    <nav>
-        <button class="tab-link active" data-tab="pedidos">Pedidos</button>
+    <nav class="main-nav">
+        <button class="tab-link active" data-tab="inicio">Início</button>
+        <button class="tab-link" data-tab="pedidos">Pedidos</button>
+        <button class="tab-link admin-only seller-visible" data-tab="vendedor-rapido">Venda Rápida</button>
+        <button class="tab-link admin-only" data-tab="caixa">Caixa</button>
+        <button class="tab-link admin-only" data-tab="producao">Produção</button>
+        <button class="tab-link admin-only" data-tab="cozinha">Modo Cozinha</button>
         <button class="tab-link admin-only" data-tab="clientes">Clientes</button>
-        <button class="tab-link admin-only" data-tab="estoque">Estoque de Pizzas</button>
+        <button class="tab-link admin-only seller-visible" data-tab="estoque">Estoque</button>
         <button class="tab-link admin-only" data-tab="receitas">Receitas</button>
         <button class="tab-link admin-only" data-tab="ingredientes">Ingredientes</button>
         <button class="tab-link admin-only" data-tab="graficos">Dashboard</button>
     </nav>
 
     <main>
-        <div id="pedidos" class="tab-content active">
+        <div id="inicio" class="tab-content active">
+            <section class="home-hero card">
+                <div>
+                    <h2 style="margin-bottom: .35rem; border-bottom: 0; padding-bottom: 0;">Visão geral da semana</h2>
+                    <p class="small-muted">Tudo importante para bater o olho: pedidos, produção, sobras, pagamentos e ações rápidas.</p>
+                </div>
+                <div class="home-actions">
+                    <button class="home-action" data-open-tab="pedidos">+ Novo pedido</button>
+                    <button class="home-action" data-open-tab="vendedor-rapido">⚡ Venda rápida</button>
+                    <button class="home-action" data-open-tab="producao">🍕 Produção</button>
+                    <button class="home-action" data-open-tab="graficos">📊 Dashboard</button>
+                </div>
+            </section>
+            <section id="home-kpis" class="home-kpis"></section>
+            <section class="home-grid">
+                <div class="card"><h3>Pedidos pendentes</h3><div id="home-pedidos-pendentes"></div></div>
+                <div class="card"><h3>Produção da semana</h3><div id="home-producao"></div></div>
+                <div class="card"><h3>Disponíveis para retirada</h3><div id="home-sobras"></div></div>
+                <div class="card"><h3>Pagamentos e alertas</h3><div id="home-alertas"></div></div>
+            </section>
+        </div>
+
+        <div id="pedidos" class="tab-content">
             <div class="grid-container">
                 <div class="grid-col">
                     <h2>Registro de Pedidos</h2>
@@ -71,13 +109,19 @@
                             <input type="number" id="item-qtd" placeholder="Qtd" required min="1" value="1">
                             <button type="button" id="btn-add-item-pedido">Adicionar</button>
                         </div>
+                        <div class="pedido-atalhos-wrap">
+                            <input type="search" id="pedido-pizza-search" placeholder="Buscar pizza para adicionar rápido...">
+                            <div id="pedido-pizza-atalhos" class="pedido-pizza-atalhos"></div>
+                        </div>
                         <h3>Itens do Pedido Atual</h3>
                         <div id="pedido-itens-carrinho" class="carrinho-container"></div>
                         <div class="resumo-pedido">
-                            <span>Total Calculado: <b id="total-calculado-pedido">R$ 0,00</b></span>
-                            <button type="button" onclick="window.calcularFrete()"
-                                style="background-color: var(--info-color); padding: 0.5rem 1rem; font-size: 0.9rem;">Calcular
-                                Frete</button>
+                            <span>Total: <b id="total-calculado-pedido">R$ 0,00</b></span>
+                            <label class="discount-control" for="pedido-desconto">Desconto
+                                <input type="text" id="pedido-desconto" inputmode="decimal" placeholder="0%">
+                            </label>
+                            <small id="pedido-desconto-valor" class="discount-hint"></small>
+                            <button type="button" onclick="window.calcularFrete()" class="info-btn compact-btn">🚚 Frete</button>
                             <input type="number" id="valor-final-pedido" placeholder="Valor Final" step="0.01">
                         </div>
                         <div id="pedido-botoes-acao" style="display: flex; gap: 1rem; margin-top: 1rem;">
@@ -100,9 +144,9 @@
                     </div>
                     <button id="btn-open-filter-modal" class="action-btn"
                         style="background-color: var(--accent-color);">
-                        Filtro Avançado
+                        🔎 Filtro
                     </button>
-                    <button id="export-pedidos">Baixar Excel</button>
+                    <button id="print-pedidos">🖨️ Imprimir Produção</button>
                 </div>
                 <div class="table-container">
                     <table id="tabela-pedidos">
@@ -123,22 +167,30 @@
             </div>
 
             <div class="card" id="consulta-rapida-sobras">
-                <h3>Consulta Rápida — Sobras</h3>
-                <div class="small-muted">Mostra o saldo semanal por <b>massa</b> e um resumo por <b>pizza</b>.</div>
-                <div class="form-row" style="margin-top: .5rem; justify-content: space-between;">
-                    <div style="display: contents;">
-                        <label for="sobras-semana-select">Semana:</label>
-                        <select id="sobras-semana-select"></select>
+                <div class="table-header compact-header">
+                    <div>
+                        <h3>Consulta rápida de pizzas</h3>
+                        <div class="small-muted">Use para ver o que está disponível, o que falta produzir e copiar a mensagem para clientes.</div>
                     </div>
-                    <div style="display: contents;">
-                        <input type="search" id="sobras-search-pizza" placeholder="Buscar sabor da pizza..."
-                            style="min-width: 220px;">
-                    </div>
+                    <button type="button" class="secondary-btn" onclick="copySobrasMensagem()">📋 Copiar mensagem</button>
                 </div>
-                <div class="grid-container" style="margin-top: .5rem;">
+                <div class="sobras-toolbar">
+                    <label for="sobras-semana-select">Semana</label>
+                    <select id="sobras-semana-select"></select>
+                    <input type="search" id="sobras-search-pizza" placeholder="Buscar pizza...">
+                </div>
+
+                <div id="sobras-cards" class="sobras-cards"></div>
+
+                <div class="sobras-message-box">
+                    <label for="sobras-mensagem">Mensagem pronta para enviar</label>
+                    <textarea id="sobras-mensagem" readonly></textarea>
+                </div>
+
+                <div class="grid-container sobras-grid" style="margin-top: .75rem;">
                     <div class="grid-col">
-                        <h4>Sobra por Massa (Semana)</h4>
-                        <table id="tabela-sobras-massas" class="table">
+                        <h4>Massas</h4>
+                        <table id="tabela-sobras-massas" class="table compact-table">
                             <thead>
                                 <tr>
                                     <th>Tipo</th>
@@ -151,15 +203,15 @@
                         </table>
                     </div>
                     <div class="grid-col">
-                        <h4>Resumo por Pizza (Semana)</h4>
+                        <h4>Pizzas</h4>
                         <div class="table-container">
-                            <table id="tabela-sobras-pizzas" class="table">
+                            <table id="tabela-sobras-pizzas" class="table compact-table">
                                 <thead>
                                     <tr>
-                                        <th data-sort-by="nome">Pizza</th>
-                                        <th data-sort-by="qtd">Estoque</th>
-                                        <th data-sort-by="pedidosSemana">Pedidos</th>
-                                        <th data-sort-by="sobraProj">Sobra</th>
+                                        <th>Pizza</th>
+                                        <th>Estoque</th>
+                                        <th>Pedidos</th>
+                                        <th>Sobra</th>
                                     </tr>
                                 </thead>
                                 <tbody></tbody>
@@ -170,7 +222,86 @@
             </div>
         </div>
 
-        <div id="clientes" class="tab-content">
+        <div id="vendedor-rapido" class="tab-content">
+            <h2>Venda Rápida</h2>
+            <div class="card">
+                <h3>Novo pedido rápido</h3>
+                <div class="quick-form">
+                    <input type="text" id="quick-cliente" placeholder="Cliente" list="clientes-list">
+                    <input type="text" id="quick-telefone" placeholder="Telefone">
+                    <input type="text" id="quick-cidade" placeholder="Cidade">
+                    <input type="text" id="quick-vendedor" placeholder="Vendedor">
+                    <select id="quick-pagamento"><option value="Pix">Pix</option><option value="Dinheiro">Dinheiro</option><option value="Cartão de Crédito">Cartão de Crédito</option><option value="Cartão de Débito">Cartão de Débito</option></select>
+                    <select id="quick-semana"><option value="">Semana</option></select>
+                    <input type="text" id="quick-desconto" inputmode="decimal" placeholder="Desconto 0%">
+                </div>
+                <div class="quick-tools">
+                    <input type="search" id="quick-pizza-search" placeholder="Buscar pizza...">
+                    <button type="button" id="quick-clear" class="secondary-btn">Limpar</button>
+                </div>
+                <div id="quick-pizzas" class="quick-pizzas"></div>
+                <div class="quick-total"><span id="quick-desconto-info"></span>Total: <b id="quick-total">R$ 0,00</b></div>
+                <div class="quick-actions"><button type="button" id="quick-save">Registrar</button><button type="button" id="quick-pix" class="info-btn">Gerar Pix</button></div>
+                <div id="quick-pix-box" class="pix-box hidden"></div>
+            </div>
+        </div>
+
+        <div id="caixa" class="tab-content">
+            <h2>Controle de Caixa</h2>
+            <div class="kpi-grid" id="caixa-resumo"></div>
+            <div class="card"><h3>Lançar despesa/entrada</h3><form id="form-caixa"><select id="caixa-tipo"><option value="despesa">Despesa</option><option value="entrada">Entrada extra</option></select><input type="text" id="caixa-descricao" placeholder="Descrição" required><input type="number" id="caixa-valor" placeholder="Valor" step="0.01" min="0" required><input type="date" id="caixa-data" required><button type="submit">Salvar</button></form></div>
+            <div class="card"><div class="table-header"><h3>Movimentos</h3><button id="export-caixa">⬇️ Excel</button></div><div class="table-container"><table id="tabela-caixa"><thead><tr><th>Data</th><th>Tipo</th><th>Descrição</th><th>Valor</th><th>Ações</th></tr></thead><tbody></tbody></table></div></div>
+        </div>
+
+        <div id="producao" class="tab-content">
+            <h2>Controle de Produção</h2>
+            <div class="card">
+                <div class="table-header">
+                    <div>
+                        <h3>Pizzas que precisam ser produzidas</h3>
+                        <div class="small-muted">Baseado nos pedidos pendentes da semana escolhida.</div>
+                    </div>
+                    <div class="filters-container"><label>Semana:</label><select id="producao-semana"><option value="">Semana atual</option></select></div>
+                    <button id="print-producao">🖨️ Imprimir</button>
+                </div>
+                <div id="producao-alertas" class="notice-list"></div>
+                <div class="table-container">
+                    <table id="tabela-producao-auto">
+                        <thead><tr><th>Pizza</th><th>Pedidos</th><th>Estoque</th><th>Sobra</th><th>Produzir agora</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Produção sugerida pela média</h3>
+                <div class="small-muted">Compara a semana escolhida com as últimas 4 semanas anteriores e sugere uma produção mais segura.</div>
+                <div class="table-container">
+                    <table id="tabela-producao-sugerida">
+                        <thead><tr><th>Pizza</th><th>Pedidos semana</th><th>Média anterior</th><th>Estoque</th><th>Sugestão</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card"><h3>Insumos necessários</h3><div class="table-container"><table id="tabela-insumos-auto"><thead><tr><th>Ingrediente</th><th>Necessário</th><th>Estoque</th><th>Comprar</th></tr></thead><tbody></tbody></table></div></div>
+        </div>
+
+                <div id="cozinha" class="tab-content">
+            <h2>Modo Cozinha</h2>
+            <div class="card cozinha-toolbar">
+                <div>
+                    <h3>Produção simples</h3>
+                    <p class="small-muted">Tela enxuta para quem está preparando as pizzas.</p>
+                </div>
+                <div class="filters-container">
+                    <label for="cozinha-semana">Semana:</label>
+                    <select id="cozinha-semana"><option value="">Semana atual</option></select>
+                    <button id="print-cozinha">🖨️ Imprimir</button>
+                </div>
+            </div>
+            <div id="cozinha-lista" class="kitchen-list"></div>
+        </div>
+
+<div id="clientes" class="tab-content">
             <h2>Relatório de Clientes</h2>
             <div class="card">
                 <div class="table-header">
@@ -386,6 +517,8 @@
                 </div>
             </div>
 
+            <div id="dashboard-compare-cards" class="home-kpis dashboard-kpis"></div>
+
             <div class="charts-container">
                 <div class="card chart-card">
                     <h3>🏆 Top 10 Pizzas</h3>
@@ -450,38 +583,141 @@
         </div>
     </div>
     <div id="filter-modal" class="modal">
-        <div class="modal-content">
+        <div class="modal-content filter-modal-content">
             <span class="close-button" onclick="closeModal('filter-modal')">&times;</span>
-            <h2 id="filter-modal-title">Filtrar Pedidos</h2>
-            <form id="filter-pedidos-form">
-                <div class="form-group"><label>Cliente</label><input type="text" id="filter-modal-cliente"
-                        placeholder="Nome..."></div>
-                <div class="form-group"><label>Cidade</label><input type="text" id="filter-modal-cidade"
-                        placeholder="Cidade..."></div>
-                <div class="form-group"><label>Vendedor</label><select id="filter-modal-vendedor">
+            <div class="modal-headline">
+                <div>
+                    <h2 id="filter-modal-title">Filtros de pedidos</h2>
+                    <p class="small-muted">Refine o histórico sem precisar mexer em vários campos toda hora.</p>
+                </div>
+                <button type="button" id="btn-clear-filters-top" class="ghost-light-btn">Limpar tudo</button>
+            </div>
+            <form id="filter-pedidos-form" class="filter-form">
+                <section class="filter-section">
+                    <h3>Busca rápida</h3>
+                    <div class="filter-grid two">
+                        <label>Cliente
+                            <input type="text" id="filter-modal-cliente" placeholder="Nome do cliente">
+                        </label>
+                        <label>Cidade
+                            <input type="text" id="filter-modal-cidade" placeholder="Cidade">
+                        </label>
+                    </div>
+                </section>
+                <section class="filter-section">
+                    <h3>Status</h3>
+                    <div class="filter-chips" id="filter-status-chips">
+                        <button type="button" data-status="">Todos</button>
+                        <button type="button" data-status="Pendente" class="active">Pendentes</button>
+                        <button type="button" data-status="Pronto">Prontos</button>
+                        <button type="button" data-status="Concluído">Concluídos</button>
+                    </div>
+                    <select id="filter-modal-status" class="hidden-select">
                         <option value="">Todos</option>
-                    </select></div>
-                <div class="form-group"><label>Semana Entrega</label><select id="filter-modal-semana">
-                        <option value="">Todas</option>
-                    </select></div>
-                <div class="form-group"><label>Status</label>
-                    <select id="filter-modal-status">
-                        <option value="">Todos</option>
-                        <option value="Pendente">Pendente</option>
+                        <option value="Pendente" selected>Pendente</option>
                         <option value="Pronto">Pronto</option>
                         <option value="Concluído">Concluído</option>
                     </select>
+                </section>
+                <section class="filter-section">
+                    <h3>Entrega e vendedor</h3>
+                    <div class="filter-grid two">
+                        <label>Vendedor
+                            <select id="filter-modal-vendedor"><option value="">Todos</option></select>
+                        </label>
+                        <label>Semana de entrega
+                            <select id="filter-modal-semana"><option value="">Todas</option></select>
+                        </label>
+                    </div>
+                </section>
+                <section class="filter-section">
+                    <h3>Pagamento</h3>
+                    <div class="filter-grid two">
+                        <label>Situação
+                            <select id="filter-modal-pagamento-status">
+                                <option value="">Todos</option>
+                                <option value="aberto">Não pagos</option>
+                                <option value="pago">Pagos</option>
+                            </select>
+                        </label>
+                        <label>Forma de pagamento
+                            <select id="filter-modal-forma-pagamento">
+                                <option value="">Todas</option>
+                                <option value="Dinheiro">Dinheiro</option>
+                                <option value="Pix">Pix</option>
+                                <option value="Cartão de Crédito">Cartão de Crédito</option>
+                                <option value="Cartão de Débito">Cartão de Débito</option>
+                            </select>
+                        </label>
+                    </div>
+                </section>
+                <section class="filter-section">
+                    <h3>Valor</h3>
+                    <div class="filter-grid two">
+                        <label>Valor mínimo
+                            <input type="number" id="filter-modal-valor-min" step="0.01" placeholder="R$ 0,00">
+                        </label>
+                        <label>Valor máximo
+                            <input type="number" id="filter-modal-valor-max" step="0.01" placeholder="Sem limite">
+                        </label>
+                    </div>
+                </section>
+                <div id="filter-active-summary" class="filter-summary"></div>
+                <div class="filter-actions">
+                    <button type="submit" id="btn-apply-filters">Aplicar filtros</button>
+                    <button type="button" id="btn-clear-filters" class="ghost-light-btn">Limpar filtros</button>
                 </div>
-                <div class="form-group"><label>Valor Mín (R$)</label><input type="number" id="filter-modal-valor-min"
-                        step="0.01"></div>
-                <div class="form-group"><label>Valor Máx (R$)</label><input type="number" id="filter-modal-valor-max"
-                        step="0.01"></div>
-                <button type="submit" id="btn-apply-filters">Aplicar</button>
-                <button type="button" id="btn-clear-filters" style="background-color: var(--text-light-color);">Limpar
-                    Filtros</button>
             </form>
         </div>
     </div>
+    <div id="profile-modal" class="modal">
+        <div class="modal-content profile-modal-content">
+            <span class="close-button" onclick="closeModal('profile-modal')">&times;</span>
+            <div class="modal-headline">
+                <div>
+                    <h2>Perfil do vendedor</h2>
+                    <p class="small-muted">Escolha um perfil para preencher o vendedor automaticamente neste navegador.</p>
+                </div>
+                <button id="btn-admin-view" type="button" class="ghost-light-btn">Visão ADM</button>
+            </div>
+            <div class="profile-current-card" id="profile-current-card"></div>
+            <div class="profile-layout">
+                <section class="filter-section">
+                    <h3>Usar perfil salvo</h3>
+                    <label>Perfil
+                        <select id="seller-profile-select"><option value="">Selecionar vendedor...</option></select>
+                    </label>
+                    <div class="filter-actions compact">
+                        <button type="button" id="btn-use-seller-profile">Usar neste navegador</button>
+                        <button type="button" id="btn-clear-seller-profile" class="ghost-light-btn">Sem perfil</button>
+                    </div>
+                </section>
+                <section class="filter-section">
+                    <h3>Criar ou editar vendedor</h3>
+                    <input type="hidden" id="seller-profile-id">
+                    <div class="filter-grid two">
+                        <label>Nome do vendedor
+                            <input type="text" id="seller-nome" placeholder="Ex: Carlos">
+                        </label>
+                        <label>Vincular a cliente existente
+                            <select id="seller-cliente-link"><option value="">Não vincular</option></select>
+                        </label>
+                    </div>
+                    <div class="filter-grid two">
+                        <label>Telefone
+                            <input type="text" id="seller-telefone" placeholder="Opcional">
+                        </label>
+                        <label>Senha do modo admin
+                            <input type="text" id="seller-senha-admin" placeholder="Preencha apenas se for ADM">
+                        </label>
+                    </div>
+                    <p class="small-muted">Se a senha do modo admin estiver correta, esse perfil libera as abas administrativas neste navegador.</p>
+                    <button type="button" id="btn-save-seller-profile">Salvar vendedor</button>
+                </section>
+            </div>
+        </div>
+    </div>
+
     <div id="auth-modal" class="modal">
         <div class="modal-content" style="max-width: 400px;">
             <h2 id="auth-modal-title">Acesso Administrador</h2>
@@ -496,6 +732,35 @@
             </form>
         </div>
     </div>
+    <button id="btn-notificacoes" class="floating-alert-btn" type="button" title="Pendências">
+        <span>!</span>
+        <small id="notificacoes-badge">0</small>
+    </button>
+
+    <div id="notifications-modal" class="modal">
+        <div class="modal-content" style="max-width: 520px;">
+            <span class="close-button" onclick="closeModal('notifications-modal')">&times;</span>
+            <h2 id="notifications-modal-title">Pendências</h2>
+            <div id="notifications-modal-content"></div>
+        </div>
+    </div>
+
+    <nav class="mobile-bottom-nav">
+        <button class="tab-link active" data-tab="inicio">Início</button>
+        <button class="tab-link" data-tab="pedidos">Pedidos</button>
+        <button class="tab-link admin-only seller-visible" data-tab="vendedor-rapido">Venda</button>
+        <button class="tab-link admin-only" data-tab="producao">Produção</button>
+        <button class="tab-link admin-only" data-tab="graficos">Mais</button>
+    </nav>
+
+    <div id="global-search-modal" class="modal">
+        <div class="modal-content" style="max-width: 760px;">
+            <span class="close-button" onclick="closeModal('global-search-modal')">&times;</span>
+            <h2>Busca global</h2>
+            <div id="global-search-results"></div>
+        </div>
+    </div>
+
     <div id="save-status"></div>
     <footer>
         <p>&copy; 2026 Sasse's Pizza</p>
