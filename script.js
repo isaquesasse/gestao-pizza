@@ -8,10 +8,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const SAVE_STATUS = document.getElementById("save-status");
   const MINHA_CASA = { lat: -26.588789734457006, lon: -48.99256455790199 };
   const VALOR_POR_KM = 2.00;
+  const ADMIN_PASSWORD = "sasse";
+  const SELLER_PROFILE_KEY = "sassesCurrentSellerProfileId";
 
   if (localStorage.getItem("isAdminLoggedIn") === "true") {
     document.body.classList.add("admin-mode");
-    document.getElementById("btn-admin-view").textContent = "Sair da Visão ADM";
+    const adminBtn = document.getElementById("btn-admin-view");
+    if (adminBtn) adminBtn.textContent = "Sair da Visão ADM";
   }
 
   let database = {
@@ -22,6 +25,8 @@ document.addEventListener("DOMContentLoaded", () => {
     clientes: [],
     massas: [],
     massas_semanais: [],
+    caixa_movimentos: [],
+    vendedores: [],
   };
 
   let sortState = {
@@ -35,6 +40,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let pedidoAtualItems = [];
   let pedidoEditItems = [];
+  let quickSaleItems = {};
   let receitaAtualIngredientes = [];
   let saveStatusTimeout;
   const chartInstances = {};
@@ -54,6 +60,202 @@ document.addEventListener("DOMContentLoaded", () => {
   const formatCurrency = (value) => {
     if (isNaN(value) || value === null) value = 0;
     return `R$ ${Number(value).toFixed(2).replace(".", ",")}`;
+  };
+
+  const escapeHTML = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#039;",
+  }[char]));
+
+  const escapeAttr = (value) => escapeHTML(value);
+
+  const safeNumber = (value, fallback = 0) => {
+    const parsed = parseFloat(String(value ?? "").replace(",", "."));
+    return Number.isFinite(parsed) ? parsed : fallback;
+  };
+
+  const normalizeStatusClass = (status) =>
+    (status || "pendente")
+      .toString()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/\s+/g, "-");
+
+  const getNumberValue = (value, fallback = 0) => {
+    const parsed = parseFloat(String(value ?? "").replace(",", "."));
+    return Number.isFinite(parsed) ? parsed : fallback;
+  };
+
+  const parsePercent = (value) => {
+    const raw = String(value ?? "").replace("%", "").replace(",", ".").trim();
+    const parsed = parseFloat(raw);
+    if (!Number.isFinite(parsed)) return 0;
+    return Math.max(0, Math.min(100, parsed));
+  };
+
+  const formatPercentField = (input) => {
+    if (!input) return;
+    const percent = parsePercent(input.value);
+    input.value = percent > 0 ? `${String(percent).replace(".", ",")}%` : "";
+  };
+
+  const applyDiscount = (value, percent) => {
+    const base = Number(value || 0);
+    const pct = parsePercent(percent);
+    return Math.max(0, base * (1 - pct / 100));
+  };
+
+  const getPedidoDiscountPercent = () => parsePercent(document.getElementById("pedido-desconto")?.value);
+  const getQuickDiscountPercent = () => parsePercent(document.getElementById("quick-desconto")?.value);
+
+  const getPrecoPorPagamento = (preco, pagamento) => {
+    const valor = Number(preco || 0);
+    if (pagamento === "Dinheiro") {
+      if (Math.abs(valor - 38) < 0.01) return 35;
+      if (Math.abs(valor - 28) < 0.01) return 25;
+    }
+    return valor;
+  };
+
+  const getPedidoPagamentoAtual = () => document.getElementById("pedido-pagamento")?.value || "";
+
+  const isPedidoPago = (pedido) => pedido?.pago === true || pedido?.status === "Concluído";
+
+  const getClientHasUnpaid = (cliente) => {
+    if (!cliente) return false;
+    return database.pedidos.some((p) => {
+      const sameId = cliente.id && p.clienteId === cliente.id;
+      const sameNameCity = (p.cliente || "").toLowerCase() === (cliente.nome || "").toLowerCase() &&
+        (p.cidade || "").toLowerCase() === (cliente.cidade || "").toLowerCase();
+      return (sameId || sameNameCity) && !isPedidoPago(p);
+    });
+  };
+
+  const getSystemAlerts = () => {
+    const pagamentos = database.pedidos.filter((p) => !isPedidoPago(p));
+    const estoqueNegativo = database.estoque.filter((p) => Number(p.qtd || 0) < 0);
+    return { pagamentos, estoqueNegativo, total: pagamentos.length + estoqueNegativo.length };
+  };
+
+  const refreshNotificationBadge = () => {
+    const btn = document.getElementById("btn-notificacoes");
+    const badge = document.getElementById("notificacoes-badge");
+    if (!btn || !badge) return;
+    const alerts = getSystemAlerts();
+    badge.textContent = alerts.total;
+    btn.classList.toggle("has-alerts", alerts.total > 0);
+    btn.title = alerts.total > 0 ? `${alerts.total} pendência(s)` : "Sem pendências";
+  };
+
+  const getCurrentSellerId = () => localStorage.getItem(SELLER_PROFILE_KEY) || "";
+  const getCurrentSeller = () => database.vendedores.find((v) => v.id === getCurrentSellerId()) || null;
+  const isSellerAdmin = (seller) => String(seller?.senha_admin || "").trim() === ADMIN_PASSWORD;
+
+  const applySellerAccess = () => {
+    const seller = getCurrentSeller();
+    const manualAdmin = localStorage.getItem("isAdminLoggedIn") === "true";
+    const profileAdmin = isSellerAdmin(seller);
+    document.body.classList.toggle("vendor-mode", !!seller);
+    document.body.classList.toggle("admin-mode", manualAdmin || profileAdmin);
+    const adminBtn = document.getElementById("btn-admin-view");
+    if (adminBtn) adminBtn.textContent = (manualAdmin || profileAdmin) ? "Sair da Visão ADM" : "Entrar na Visão ADM";
+  };
+
+  const applySellerProfileToForms = (force = false) => {
+    const seller = getCurrentSeller();
+    const nameEl = document.getElementById("current-seller-name");
+    const profileBtn = document.getElementById("btn-profile");
+    if (nameEl) nameEl.textContent = seller ? seller.nome : "Perfil";
+    if (profileBtn) profileBtn.classList.toggle("has-profile", !!seller);
+    if (!seller) {
+      applySellerAccess();
+      return;
+    }
+    ["pedido-vendedor", "quick-vendedor"].forEach((id) => {
+      const input = document.getElementById(id);
+      if (input && (force || !input.value || input.dataset.profileAutofilled === "true")) {
+        input.value = seller.nome;
+        input.dataset.profileAutofilled = "true";
+      }
+    });
+    applySellerAccess();
+  };
+
+  const setCurrentSeller = (id) => {
+    if (id) {
+      localStorage.setItem(SELLER_PROFILE_KEY, id);
+      const seller = database.vendedores.find((v) => v.id === id);
+      if (!isSellerAdmin(seller)) localStorage.removeItem("isAdminLoggedIn");
+    } else {
+      localStorage.removeItem(SELLER_PROFILE_KEY);
+    }
+    applySellerProfileToForms(true);
+    renderSellerProfileUI();
+    renderAll();
+  };
+
+  const renderSellerProfileUI = () => {
+    const select = document.getElementById("seller-profile-select");
+    const clientSelect = document.getElementById("seller-cliente-link");
+    const currentCard = document.getElementById("profile-current-card");
+    const seller = getCurrentSeller();
+    if (select) {
+      const currentValue = select.value || getCurrentSellerId();
+      select.innerHTML = '<option value="">Selecionar vendedor...</option>' + database.vendedores
+        .filter((v) => v.ativo !== false)
+        .sort((a, b) => (a.nome || "").localeCompare(b.nome || ""))
+        .map((v) => `<option value="${v.id}">${escapeHTML(v.nome)}${isSellerAdmin(v) ? " · ADM" : ""}</option>`).join("");
+      select.value = currentValue;
+    }
+    if (clientSelect) {
+      const currentValue = clientSelect.value;
+      clientSelect.innerHTML = '<option value="">Não vincular</option>' + database.clientes
+        .sort((a, b) => (a.nome || "").localeCompare(b.nome || ""))
+        .map((c) => `<option value="${c.id}">${escapeHTML(c.nome)}${c.cidade ? ` · ${escapeHTML(c.cidade)}` : ""}</option>`).join("");
+      if (currentValue) clientSelect.value = currentValue;
+    }
+    if (currentCard) {
+      currentCard.innerHTML = seller ? `
+        <div class="profile-current-left"><span class="profile-avatar large">👤</span><div><b>${escapeHTML(seller.nome)}</b><small>${isSellerAdmin(seller) ? "Administrador" : "Vendedor"}${seller.telefone ? ` · ${escapeHTML(seller.telefone)}` : ""}</small></div></div>
+        <span class="badge-inline ${isSellerAdmin(seller) ? "success" : ""}">${isSellerAdmin(seller) ? "ADM ativo" : "Perfil ativo"}</span>
+      ` : `<div class="profile-current-left"><span class="profile-avatar large">👤</span><div><b>Nenhum perfil selecionado</b><small>Escolha ou crie um vendedor para preencher pedidos automaticamente.</small></div></div>`;
+    }
+    applySellerProfileToForms(false);
+  };
+
+  const openSellerProfileModal = () => {
+    renderSellerProfileUI();
+    const modal = document.getElementById("profile-modal");
+    if (modal) modal.style.display = "block";
+  };
+
+  window.openNotificationsModal = () => {
+    const { pagamentos, estoqueNegativo, total } = getSystemAlerts();
+    let contentHTML = `<div class="notification-list">`;
+    if (total === 0) {
+      contentHTML += `<p class="empty-state">Tudo certo por aqui.</p>`;
+    } else {
+      if (pagamentos.length > 0) {
+        contentHTML += `<h3>Pagamentos pendentes</h3>`;
+        pagamentos.slice(0, 30).forEach((p) => {
+          const valor = formatCurrency(p.valorFinal || p.valorTotal);
+          const semana = p.dataEntrega ? new Date(p.dataEntrega + "T00:00:00").toLocaleDateString("pt-BR") : "sem data";
+          contentHTML += `<div class="notification-item danger"><b>${p.cliente}</b><span>${valor} • ${semana}</span></div>`;
+        });
+      }
+      if (estoqueNegativo.length > 0) {
+        contentHTML += `<h3>Estoque negativo</h3>`;
+        estoqueNegativo.forEach((p) => {
+          contentHTML += `<div class="notification-item danger"><b>${p.nome} (${p.tamanho || ""})</b><span>${p.qtd} unidade(s)</span></div>`;
+        });
+      }
+    }
+    contentHTML += `</div>`;
+    openModal("notifications-modal", "Pendências", contentHTML);
   };
 
   const formatDateToYYYYMMDD = (date) => {
@@ -119,7 +321,10 @@ document.addEventListener("DOMContentLoaded", () => {
         const distancia = getDistanceFromLatLonInKm(MINHA_CASA.lat, MINHA_CASA.lon, latCliente, lonCliente);
         const freteSugerido = distancia * VALOR_POR_KM;
 
-        if (confirm(`Distância estimada: ${distancia.toFixed(1)} km\nFrete Sugerido: R$ ${freteSugerido.toFixed(2)}\n\nDeseja adicionar esse frete ao Valor Final?`)) {
+        if (confirm(`Distância estimada: ${distancia.toFixed(1)} km
+Frete Sugerido: R$ ${freteSugerido.toFixed(2)}
+
+Deseja adicionar esse frete ao Valor Final?`)) {
           const inputValorFinal = document.getElementById("valor-final-pedido");
           const valorAtual = parseFloat(inputValorFinal.value || document.getElementById("total-calculado-pedido").textContent.replace("R$ ", "").replace(",", ".") || 0);
           inputValorFinal.value = (valorAtual + freteSugerido).toFixed(2);
@@ -159,6 +364,16 @@ document.addEventListener("DOMContentLoaded", () => {
       database.clientes = results[4].data || [];
       database.massas = results[5].data || [];
       database.massas_semanais = results[6].data || [];
+
+      try {
+        const caixaRes = await supabaseClient.from("caixa_movimentos").select("*").order("data", { ascending: false });
+        database.caixa_movimentos = caixaRes.data || [];
+      } catch (e) { database.caixa_movimentos = []; }
+
+      try {
+        const vendedoresRes = await supabaseClient.from("vendedores").select("*").order("nome");
+        database.vendedores = vendedoresRes.data || [];
+      } catch (e) { database.vendedores = []; }
 
       await syncClientsFromOrders();
       renderAll();
@@ -202,9 +417,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const renderAll = () => {
     populateSelects();
-    populateWeekSelector();
-    populateWeekSelector(document.getElementById("filter-demanda-semana"));
+    populateWeekSelector(undefined, { futureOnly: true, futureWeeks: 24, setCurrentDefault: true });
+    populateWeekSelector(document.getElementById("filter-demanda-semana"), { setCurrentDefault: true });
     populateWeekSelector(document.getElementById("dash-week-filter"));
+    populateWeekSelector(document.getElementById("quick-semana"), { futureOnly: true, futureWeeks: 24, setCurrentDefault: true });
+    populateWeekSelector(document.getElementById("producao-semana"), { futureOnly: true, futureWeeks: 4, setCurrentDefault: true });
     renderIngredientes();
     renderEstoque();
     renderReceitas();
@@ -215,14 +432,17 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     renderPedidos();
+    renderPedidoAtalhos();
     renderClientes();
     renderProductionDemand();
     renderWeeklyMassasPanel();
     renderConsultaRapidaSobras();
     populateClienteDatalist();
+    if (typeof renderV4Panels === "function") renderV4Panels();
 
     const activeRange = document.querySelector(".date-filter.active")?.dataset.range || "all";
     renderDashboard(activeRange);
+    refreshNotificationBadge();
   };
 
   const populateSelects = (selectElementId) => {
@@ -262,21 +482,45 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
-  const populateWeekSelector = (selectElement) => {
+  const populateWeekSelector = (selectElement, options = {}) => {
     const weekSelect = selectElement || document.getElementById("pedido-semana-entrega");
     if (!weekSelect) return;
+
+    const {
+      includeFuture = false,
+      futureWeeks = 24,
+      pastWeeks = 24,
+      setCurrentDefault = false,
+      futureOnly = false,
+      keepPlaceholder = true,
+    } = options;
+
     const firstOption = weekSelect.options[0];
     weekSelect.innerHTML = "";
-    if (firstOption) weekSelect.appendChild(firstOption);
+    if (firstOption && keepPlaceholder) weekSelect.appendChild(firstOption);
 
-    for (let i = -4; i <= 24; i++) {
-      let weekDate = new Date();
-      weekDate.setDate(weekDate.getDate() - (i * 7));
+    let offsets = [];
+    if (futureOnly) {
+      // Registro de pedido: semana atual primeiro e apenas semanas futuras.
+      offsets = Array.from({ length: futureWeeks + 1 }, (_, index) => -index);
+    } else if (includeFuture) {
+      // Uso geral: atual, futuras e depois passadas.
+      offsets = [0];
+      for (let i = 1; i <= futureWeeks; i++) offsets.push(-i);
+      for (let i = 1; i <= pastWeeks; i++) offsets.push(i);
+    } else {
+      // Relatórios/consultas: atual e semanas anteriores, sem datas futuras.
+      offsets = Array.from({ length: pastWeeks + 1 }, (_, index) => index);
+    }
 
-      let startOfWeek = new Date(
+    offsets.forEach((offset) => {
+      const weekDate = new Date();
+      weekDate.setDate(weekDate.getDate() - (offset * 7));
+
+      const startOfWeek = new Date(
         weekDate.setDate(weekDate.getDate() - weekDate.getDay() + (weekDate.getDay() === 0 ? -6 : 1))
       );
-      let endOfWeek = new Date(startOfWeek);
+      const endOfWeek = new Date(startOfWeek);
       endOfWeek.setDate(endOfWeek.getDate() + 6);
 
       const startFormatted = startOfWeek.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
@@ -284,6 +528,12 @@ document.addEventListener("DOMContentLoaded", () => {
       const weekValue = formatDateToYYYYMMDD(startOfWeek);
 
       weekSelect.innerHTML += `<option value="${weekValue}">Semana de ${startFormatted} a ${endFormatted}</option>`;
+    });
+
+    if (setCurrentDefault) {
+      const currentWeek = getWeekStart();
+      weekSelect.value = currentWeek;
+      if (weekSelect.value !== currentWeek && weekSelect.options.length > 1) weekSelect.selectedIndex = 1;
     }
   };
 
@@ -296,19 +546,93 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   };
 
+  const openTab = (tabId) => {
+    document.documentElement.scrollLeft = 0;
+    document.body.scrollLeft = 0;
+    document.querySelectorAll(".tab-link").forEach((l) => l.classList.toggle("active", l.dataset.tab === tabId));
+    document.querySelectorAll(".tab-content").forEach((c) => c.classList.toggle("active", c.id === tabId));
+    if (tabId === "graficos") {
+      renderProductionDemand();
+      const activeRange = document.querySelector(".date-filter.active")?.dataset.range || "all";
+      renderDashboard(activeRange);
+    }
+    if (tabId === "inicio") renderHome();
+    if (["vendedor-rapido", "caixa", "producao", "clientes", "cozinha"].includes(tabId) && typeof renderV4Panels === "function") renderV4Panels();
+    if (tabId === "cozinha") renderKitchenMode();
+  };
+
   document.querySelectorAll(".tab-link").forEach((link) => {
-    link.addEventListener("click", () => {
-      const tabId = link.dataset.tab;
-      document.querySelectorAll(".tab-link").forEach((l) => l.classList.remove("active"));
-      document.querySelectorAll(".tab-content").forEach((c) => c.classList.remove("active"));
-      link.classList.add("active");
-      document.getElementById(tabId).classList.add("active");
-      if (tabId === "graficos") {
-        renderProductionDemand();
-        const activeRange = document.querySelector(".date-filter.active")?.dataset.range || "all";
-        renderDashboard(activeRange);
-      }
-    });
+    link.addEventListener("click", () => openTab(link.dataset.tab));
+  });
+
+  document.querySelectorAll("[data-open-tab]").forEach((btn) => {
+    btn.addEventListener("click", () => openTab(btn.dataset.openTab));
+  });
+
+  document.getElementById("brand-home")?.addEventListener("click", () => openTab("inicio"));
+  document.getElementById("brand-home")?.addEventListener("keypress", (e) => {
+    if (e.key === "Enter" || e.key === " ") openTab("inicio");
+  });
+  document.getElementById("btn-profile")?.addEventListener("click", openSellerProfileModal);
+
+  document.getElementById("seller-profile-select")?.addEventListener("change", (e) => {
+    const seller = database.vendedores.find((v) => v.id === e.target.value);
+    document.getElementById("seller-profile-id").value = seller?.id || "";
+    document.getElementById("seller-nome").value = seller?.nome || "";
+    document.getElementById("seller-telefone").value = seller?.telefone || "";
+    document.getElementById("seller-senha-admin").value = seller?.senha_admin || "";
+    document.getElementById("seller-cliente-link").value = seller?.cliente_id || "";
+  });
+
+  document.getElementById("seller-cliente-link")?.addEventListener("change", (e) => {
+    const cliente = database.clientes.find((c) => c.id === e.target.value);
+    if (!cliente) return;
+    const nome = document.getElementById("seller-nome");
+    const tel = document.getElementById("seller-telefone");
+    if (nome && !nome.value) nome.value = cliente.nome || "";
+    if (tel && !tel.value) tel.value = cliente.telefone || "";
+  });
+
+  document.getElementById("btn-use-seller-profile")?.addEventListener("click", () => {
+    const id = document.getElementById("seller-profile-select")?.value;
+    if (!id) return showSaveStatus("Selecione um vendedor.", false);
+    setCurrentSeller(id);
+    closeModal("profile-modal");
+    showSaveStatus("Perfil de vendedor ativo neste navegador.");
+  });
+
+  document.getElementById("btn-clear-seller-profile")?.addEventListener("click", () => {
+    setCurrentSeller("");
+    closeModal("profile-modal");
+    showSaveStatus("Perfil removido deste navegador.");
+  });
+
+  document.getElementById("btn-save-seller-profile")?.addEventListener("click", async () => {
+    const id = document.getElementById("seller-profile-id")?.value;
+    const payload = {
+      nome: document.getElementById("seller-nome")?.value.trim(),
+      telefone: document.getElementById("seller-telefone")?.value.trim() || null,
+      cliente_id: document.getElementById("seller-cliente-link")?.value || null,
+      senha_admin: document.getElementById("seller-senha-admin")?.value.trim() || null,
+      ativo: true,
+      updated_at: new Date().toISOString(),
+    };
+    if (!payload.nome) return showSaveStatus("Informe o nome do vendedor.", false);
+    showLoader();
+    try {
+      const result = id
+        ? await supabaseClient.from("vendedores").update(payload).eq("id", id).select().single()
+        : await supabaseClient.from("vendedores").insert(payload).select().single();
+      if (result.error) throw result.error;
+      await loadDataFromSupabase();
+      setCurrentSeller(result.data.id);
+      showSaveStatus("Vendedor salvo e ativado neste navegador.");
+      closeModal("profile-modal");
+    } catch (error) {
+      showSaveStatus("Erro ao salvar vendedor. Rode a MIGRAÇÃO_V12.sql se ainda não rodou. " + error.message, false);
+    } finally {
+      hideLoader();
+    }
   });
 
   const openAuthModal = () => {
@@ -328,11 +652,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (body.classList.contains("admin-mode")) {
       localStorage.removeItem("isAdminLoggedIn");
-      body.classList.remove("admin-mode");
-      btn.textContent = "Visão ADM";
+      if (!isSellerAdmin(getCurrentSeller())) body.classList.remove("admin-mode");
+      if (btn) btn.textContent = body.classList.contains("admin-mode") ? "Sair da Visão ADM" : "Entrar na Visão ADM";
       const activeTabIsAdminOnly = document.querySelector(".tab-link.active.admin-only");
       if (activeTabIsAdminOnly) {
-        document.querySelector('.tab-link[data-tab="pedidos"]').click();
+        openTab('inicio');
       }
     } else {
       openAuthModal();
@@ -345,12 +669,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const password = document.getElementById("admin-password").value;
     const errorEl = document.getElementById("auth-error");
 
-    if (password === "sasse") {
+    if (password === ADMIN_PASSWORD) {
       localStorage.setItem("isAdminLoggedIn", "true");
       document.body.classList.add("admin-mode");
-      document.getElementById("btn-admin-view").textContent = "Sair da Visão ADM";
+      const adminBtn = document.getElementById("btn-admin-view");
+      if (adminBtn) adminBtn.textContent = "Sair da Visão ADM";
       errorEl.style.display = "none";
       closeAuthModal();
+      applySellerAccess();
     } else {
       errorEl.textContent = "Senha incorreta. Tente novamente.";
       errorEl.style.display = "block";
@@ -367,6 +693,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (callback) callback();
     modal.style.display = "block";
+
+    const firstField = contentContainer?.querySelector("input:not([type='hidden']):not([readonly]), select:not([disabled]), textarea:not([readonly])");
+    setTimeout(() => firstField?.focus(), 80);
   };
 
   window.closeModal = (modalId) => {
@@ -455,8 +784,10 @@ document.addEventListener("DOMContentLoaded", () => {
     tbody.innerHTML = "";
     filteredData.forEach((c) => {
       const row = tbody.insertRow();
+      const hasUnpaid = getClientHasUnpaid(c);
+      if (hasUnpaid) row.classList.add("payment-pending-row");
       row.innerHTML = `
-                <td data-label="Nome do Cliente">${c.nome}</td>
+                <td data-label="Nome do Cliente">${hasUnpaid ? '<span class="unpaid-alert" title="Pagamento pendente">!</span>' : ''}${c.nome}</td>
                 <td data-label="Telefone">${c.telefone || "N/A"}</td>
                 <td data-label="Cidade">${c.cidade || "N/A"}<br><small style="color:#777">${c.endereco || ""}</small></td>
                 <td data-label="Ações">
@@ -471,50 +802,93 @@ document.addEventListener("DOMContentLoaded", () => {
   window.openEditClientModal = (id) => {
     const cliente = database.clientes.find((c) => c.id === id);
     if (!cliente) return;
+    const insight = typeof getClientInsight === "function" ? getClientInsight(cliente) : null;
+    const resumoHTML = insight ? `
+      <div class="edit-kpis">
+        <div><span>Pedidos</span><b>${insight.pedidos.length}</b></div>
+        <div><span>Total comprado</span><b>${formatCurrency(insight.total)}</b></div>
+        <div><span>Pendente</span><b>${formatCurrency(insight.valorPendente)}</b></div>
+        <div><span>Ticket médio</span><b>${formatCurrency(insight.ticketMedio)}</b></div>
+      </div>
+      <p class="edit-note">${escapeHTML(insight.reasons.join(" · "))}</p>
+    ` : "";
+
     const formHTML = `
-            <form id="edit-client-form">
-                <input type="hidden" name="id" value="${cliente.id}">
-                <div class="form-group">
-                    <label for="edit-cliente-nome">Nome</label>
-                    <input type="text" id="edit-cliente-nome" name="nome" value="${cliente.nome || ""}" required>
-                </div>
-                <div class="form-group">
-                    <label for="edit-cliente-telefone">Telefone</label>
-                    <input type="text" id="edit-cliente-telefone" name="telefone" value="${cliente.telefone || ""}">
-                </div>
-                <div class="form-group">
-                    <label for="edit-cliente-cidade">Cidade</label>
-                    <input type="text" id="edit-cliente-cidade" name="cidade" value="${cliente.cidade || ""}" required>
-                </div>
-                <div class="form-group">
-                    <label for="edit-cliente-endereco">Endereço (Rua, Número)</label>
-                    <input type="text" id="edit-cliente-endereco" name="endereco" value="${cliente.endereco || ""}">
-                </div>
-                <button type="submit">Salvar Alterações</button>
-            </form>
-        `;
-    openModal("edit-modal", "Editar Cliente", formHTML, () => {
+      <form id="edit-client-form" class="edit-form">
+        <input type="hidden" name="id" value="${escapeAttr(cliente.id)}">
+        ${resumoHTML}
+        <div class="edit-section">
+          <div class="edit-section-title"><span>Cliente</span><small>Dados principais</small></div>
+          <div class="edit-grid two">
+            <label>Nome do cliente
+              <input type="text" name="nome" value="${escapeAttr(cliente.nome || "")}" required>
+            </label>
+            <label>Telefone
+              <input type="text" name="telefone" value="${escapeAttr(cliente.telefone || "")}" placeholder="Opcional">
+            </label>
+            <label>Cidade
+              <input type="text" name="cidade" value="${escapeAttr(cliente.cidade || "")}" required>
+            </label>
+            <label>Endereço
+              <input type="text" name="endereco" value="${escapeAttr(cliente.endereco || "")}" placeholder="Rua, número, bairro">
+            </label>
+          </div>
+        </div>
+        <label class="toggle-line">
+          <input type="checkbox" name="syncOrders" checked>
+          Atualizar também os pedidos antigos deste cliente
+        </label>
+        <div class="edit-actions">
+          <button type="button" class="secondary-btn" onclick="closeModal('edit-modal')">Cancelar</button>
+          <button type="submit">Salvar cliente</button>
+        </div>
+      </form>
+    `;
+
+    openModal("edit-modal", `Editar cliente · ${cliente.nome || ""}`, formHTML, () => {
       document.getElementById("edit-client-form").onsubmit = async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
-        const updatedData = Object.fromEntries(formData.entries());
+        const oldNome = cliente.nome || "";
+        const oldCidade = cliente.cidade || "";
+        const updatedData = {
+          nome: String(formData.get("nome") || "").trim(),
+          telefone: String(formData.get("telefone") || "").trim(),
+          cidade: String(formData.get("cidade") || "").trim(),
+          endereco: String(formData.get("endereco") || "").trim(),
+        };
+
         showLoader();
-        const { error } = await supabaseClient
-          .from("clientes")
-          .update({
-            nome: updatedData.nome,
-            telefone: updatedData.telefone,
-            cidade: updatedData.cidade,
-            endereco: updatedData.endereco
-          })
-          .eq("id", updatedData.id);
-        hideLoader();
-        if (error) {
-          showSaveStatus("Erro ao atualizar cliente: " + error.message, false);
-        } else {
+        try {
+          const { error } = await supabaseClient.from("clientes").update(updatedData).eq("id", cliente.id);
+          if (error) throw error;
+
+          if (formData.get("syncOrders") === "on") {
+            const pedidoUpdate = {
+              cliente: updatedData.nome,
+              telefone: updatedData.telefone,
+              cidade: updatedData.cidade,
+              endereco: updatedData.endereco,
+            };
+
+            const byId = await supabaseClient.from("pedidos").update(pedidoUpdate).eq("clienteId", cliente.id);
+            if (byId.error) throw byId.error;
+
+            const byNameCity = await supabaseClient
+              .from("pedidos")
+              .update({ ...pedidoUpdate, clienteId: cliente.id })
+              .eq("cliente", oldNome)
+              .eq("cidade", oldCidade);
+            if (byNameCity.error) throw byNameCity.error;
+          }
+
           showSaveStatus("Cliente atualizado com sucesso!");
-          await loadDataFromSupabase();
           closeModal("edit-modal");
+          await loadDataFromSupabase();
+        } catch (error) {
+          showSaveStatus("Erro ao atualizar cliente: " + error.message, false);
+        } finally {
+          hideLoader();
         }
       };
     });
@@ -524,13 +898,25 @@ document.addEventListener("DOMContentLoaded", () => {
     const cliente = database.clientes.find((c) => c.id === clientId);
     if (!cliente) return;
 
-    const pedidosCliente = database.pedidos
-      .filter((p) => p.clienteId === clientId)
-      .sort((a, b) => new Date(b.dataEntrega) - new Date(a.dataEntrega));
+    const pedidosCliente = (typeof getPedidosDoCliente === "function" ? getPedidosDoCliente(cliente) : database.pedidos.filter((p) => p.clienteId === clientId))
+      .sort((a, b) => new Date(b.dataEntrega || b.created_at) - new Date(a.dataEntrega || a.created_at));
 
+    const insight = typeof getClientInsight === "function" ? getClientInsight(cliente) : null;
     let tableHTML = "<p>Nenhum pedido encontrado para este cliente.</p>";
+
+    const summaryHTML = insight ? `
+      <div class="history-summary">
+        <div><span>Pedidos</span><b>${insight.pedidos.length}</b></div>
+        <div><span>Total</span><b>${formatCurrency(insight.total)}</b></div>
+        <div><span>Pendente</span><b>${formatCurrency(insight.valorPendente)}</b></div>
+        <div><span>Ticket médio</span><b>${formatCurrency(insight.ticketMedio)}</b></div>
+      </div>
+      <p class="small-muted"><b>Leitura inteligente:</b> ${insight.reasons.join("; ")}.</p>
+    ` : "";
+
     if (pedidosCliente.length > 0) {
       tableHTML = `
+                ${summaryHTML}
                 <table>
                     <thead>
                         <tr>
@@ -543,16 +929,18 @@ document.addEventListener("DOMContentLoaded", () => {
                     <tbody>
             `;
       pedidosCliente.forEach((p) => {
-        const itemsHtml = p.items.map((i) => `<li>${i.qtd}x ${i.pizzaNome}</li>`).join("");
-        const startOfWeek = new Date(p.dataEntrega);
+        const itemsHtml = (p.items || []).map((i) => `<li>${i.qtd}x ${i.pizzaNome}</li>`).join("");
+        const dateSource = p.dataEntrega || p.created_at || "";
+        const startOfWeek = new Date(dateSource.includes("T") ? dateSource : dateSource + "T00:00:00");
         const weekStartFormatted = startOfWeek.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
         const valorExibido = p.valorFinal || p.valorTotal;
+        const payTag = isPedidoPago(p) ? '<span class="payment-tag paid">Pago</span>' : '<span class="payment-tag unpaid">Pendente</span>';
         tableHTML += `
                     <tr>
                         <td>${weekStartFormatted}</td>
                         <td><ul>${itemsHtml}</ul></td>
                         <td>${formatCurrency(valorExibido)}</td>
-                        <td><span class="status-${(p.status || "pendente").toLowerCase()}">${p.status}</span></td>
+                        <td><span class="status-${normalizeStatusClass(p.status)}">${p.status}</span>${payTag}</td>
                     </tr>
                 `;
       });
@@ -567,28 +955,34 @@ document.addEventListener("DOMContentLoaded", () => {
     const tbody = document.getElementById("tabela-pedidos")?.querySelector("tbody");
     if (!tbody) return;
 
-    const searchTerm = document.getElementById("search-pedidos").value.toLowerCase();
-    const clienteFilter = document.getElementById("filter-modal-cliente").value.toLowerCase();
-    const cidadeFilter = document.getElementById("filter-modal-cidade").value.toLowerCase();
-    const vendedorFilter = document.getElementById("filter-modal-vendedor").value;
-    const semanaFilter = document.getElementById("filter-modal-semana").value;
-    const statusFilter = document.getElementById("filter-modal-status").value;
-    const valorMin = parseFloat(document.getElementById("filter-modal-valor-min").value) || 0;
-    const valorMax = parseFloat(document.getElementById("filter-modal-valor-max").value) || Infinity;
+    const searchTerm = (document.getElementById("search-pedidos")?.value || "").toLowerCase();
+    const clienteFilter = (document.getElementById("filter-modal-cliente")?.value || "").toLowerCase();
+    const cidadeFilter = (document.getElementById("filter-modal-cidade")?.value || "").toLowerCase();
+    const vendedorFilter = document.getElementById("filter-modal-vendedor")?.value || "";
+    const semanaFilter = document.getElementById("filter-modal-semana")?.value || "";
+    const statusFilter = document.getElementById("filter-modal-status")?.value || "";
+    const pagamentoStatusFilter = document.getElementById("filter-modal-pagamento-status")?.value || "";
+    const formaPagamentoFilter = document.getElementById("filter-modal-forma-pagamento")?.value || "";
+    const valorMin = getNumberValue(document.getElementById("filter-modal-valor-min")?.value, 0);
+    const valorMaxRaw = document.getElementById("filter-modal-valor-max")?.value;
+    const valorMax = valorMaxRaw ? getNumberValue(valorMaxRaw, Infinity) : Infinity;
 
     let filteredData = database.pedidos.filter((p) => {
       const searchMatch = (p.cliente || "").toLowerCase().includes(searchTerm);
       const clienteMatch = !clienteFilter || (p.cliente || "").toLowerCase().includes(clienteFilter);
       const cidadeMatch = !cidadeFilter || (p.cidade || "").toLowerCase().includes(cidadeFilter);
-      const vendedorFirstName = (p.vendedor || "").trim().split(" ")[0];
+      const vendedorName = (p.vendedor || "").trim();
+      const vendedorFirstName = vendedorName.split(" ")[0];
       const normalizedVendedor = vendedorFirstName.charAt(0).toUpperCase() + vendedorFirstName.slice(1).toLowerCase();
-      const vendedorMatch = !vendedorFilter || normalizedVendedor === vendedorFilter;
+      const vendedorMatch = !vendedorFilter || normalizedVendedor === vendedorFilter || vendedorName.toLowerCase() === vendedorFilter.toLowerCase();
       const semanaMatch = !semanaFilter || (p.dataEntrega && getWeekStart(p.dataEntrega) === semanaFilter);
       const statusMatch = !statusFilter || p.status === statusFilter;
+      const pagamentoStatusMatch = !pagamentoStatusFilter || (pagamentoStatusFilter === "pago" ? isPedidoPago(p) : !isPedidoPago(p));
+      const formaPagamentoMatch = !formaPagamentoFilter || p.pagamento === formaPagamentoFilter;
       const valorExibido = p.valorFinal || p.valorTotal;
       const valorMatch = valorExibido >= valorMin && valorExibido <= valorMax;
 
-      return searchMatch && clienteMatch && cidadeMatch && vendedorMatch && semanaMatch && statusMatch && valorMatch;
+      return searchMatch && clienteMatch && cidadeMatch && vendedorMatch && semanaMatch && statusMatch && pagamentoStatusMatch && formaPagamentoMatch && valorMatch;
     });
 
     const { column, direction } = sortState.pedidos;
@@ -605,10 +999,12 @@ document.addEventListener("DOMContentLoaded", () => {
     filteredData.forEach((p) => {
       const row = tbody.insertRow();
       const itemsHtml = p.items.map((i) => `<li class="${i.isCustom ? "item-pedido-outro" : ""}">${i.qtd}x ${i.pizzaNome}</li>`).join("");
-      const statusClass = (p.status || "pendente").toLowerCase().replace(/ /g, "-");
+      const statusClass = normalizeStatusClass(p.status);
       const startOfWeek = new Date(p.dataEntrega);
       const weekStartFormatted = startOfWeek.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
       const valorExibido = p.valorFinal || p.valorTotal;
+      const pago = isPedidoPago(p);
+      const pagamentoTag = pago ? '<span class="payment-tag paid">Pago</span>' : '<span class="payment-tag unpaid">Pendente</span>';
 
       row.innerHTML = `
                 <td data-label="Cliente">${p.cliente}</b><br><small>${p.telefone || "N/A"}</small></td>
@@ -616,25 +1012,30 @@ document.addEventListener("DOMContentLoaded", () => {
                 <td data-label="Itens"><ul style="padding-left:15px;margin:0">${itemsHtml}</ul></td>
                 <td data-label="Detalhes"><small>Vend.: ${p.vendedor}<br>Cid.: ${p.cidade}<br>End.: ${p.endereco || "N/A"}</small></td>
                 <td data-label="Valores"><b>${formatCurrency(valorExibido)}</b><br><small class="admin-only">Calc: ${formatCurrency(p.valorTotal)}</small></td>
-                <td data-label="Status"><span class="status-${statusClass}">${p.status}</span></td>
+                <td data-label="Status"><span class="status-${statusClass}">${p.status}</span>${pagamentoTag}</td>
                 <td data-label="Ações">${renderActionButtons(p)}</td>
             `;
     });
     updateSortHeaders("tabela-pedidos", column, direction);
   };
 
+  document.getElementById("search-pedidos")?.addEventListener("input", renderPedidos);
+
   const renderActionButtons = (pedido) => {
     const removerBtn = `<button class="action-btn remove-btn" onclick="window.removerPedido('${pedido.id}')">Remover</button>`;
     const editarBtn = `<button class="action-btn edit-btn" onclick="window.openEditPedidoModal('${pedido.id}')">Editar</button>`;
+    const pagoBtn = (typeof isPedidoPago === "function" ? isPedidoPago(pedido) : pedido.pago) ? "" : `<button class="action-btn paid-btn complete-btn" onclick="window.marcarPedidoPago('${pedido.id}')">Pago</button>`;
+    const pixBtn = `<button class="action-btn info-btn" onclick="window.openPedidoPix('${pedido.id}')">Pix</button>`;
+    const printBtn = `<button class="action-btn info-btn" onclick="window.printPedido('${pedido.id}')">🖨️</button>`;
     switch (pedido.status) {
       case "Pendente":
-        return `${editarBtn}<button class="action-btn" style="background-color:var(--accent-color)" onclick="window.updatePedidoStatus('${pedido.id}', 'Pronto')">Marcar Pronto</button>${removerBtn}`;
+        return `${editarBtn}<button class="action-btn" style="background-color:var(--accent-color)" onclick="window.updatePedidoStatus('${pedido.id}', 'Pronto')">Marcar Pronto</button>${pagoBtn}${pixBtn}${printBtn}${removerBtn}`;
       case "Pronto":
-        return `${editarBtn}<button class="action-btn complete-btn" onclick="window.updatePedidoStatus('${pedido.id}', 'Concluído')">Marcar Concluído</button>${removerBtn}`;
+        return `${editarBtn}<button class="action-btn complete-btn" onclick="window.updatePedidoStatus('${pedido.id}', 'Concluído')">Concluir</button>${pagoBtn}${pixBtn}${printBtn}${removerBtn}`;
       case "Concluído":
-        return `${editarBtn}${removerBtn}`;
+        return `${editarBtn}${pagoBtn}${pixBtn}${printBtn}${removerBtn}`;
       default:
-        return removerBtn;
+        return `${pagoBtn}${pixBtn}${printBtn}${removerBtn}`;
     }
   };
 
@@ -657,6 +1058,9 @@ document.addEventListener("DOMContentLoaded", () => {
             const pizzaEmEstoque = database.estoque.find((p) => p.id === item.pizzaId);
             if (pizzaEmEstoque) {
               const novaQtd = pizzaEmEstoque.qtd - item.qtd;
+              if (novaQtd < 0) {
+                throw new Error(`Estoque insuficiente para ${item.pizzaNome}. Disponível: ${pizzaEmEstoque.qtd}, pedido: ${item.qtd}.`);
+              }
               stockUpdatePromises.push(
                 supabaseClient.from("estoque").update({ qtd: novaQtd }).eq("id", item.pizzaId)
               );
@@ -671,7 +1075,9 @@ document.addEventListener("DOMContentLoaded", () => {
         showSaveStatus("Estoque atualizado!");
       }
 
-      const { error: statusError } = await supabaseClient.from("pedidos").update({ status: newStatus }).eq("id", id);
+      const statusPayload = { status: newStatus };
+      if (newStatus === "Concluído") statusPayload.pago = true;
+      const { error: statusError } = await supabaseClient.from("pedidos").update(statusPayload).eq("id", id);
       if (statusError) throw statusError;
 
       showSaveStatus("Status do pedido atualizado com sucesso!");
@@ -725,9 +1131,44 @@ document.addEventListener("DOMContentLoaded", () => {
       container.innerHTML = '<p style="text-align:center;color:#777">Nenhuma pizza adicionada.</p>';
       return;
     }
+    const pagamento = getPedidoPagamentoAtual();
     pedidoAtualItems.forEach((item, index) => {
-      container.innerHTML += `<div class="carrinho-item"><p><span>${item.qtd}x</span> ${item.pizzaNome} ${item.isCustom ? '<b class="item-pedido-outro">(Outro)</b>' : ""}</p><button type="button" class="btn-remove-item" onclick="window.removeItemPedido(${index})">X</button></div>`;
+      const unitPrice = getPrecoPorPagamento(item.preco, pagamento);
+      container.innerHTML += `<div class="carrinho-item"><p><span>${item.qtd}x</span> ${item.pizzaNome} ${item.isCustom ? '<b class="item-pedido-outro">(Outro)</b>' : ""}<small>${formatCurrency(unitPrice)} un.</small></p><button type="button" class="btn-remove-item" onclick="window.removeItemPedido(${index})">X</button></div>`;
     });
+  };
+
+  const renderPedidoAtalhos = () => {
+    const box = document.getElementById("pedido-pizza-atalhos");
+    if (!box) return;
+    const term = (document.getElementById("pedido-pizza-search")?.value || "").toLowerCase().trim();
+    const pagamento = getPedidoPagamentoAtual();
+    const pizzas = database.estoque
+      .filter((pizza) => !term || `${pizza.nome} ${pizza.tamanho || ""}`.toLowerCase().includes(term))
+      .slice(0, 18);
+
+    box.innerHTML = pizzas.map((pizza) => {
+      const label = pizza.tamanho ? `${pizza.nome} (${pizza.tamanho})` : pizza.nome;
+      const price = getPrecoPorPagamento(pizza.precoVenda, pagamento);
+      const stockClass = Number(pizza.qtd || 0) <= 0 ? "is-empty" : "";
+      const weekStart = document.getElementById("pedido-semana-entrega")?.value || getWeekStart();
+      return `<button type="button" class="pizza-shortcut ${stockClass}" onclick="window.quickAddPedidoItem('${pizza.id}')">
+        <b>${label}</b>
+        <small>${formatCurrency(price)} · ${formatStockSobra(pizza.id, weekStart)}</small>
+      </button>`;
+    }).join("") || `<p class="empty-state compact">Nenhuma pizza encontrada.</p>`;
+  };
+
+  window.quickAddPedidoItem = (pizzaId) => {
+    const pizzaData = database.estoque.find((p) => p.id === pizzaId);
+    if (!pizzaData) return;
+    const pizzaNome = pizzaData.tamanho ? `${pizzaData.nome} (${pizzaData.tamanho})` : pizzaData.nome;
+    const existing = pedidoAtualItems.find((item) => item.pizzaId === pizzaId && !item.isCustom);
+    if (existing) existing.qtd += 1;
+    else pedidoAtualItems.push({ pizzaId, pizzaNome, qtd: 1, isCustom: false, preco: pizzaData.precoVenda });
+    renderPedidoCarrinho();
+    updateTotalPedido();
+    applySellerProfileToForms(true);
   };
 
   window.removeItemPedido = (index) => {
@@ -737,14 +1178,43 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const updateTotalPedido = () => {
-    const total = pedidoAtualItems.reduce((acc, item) => acc + item.preco * item.qtd, 0);
-    document.getElementById("total-calculado-pedido").textContent = formatCurrency(total);
-    document.getElementById("valor-final-pedido").value = total.toFixed(2);
+    const pagamento = getPedidoPagamentoAtual();
+    const desconto = getPedidoDiscountPercent();
+    const totalBruto = pedidoAtualItems.reduce((acc, item) => acc + getPrecoPorPagamento(item.preco, pagamento) * item.qtd, 0);
+    const totalFinal = applyDiscount(totalBruto, desconto);
+    const totalEl = document.getElementById("total-calculado-pedido");
+    const finalInput = document.getElementById("valor-final-pedido");
+    const discountHint = document.getElementById("pedido-desconto-valor");
+    if (totalEl) totalEl.textContent = formatCurrency(totalFinal);
+    if (finalInput) finalInput.value = totalFinal.toFixed(2);
+    if (discountHint) {
+      const discountValue = totalBruto - totalFinal;
+      discountHint.textContent = desconto > 0 ? `Economia: ${formatCurrency(discountValue)}` : "";
+    }
+    renderPedidoCarrinho();
+    renderPedidoAtalhos();
   };
 
   document.getElementById("btn-registrar-pedido")?.addEventListener("click", async () => {
     await registrarNovoPedido();
   });
+
+  document.getElementById("pedido-pagamento")?.addEventListener("change", updateTotalPedido);
+  document.getElementById("pedido-desconto")?.addEventListener("input", updateTotalPedido);
+  document.getElementById("pedido-desconto")?.addEventListener("blur", (e) => {
+    formatPercentField(e.target);
+    updateTotalPedido();
+  });
+  document.getElementById("pedido-pizza-search")?.addEventListener("input", renderPedidoAtalhos);
+  document.getElementById("pedido-semana-entrega")?.addEventListener("change", renderPedidoAtalhos);
+
+  document.getElementById("item-pizza")?.addEventListener("change", (e) => {
+    const isOutro = e.target.value === "outro";
+    document.getElementById("item-pizza-outro-nome")?.classList.toggle("hidden", !isOutro);
+    document.getElementById("item-pizza-outro-tamanho")?.classList.toggle("hidden", !isOutro);
+    if (isOutro) document.getElementById("item-pizza-outro-nome")?.focus();
+  });
+
 
   const registrarNovoPedido = async () => {
     if (pedidoAtualItems.length === 0) {
@@ -794,7 +1264,8 @@ document.addEventListener("DOMContentLoaded", () => {
       clienteId = data.id;
     }
 
-    const valorCalculado = pedidoAtualItems.reduce((acc, item) => acc + item.preco * item.qtd, 0);
+    const itensComPrecoFinal = pedidoAtualItems.map((item) => ({ ...item, preco: getPrecoPorPagamento(item.preco, pagamento) }));
+    const valorCalculado = itensComPrecoFinal.reduce((acc, item) => acc + item.preco * item.qtd, 0);
     const valorFinalInput = document.getElementById("valor-final-pedido").value;
     const valorFinal = parseFloat(valorFinalInput.replace(",", ".")) || valorCalculado;
 
@@ -808,9 +1279,10 @@ document.addEventListener("DOMContentLoaded", () => {
       pagamento,
       dataEntrega,
       status: "Pendente",
-      items: pedidoAtualItems,
+      items: itensComPrecoFinal,
       valorTotal: valorCalculado,
       valorFinal: valorFinal,
+      pago: false,
     };
 
     const semanaInicio = getWeekStart(dataEntrega);
@@ -857,6 +1329,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (editId) editId.value = "";
     const valorFinal = document.getElementById("valor-final-pedido");
     if (valorFinal) valorFinal.value = "";
+    const desconto = document.getElementById("pedido-desconto");
+    if (desconto) desconto.value = "";
+    const weekSelect = document.getElementById("pedido-semana-entrega");
+    if (weekSelect) weekSelect.value = getWeekStart();
     pedidoAtualItems = [];
     renderPedidoCarrinho();
     updateTotalPedido();
@@ -1119,24 +1595,49 @@ document.addEventListener("DOMContentLoaded", () => {
   window.editIngrediente = (id) => {
     const item = database.ingredientes.find((i) => i.id === id);
     if (!item) return;
+    const estoqueAtual = Number(item.qtd || 0);
+    const estoqueMinimo = Number(item.estoqueMinimo || 0);
+    const comprar = Math.max(0, estoqueMinimo - estoqueAtual);
     const formHTML = `
-            <form id="edit-ingrediente-form">
-                <div class="form-group"><label>Nome</label><input type="text" name="nome" value="${item.nome}" required></div>
-                <div class="form-group"><label>Quantidade</label><input type="number" name="qtd" value="${item.qtd}" step="0.001" required></div>
-                <div class="form-group"><label>Custo</label><input type="number" name="custo" value="${item.custo}" step="0.01" required></div>
-                <div class="form-group"><label>Estoque Mínimo</label><input type="number" name="estoqueMinimo" value="${item.estoqueMinimo}" step="0.001" required></div>
-                <button type="submit">Salvar</button>
-            </form>
-        `;
-    openModal("edit-modal", "Editar Ingrediente", formHTML, () => {
+      <form id="edit-ingrediente-form" class="edit-form">
+        <div class="edit-kpis">
+          <div><span>Estoque atual</span><b>${estoqueAtual.toFixed(3)}</b></div>
+          <div><span>Mínimo</span><b>${estoqueMinimo.toFixed(3)}</b></div>
+          <div><span>Sugestão compra</span><b>${comprar.toFixed(3)}</b></div>
+          <div><span>Custo un.</span><b>${formatCurrency(item.custo)}</b></div>
+        </div>
+        <div class="edit-section">
+          <div class="edit-section-title"><span>Ingrediente</span><small>Todos os campos do cadastro</small></div>
+          <div class="edit-grid two">
+            <label>Nome
+              <input type="text" name="nome" value="${escapeAttr(item.nome)}" required>
+            </label>
+            <label>Quantidade em estoque
+              <input type="number" name="qtd" value="${safeNumber(item.qtd).toFixed(3)}" step="0.001" min="0" required>
+            </label>
+            <label>Custo por unidade
+              <input type="number" name="custo" value="${safeNumber(item.custo).toFixed(2)}" step="0.01" min="0" required>
+            </label>
+            <label>Estoque mínimo
+              <input type="number" name="estoqueMinimo" value="${safeNumber(item.estoqueMinimo).toFixed(3)}" step="0.001" min="0" required>
+            </label>
+          </div>
+        </div>
+        <div class="edit-actions">
+          <button type="button" class="secondary-btn" onclick="closeModal('edit-modal')">Cancelar</button>
+          <button type="submit">Salvar ingrediente</button>
+        </div>
+      </form>
+    `;
+    openModal("edit-modal", `Editar ingrediente · ${item.nome || ""}`, formHTML, () => {
       document.getElementById("edit-ingrediente-form").onsubmit = async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
         const updatedData = {
-          nome: formData.get("nome"),
-          qtd: parseFloat(formData.get("qtd")),
-          custo: parseFloat(formData.get("custo")),
-          estoqueMinimo: parseFloat(formData.get("estoqueMinimo")),
+          nome: String(formData.get("nome") || "").trim(),
+          qtd: safeNumber(formData.get("qtd")),
+          custo: safeNumber(formData.get("custo")),
+          estoqueMinimo: safeNumber(formData.get("estoqueMinimo")),
         };
         showLoader();
         const { error } = await supabaseClient.from("ingredientes").update(updatedData).eq("id", id);
@@ -1145,8 +1646,8 @@ document.addEventListener("DOMContentLoaded", () => {
           showSaveStatus("Erro ao atualizar: " + error.message, false);
         } else {
           showSaveStatus("Ingrediente salvo!");
-          await loadDataFromSupabase();
           closeModal("edit-modal");
+          await loadDataFromSupabase();
         }
       };
     });
@@ -1232,29 +1733,66 @@ document.addEventListener("DOMContentLoaded", () => {
   window.editEstoque = (id) => {
     const item = database.estoque.find((p) => p.id === id);
     if (!item) return;
+    const custo = calculatePizzaCost(item.id);
+    const lucro = safeNumber(item.precoVenda) - custo;
     const formHTML = `
-            <form id="edit-estoque-form">
-                <div class="form-group"><label>Sabor da Pizza</label><input type="text" name="nome" value="${item.nome}" required></div>
-                <div class="form-group"><label>Tamanho</label>
-                    <select name="tamanho" required>
-                        <option value="P" ${item.tamanho === "P" ? "selected" : ""}>Pequena</option>
-                        <option value="G" ${item.tamanho === "G" ? "selected" : ""}>Grande</option>
-                    </select>
-                </div>
-                <div class="form-group"><label>Quantidade</label><input type="number" name="qtd" value="${item.qtd}" required></div>
-                <div class="form-group"><label>Preço de Venda</label><input type="number" name="precoVenda" value="${item.precoVenda}" step="0.01" required></div>
-                <button type="submit">Salvar</button>
-            </form>
-        `;
-    openModal("edit-modal", "Editar Pizza", formHTML, () => {
+      <form id="edit-estoque-form" class="edit-form">
+        <div class="edit-kpis">
+          <div><span>Custo receita</span><b>${formatCurrency(custo)}</b></div>
+          <div><span>Preço venda</span><b id="edit-pizza-preco-preview">${formatCurrency(item.precoVenda)}</b></div>
+          <div><span>Lucro un.</span><b id="edit-pizza-lucro-preview">${formatCurrency(lucro)}</b></div>
+          <div><span>Estoque</span><b>${Number(item.qtd || 0)}</b></div>
+        </div>
+        <div class="edit-section">
+          <div class="edit-section-title"><span>Pizza pronta</span><small>Cardápio, preço e estoque</small></div>
+          <div class="edit-grid two">
+            <label>Sabor da pizza
+              <input type="text" name="nome" value="${escapeAttr(item.nome)}" required>
+            </label>
+            <label>Tamanho
+              <select name="tamanho" required>
+                <option value="P" ${item.tamanho === "P" ? "selected" : ""}>Pequena (P)</option>
+                <option value="G" ${item.tamanho === "G" ? "selected" : ""}>Grande (G)</option>
+              </select>
+            </label>
+            <label>Quantidade em estoque
+              <input type="number" name="qtd" value="${parseInt(item.qtd || 0)}" step="1" min="-999" required>
+            </label>
+            <label>Preço de venda
+              <input type="number" name="precoVenda" value="${safeNumber(item.precoVenda).toFixed(2)}" step="0.01" min="0" required>
+            </label>
+          </div>
+          <p class="edit-note">O custo vem da receita cadastrada. Alterar preço ou estoque aqui não altera ingredientes.</p>
+        </div>
+        <div class="edit-actions">
+          <button type="button" class="secondary-btn" onclick="closeModal('edit-modal')">Cancelar</button>
+          <button type="submit">Salvar pizza</button>
+        </div>
+      </form>
+    `;
+    openModal("edit-modal", `Editar pizza · ${item.nome || ""}`, formHTML, () => {
+      const precoInput = document.querySelector("#edit-estoque-form [name='precoVenda']");
+      const updatePreview = () => {
+        const preco = safeNumber(precoInput?.value);
+        const lucroEl = document.getElementById("edit-pizza-lucro-preview");
+        const precoEl = document.getElementById("edit-pizza-preco-preview");
+        if (precoEl) precoEl.textContent = formatCurrency(preco);
+        if (lucroEl) {
+          lucroEl.textContent = formatCurrency(preco - custo);
+          lucroEl.classList.toggle("negative", preco - custo < 0);
+        }
+      };
+      precoInput?.addEventListener("input", updatePreview);
+      updatePreview();
+
       document.getElementById("edit-estoque-form").onsubmit = async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
         const updatedData = {
-          nome: formData.get("nome"),
+          nome: String(formData.get("nome") || "").trim(),
           tamanho: formData.get("tamanho"),
-          qtd: parseInt(formData.get("qtd")),
-          precoVenda: parseFloat(formData.get("precoVenda")),
+          qtd: parseInt(formData.get("qtd")) || 0,
+          precoVenda: safeNumber(formData.get("precoVenda")),
         };
         showLoader();
         const { error } = await supabaseClient.from("estoque").update(updatedData).eq("id", id);
@@ -1263,8 +1801,8 @@ document.addEventListener("DOMContentLoaded", () => {
           showSaveStatus("Erro ao atualizar: " + error.message, false);
         } else {
           showSaveStatus("Pizza salva!");
-          await loadDataFromSupabase();
           closeModal("edit-modal");
+          await loadDataFromSupabase();
         }
       };
     });
@@ -1371,9 +1909,122 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   window.editReceita = (pizzaId) => {
-    document.getElementById("receita-pizza-select").value = pizzaId;
-    document.getElementById("receita-pizza-select").dispatchEvent(new Event("change"));
-    document.querySelector('[data-tab="receitas"]').scrollIntoView();
+    const receita = database.receitas.find((r) => r.pizzaId === pizzaId) || { pizzaId, ingredientes: [] };
+    let editIngredientes = JSON.parse(JSON.stringify(receita.ingredientes || []));
+
+    const pizzaOptions = database.estoque.map((p) => {
+      const label = p.tamanho ? `${p.nome} (${p.tamanho})` : p.nome;
+      return `<option value="${escapeAttr(p.id)}" ${p.id === receita.pizzaId ? "selected" : ""}>${escapeHTML(label)}</option>`;
+    }).join("");
+
+    const ingredienteOptions = (selectedId = "") => database.ingredientes.map((i) =>
+      `<option value="${escapeAttr(i.id)}" ${i.id === selectedId ? "selected" : ""}>${escapeHTML(i.nome)}</option>`
+    ).join("");
+
+    const renderEditList = () => {
+      const container = document.getElementById("edit-receita-list");
+      const totalEl = document.getElementById("edit-receita-custo");
+      if (!container) return;
+      if (!editIngredientes.length) {
+        container.innerHTML = `<p class="empty-state compact">Nenhum ingrediente nesta receita.</p>`;
+      } else {
+        container.innerHTML = editIngredientes.map((item, index) => `
+          <div class="edit-line-item recipe-line">
+            <label>Ingrediente
+              <select onchange="window.updateEditReceitaIngrediente(${index}, 'ingredienteId', this.value)">
+                <option value="">Selecione...</option>${ingredienteOptions(item.ingredienteId)}
+              </select>
+            </label>
+            <label>Quantidade
+              <input type="number" value="${safeNumber(item.qtd).toFixed(3)}" step="0.001" min="0" onchange="window.updateEditReceitaIngrediente(${index}, 'qtd', this.value)">
+            </label>
+            <button type="button" class="icon-danger" onclick="window.removeEditReceitaIngrediente(${index})">Remover</button>
+          </div>
+        `).join("");
+      }
+      const custo = editIngredientes.reduce((total, item) => {
+        const ingrediente = database.ingredientes.find((i) => i.id === item.ingredienteId);
+        return total + (ingrediente ? Number(ingrediente.custo || 0) * Number(item.qtd || 0) : 0);
+      }, 0);
+      if (totalEl) totalEl.textContent = formatCurrency(custo);
+    };
+
+    const formHTML = `
+      <form id="edit-receita-form" class="edit-form">
+        <div class="edit-kpis">
+          <div><span>Ingredientes</span><b id="edit-receita-count">${editIngredientes.length}</b></div>
+          <div><span>Custo calculado</span><b id="edit-receita-custo">R$ 0,00</b></div>
+        </div>
+        <div class="edit-section">
+          <div class="edit-section-title"><span>Receita</span><small>Pizza e ingredientes usados</small></div>
+          <div class="edit-grid one">
+            <label>Pizza vinculada
+              <select name="pizzaId" required>
+                <option value="">Selecione a pizza...</option>${pizzaOptions}
+              </select>
+            </label>
+          </div>
+        </div>
+        <div class="edit-section">
+          <div class="edit-section-title"><span>Ingredientes</span><small>Edite, adicione ou remova itens</small></div>
+          <div class="edit-add-row">
+            <select id="edit-receita-add-ingrediente"><option value="">Ingrediente...</option>${ingredienteOptions()}</select>
+            <input type="number" id="edit-receita-add-qtd" placeholder="Qtd" step="0.001" min="0">
+            <button type="button" id="btn-edit-receita-add">Adicionar</button>
+          </div>
+          <div id="edit-receita-list" class="edit-list"></div>
+        </div>
+        <div class="edit-actions">
+          <button type="button" class="secondary-btn" onclick="closeModal('edit-modal')">Cancelar</button>
+          <button type="submit">Salvar receita</button>
+        </div>
+      </form>
+    `;
+
+    openModal("edit-modal", "Editar receita", formHTML, () => {
+      window.updateEditReceitaIngrediente = (index, field, value) => {
+        if (!editIngredientes[index]) return;
+        editIngredientes[index][field] = field === "qtd" ? safeNumber(value) : value;
+        renderEditList();
+      };
+      window.removeEditReceitaIngrediente = (index) => {
+        editIngredientes.splice(index, 1);
+        renderEditList();
+      };
+      document.getElementById("btn-edit-receita-add")?.addEventListener("click", () => {
+        const ingredienteId = document.getElementById("edit-receita-add-ingrediente")?.value;
+        const qtd = safeNumber(document.getElementById("edit-receita-add-qtd")?.value);
+        if (!ingredienteId || qtd <= 0) return alert("Selecione um ingrediente e uma quantidade válida.");
+        editIngredientes.push({ ingredienteId, qtd });
+        document.getElementById("edit-receita-add-ingrediente").value = "";
+        document.getElementById("edit-receita-add-qtd").value = "";
+        renderEditList();
+      });
+      renderEditList();
+      document.getElementById("edit-receita-form").onsubmit = async (e) => {
+        e.preventDefault();
+        const pizzaSelecionada = new FormData(e.target).get("pizzaId");
+        if (!pizzaSelecionada) return alert("Selecione a pizza da receita.");
+        showLoader();
+        try {
+          if (pizzaSelecionada !== pizzaId) {
+            await supabaseClient.from("receitas").delete().eq("pizzaId", pizzaId);
+          }
+          const { error } = await supabaseClient.from("receitas").upsert(
+            { pizzaId: pizzaSelecionada, ingredientes: editIngredientes },
+            { onConflict: "pizzaId" }
+          );
+          if (error) throw error;
+          showSaveStatus("Receita salva!");
+          closeModal("edit-modal");
+          await loadDataFromSupabase();
+        } catch (error) {
+          showSaveStatus("Erro ao salvar receita: " + error.message, false);
+        } finally {
+          hideLoader();
+        }
+      };
+    });
   };
 
   window.removeReceita = async (pizzaId) => {
@@ -1394,78 +2045,176 @@ document.addEventListener("DOMContentLoaded", () => {
     const pedido = database.pedidos.find((p) => p.id === id);
     if (!pedido) return;
 
-    pedidoEditItems = JSON.parse(JSON.stringify(pedido.items));
+    pedidoEditItems = JSON.parse(JSON.stringify(pedido.items || []));
 
+    const clientesOptions = database.clientes.map((c) => `<option value="${escapeAttr(c.nome || "")}">`).join("");
     const pizzaOptions = database.estoque.map((p) => {
       const label = p.tamanho ? `${p.nome} (${p.tamanho})` : p.nome;
-      const stockStyle = p.qtd <= 0 ? "color:red;" : "";
-      return `<option value="${p.id}" style="${stockStyle}">${label} (Estoque: ${p.qtd})</option>`;
+      const sobra = getPizzaSobraForWeek(p.id, pedido.dataEntrega ? getWeekStart(pedido.dataEntrega) : getWeekStart());
+      return `<option value="${escapeAttr(p.id)}">${escapeHTML(label)} · Estoque ${p.qtd || 0} · Sobra ${sobra}</option>`;
     }).join("");
+    const dataEntrega = pedido.dataEntrega ? formatDateToYYYYMMDD(pedido.dataEntrega) : getWeekStart();
+    const valorAtual = safeNumber(pedido.valorFinal || pedido.valorTotal);
 
     const formHTML = `
-            <form id="edit-pedido-form" class="form-vertical">
-                <input type="hidden" name="id" value="${pedido.id}">
-                <div class="form-group"><label>Cliente</label><input type="text" name="cliente" value="${pedido.cliente}" required></div>
-                <div class="form-group"><label>Telefone</label><input type="text" name="telefone" value="${pedido.telefone || ""}"></div>
-                <div class="form-group"><label>Cidade</label><input type="text" name="cidade" value="${pedido.cidade}" required></div>
-                <div class="form-group"><label>Endereço</label><input type="text" name="endereco" value="${pedido.endereco || ""}"></div>
-                <div class="form-group"><label>Vendedor</label><input type="text" name="vendedor" value="${pedido.vendedor}" required></div>
-                <div class="form-group">
-                    <label>Pagamento</label>
-                    <select name="pagamento" required>
-                        <option value="Dinheiro" ${pedido.pagamento === "Dinheiro" ? "selected" : ""}>Dinheiro</option>
-                        <option value="Cartão de Crédito" ${pedido.pagamento === "Cartão de Crédito" ? "selected" : ""}>Cartão de Crédito</option>
-                        <option value="Cartão de Débito" ${pedido.pagamento === "Cartão de Débito" ? "selected" : ""}>Cartão de Débito</option>
-                        <option value="Pix" ${pedido.pagamento === "Pix" ? "selected" : ""}>Pix</option>
-                    </select>
-                </div>
-                 <div class="form-group">
-                    <label>Status</label>
-                    <select name="status" required>
-                        <option value="Pendente" ${pedido.status === "Pendente" ? "selected" : ""}>Pendente</option>
-                        <option value="Pronto" ${pedido.status === "Pronto" ? "selected" : ""}>Pronto</option>
-                        <option value="Concluído" ${pedido.status === "Concluído" ? "selected" : ""}>Concluído</option>
-                    </select>
-                </div>
-                <hr>
-                <h4>Itens do Pedido</h4>
-                <div id="edit-item-pedido" style="display:flex; gap:1rem; align-items:center; flex-wrap:wrap; margin-bottom:1rem;">
-                    <select id="edit-item-pizza" style="flex:2;"><option value="">Selecione a Pizza...</option>${pizzaOptions}</select>
-                    <input type="number" id="edit-item-qtd" placeholder="Qtd" value="1" min="1" style="flex:1;">
-                    <button type="button" id="btn-add-item-edit-pedido">Adicionar</button>
-                </div>
-                <div id="edit-pedido-itens-carrinho" class="carrinho-container"></div>
-                 <div class="resumo-pedido">
-                    <span>Total Calculado: <b id="total-calculado-edit-pedido">R$ 0,00</b></span>
-                    <input type="number" id="valor-final-edit-pedido" placeholder="Valor Final" step="0.01" value="${pedido.valorFinal || ""}">
-                </div>
-                <button type="submit">Salvar Alterações</button>
-            </form>
-        `;
+      <form id="edit-pedido-form" class="edit-form edit-order-form">
+        <input type="hidden" name="id" value="${escapeAttr(pedido.id)}">
+        <datalist id="edit-clientes-list">${clientesOptions}</datalist>
 
-    openModal("edit-modal", `Editar Pedido de ${pedido.cliente}`, formHTML, () => {
+        <div class="edit-kpis">
+          <div><span>Total atual</span><b>${formatCurrency(valorAtual)}</b></div>
+          <div><span>Status</span><b>${escapeHTML(pedido.status || "Pendente")}</b></div>
+          <div><span>Pagamento</span><b>${escapeHTML(pedido.pagamento || "N/A")}</b></div>
+          <div><span>Pago?</span><b>${isPedidoPago(pedido) ? "Sim" : "Não"}</b></div>
+        </div>
+
+        <div class="edit-section">
+          <div class="edit-section-title"><span>Dados do pedido</span><small>Cliente, entrega e pagamento</small></div>
+          <div class="edit-grid three">
+            <label>Cliente
+              <input type="text" name="cliente" value="${escapeAttr(pedido.cliente || "")}" list="edit-clientes-list" required>
+            </label>
+            <label>Telefone
+              <input type="text" name="telefone" value="${escapeAttr(pedido.telefone || "")}">
+            </label>
+            <label>Cidade
+              <input type="text" name="cidade" value="${escapeAttr(pedido.cidade || "")}" required>
+            </label>
+            <label>Endereço
+              <input type="text" name="endereco" value="${escapeAttr(pedido.endereco || "")}">
+            </label>
+            <label>Vendedor
+              <input type="text" name="vendedor" value="${escapeAttr(pedido.vendedor || "")}" required>
+            </label>
+            <label>Semana/data entrega
+              <input type="date" name="dataEntrega" value="${escapeAttr(dataEntrega)}" required>
+            </label>
+            <label>Forma de pagamento
+              <select name="pagamento" id="edit-pedido-pagamento" required>
+                <option value="Dinheiro" ${pedido.pagamento === "Dinheiro" ? "selected" : ""}>Dinheiro</option>
+                <option value="Pix" ${pedido.pagamento === "Pix" ? "selected" : ""}>Pix</option>
+                <option value="Cartão de Débito" ${pedido.pagamento === "Cartão de Débito" ? "selected" : ""}>Cartão de Débito</option>
+                <option value="Cartão de Crédito" ${pedido.pagamento === "Cartão de Crédito" ? "selected" : ""}>Cartão de Crédito</option>
+              </select>
+            </label>
+            <label>Status
+              <select name="status" required>
+                <option value="Pendente" ${pedido.status === "Pendente" ? "selected" : ""}>Pendente</option>
+                <option value="Pronto" ${pedido.status === "Pronto" ? "selected" : ""}>Pronto</option>
+                <option value="Concluído" ${pedido.status === "Concluído" ? "selected" : ""}>Concluído</option>
+              </select>
+            </label>
+            <label>Desconto rápido
+              <input type="text" id="edit-pedido-desconto" inputmode="decimal" placeholder="0%">
+            </label>
+          </div>
+          <label class="toggle-line">
+            <input type="checkbox" name="pago" ${isPedidoPago(pedido) ? "checked" : ""}> Pedido pago
+          </label>
+        </div>
+
+        <div class="edit-section">
+          <div class="edit-section-title"><span>Itens</span><small>Edite quantidade, preço e nome dos itens</small></div>
+          <div class="edit-add-row">
+            <select id="edit-item-pizza"><option value="">Adicionar pizza do estoque...</option>${pizzaOptions}</select>
+            <input type="number" id="edit-item-qtd" placeholder="Qtd" value="1" min="1">
+            <button type="button" id="btn-add-item-edit-pedido">Adicionar</button>
+          </div>
+          <div class="edit-add-row custom-row">
+            <input type="text" id="edit-custom-name" placeholder="Pizza personalizada">
+            <select id="edit-custom-size"><option value="P">P</option><option value="G">G</option></select>
+            <input type="number" id="edit-custom-qtd" placeholder="Qtd" value="1" min="1">
+            <input type="number" id="edit-custom-price" placeholder="Preço un." step="0.01" min="0">
+            <button type="button" id="btn-add-custom-edit-pedido" class="secondary-btn">Adicionar outro</button>
+          </div>
+          <div id="edit-pedido-itens-carrinho" class="edit-list"></div>
+          <button type="button" id="btn-recalcular-precos-edit" class="secondary-btn inline-action">Recalcular preços pelo pagamento</button>
+        </div>
+
+        <div class="edit-section">
+          <div class="edit-section-title"><span>Valores e observações</span><small>Total final pode ser ajustado manualmente</small></div>
+          <div class="edit-grid two">
+            <label>Total calculado
+              <input type="text" id="total-calculado-edit-pedido" value="R$ 0,00" readonly>
+            </label>
+            <label>Valor final
+              <input type="number" id="valor-final-edit-pedido" step="0.01" value="${valorAtual.toFixed(2)}">
+            </label>
+          </div>
+          <label>Observações
+            <textarea name="observacoes" rows="3" placeholder="Ex.: sem cebola, retirar na loja, combinar entrega...">${escapeHTML(pedido.observacoes || "")}</textarea>
+          </label>
+        </div>
+
+        <div class="edit-actions">
+          <button type="button" class="secondary-btn" onclick="closeModal('edit-modal')">Cancelar</button>
+          <button type="submit">Salvar pedido</button>
+        </div>
+      </form>
+    `;
+
+    openModal("edit-modal", `Editar pedido · ${pedido.cliente || ""}`, formHTML, () => {
+      const pagamentoSelect = document.getElementById("edit-pedido-pagamento");
+      const descontoInput = document.getElementById("edit-pedido-desconto");
+
       renderEditPedidoCarrinho();
       updateTotalEditPedido();
 
-      document.getElementById("btn-add-item-edit-pedido").addEventListener("click", () => {
+      pagamentoSelect?.addEventListener("change", () => {
+        document.getElementById("edit-custom-price").placeholder = pagamentoSelect.value === "Dinheiro" ? "35 ou 25" : "38 ou 28";
+      });
+      descontoInput?.addEventListener("input", updateTotalEditPedido);
+      descontoInput?.addEventListener("blur", (e) => {
+        formatPercentField(e.target);
+        updateTotalEditPedido();
+      });
+
+      document.getElementById("btn-add-item-edit-pedido")?.addEventListener("click", () => {
         const pizzaSelect = document.getElementById("edit-item-pizza");
         const pizzaId = pizzaSelect.value;
-        const qtd = parseInt(document.getElementById("edit-item-qtd").value);
-        if (!pizzaId || !qtd || qtd < 1) return;
+        const qtd = parseInt(document.getElementById("edit-item-qtd").value) || 1;
+        if (!pizzaId || qtd < 1) return;
 
         const pizzaData = database.estoque.find((p) => p.id === pizzaId);
+        if (!pizzaData) return;
         pedidoEditItems.push({
           pizzaId,
           pizzaNome: pizzaData.tamanho ? `${pizzaData.nome} (${pizzaData.tamanho})` : pizzaData.nome,
           qtd,
           isCustom: false,
-          preco: pizzaData.precoVenda,
+          preco: getPrecoPorPagamento(pizzaData.precoVenda, pagamentoSelect?.value),
         });
 
         renderEditPedidoCarrinho();
         updateTotalEditPedido();
         pizzaSelect.value = "";
         document.getElementById("edit-item-qtd").value = "1";
+      });
+
+      document.getElementById("btn-add-custom-edit-pedido")?.addEventListener("click", () => {
+        const nome = document.getElementById("edit-custom-name")?.value.trim();
+        const tamanho = document.getElementById("edit-custom-size")?.value || "P";
+        const qtd = parseInt(document.getElementById("edit-custom-qtd")?.value) || 1;
+        const defaultPrice = getPrecoPorPagamento(tamanho === "G" ? 38 : 28, pagamentoSelect?.value);
+        const preco = safeNumber(document.getElementById("edit-custom-price")?.value, defaultPrice);
+        if (!nome || qtd < 1) return alert("Informe o nome da pizza personalizada e a quantidade.");
+        pedidoEditItems.push({ pizzaId: "outro", pizzaNome: `${nome} (${tamanho})`, qtd, isCustom: true, preco });
+        document.getElementById("edit-custom-name").value = "";
+        document.getElementById("edit-custom-qtd").value = "1";
+        document.getElementById("edit-custom-price").value = "";
+        renderEditPedidoCarrinho();
+        updateTotalEditPedido();
+      });
+
+      document.getElementById("btn-recalcular-precos-edit")?.addEventListener("click", () => {
+        const pagamento = pagamentoSelect?.value || "";
+        pedidoEditItems = pedidoEditItems.map((item) => {
+          if (item.isCustom) return item;
+          const pizza = database.estoque.find((p) => p.id === item.pizzaId);
+          return pizza ? { ...item, preco: getPrecoPorPagamento(pizza.precoVenda, pagamento) } : item;
+        });
+        renderEditPedidoCarrinho();
+        updateTotalEditPedido();
       });
 
       document.getElementById("edit-pedido-form").onsubmit = async (e) => {
@@ -1477,13 +2226,35 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const renderEditPedidoCarrinho = () => {
     const container = document.getElementById("edit-pedido-itens-carrinho");
-    container.innerHTML = '<p style="text-align:center;color:#777">Nenhuma pizza adicionada.</p>';
-    if (pedidoEditItems.length > 0) {
-      container.innerHTML = "";
-      pedidoEditItems.forEach((item, index) => {
-        container.innerHTML += `<div class="carrinho-item"><p><span>${item.qtd}x</span> ${item.pizzaNome}</p><button type="button" class="btn-remove-item" onclick="window.removeEditItemPedido(${index})">X</button></div>`;
-      });
+    if (!container) return;
+    if (!pedidoEditItems.length) {
+      container.innerHTML = '<p class="empty-state compact">Nenhuma pizza adicionada.</p>';
+      return;
     }
+    container.innerHTML = pedidoEditItems.map((item, index) => `
+      <div class="edit-line-item order-line">
+        <label>Item
+          <input type="text" value="${escapeAttr(item.pizzaNome || "")}" onchange="window.updateEditItemField(${index}, 'pizzaNome', this.value)">
+        </label>
+        <label>Qtd
+          <input type="number" value="${Number(item.qtd || 1)}" min="1" onchange="window.updateEditItemField(${index}, 'qtd', this.value)">
+        </label>
+        <label>Preço un.
+          <input type="number" value="${safeNumber(item.preco).toFixed(2)}" step="0.01" min="0" onchange="window.updateEditItemField(${index}, 'preco', this.value)">
+        </label>
+        <label class="toggle-mini"><input type="checkbox" ${item.isCustom ? "checked" : ""} onchange="window.updateEditItemField(${index}, 'isCustom', this.checked)"> Outro</label>
+        <button type="button" class="icon-danger" onclick="window.removeEditItemPedido(${index})">Remover</button>
+      </div>
+    `).join("");
+  };
+
+  window.updateEditItemField = (index, field, value) => {
+    if (!pedidoEditItems[index]) return;
+    if (field === "qtd") pedidoEditItems[index][field] = Math.max(1, parseInt(value) || 1);
+    else if (field === "preco") pedidoEditItems[index][field] = safeNumber(value);
+    else if (field === "isCustom") pedidoEditItems[index][field] = Boolean(value);
+    else pedidoEditItems[index][field] = value;
+    updateTotalEditPedido();
   };
 
   window.removeEditItemPedido = (index) => {
@@ -1493,132 +2264,143 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const updateTotalEditPedido = () => {
-    const total = pedidoEditItems.reduce((acc, item) => acc + item.preco * item.qtd, 0);
-    document.getElementById("total-calculado-edit-pedido").textContent = formatCurrency(total);
+    const totalBruto = pedidoEditItems.reduce((acc, item) => acc + safeNumber(item.preco) * Number(item.qtd || 0), 0);
+    const desconto = parsePercent(document.getElementById("edit-pedido-desconto")?.value);
+    const total = applyDiscount(totalBruto, desconto);
+    const totalEl = document.getElementById("total-calculado-edit-pedido");
+    if (totalEl) totalEl.value = formatCurrency(total);
     const valorFinalInput = document.getElementById("valor-final-edit-pedido");
-    if (!valorFinalInput.value) {
+    if (valorFinalInput && (!valorFinalInput.dataset.userEdited || document.activeElement !== valorFinalInput)) {
       valorFinalInput.value = total.toFixed(2);
+    }
+    if (valorFinalInput && !valorFinalInput.dataset.listenerAttached) {
+      valorFinalInput.addEventListener("input", () => valorFinalInput.dataset.userEdited = "true");
+      valorFinalInput.dataset.listenerAttached = "true";
     }
   };
 
   const handleUpdatePedido = async (originalPedido) => {
-    if (!confirm("Tem certeza que deseja salvar as alterações?")) return;
-    showLoader();
+    if (pedidoEditItems.length === 0) {
+      alert("O pedido precisa ter pelo menos uma pizza.");
+      return;
+    }
 
+    showLoader();
     const form = document.getElementById("edit-pedido-form");
     const formData = new FormData(form);
     const valorFinalInput = form.querySelector("#valor-final-edit-pedido").value;
-    const valorCalculado = pedidoEditItems.reduce((acc, item) => acc + item.preco * item.qtd, 0);
-    const valorFinal = parseFloat(valorFinalInput.replace(",", ".")) || valorCalculado;
+    const valorCalculado = pedidoEditItems.reduce((acc, item) => acc + safeNumber(item.preco) * Number(item.qtd || 0), 0);
+    const valorFinal = safeNumber(valorFinalInput, valorCalculado);
+    const clienteNome = String(formData.get("cliente") || "").trim();
+    const cidade = String(formData.get("cidade") || "").trim();
 
     const updatedPedidoData = {
-      cliente: formData.get("cliente"),
-      telefone: formData.get("telefone"),
-      cidade: formData.get("cidade"),
-      endereco: formData.get("endereco"),
-      vendedor: formData.get("vendedor"),
+      cliente: clienteNome,
+      telefone: String(formData.get("telefone") || "").trim(),
+      cidade,
+      endereco: String(formData.get("endereco") || "").trim(),
+      vendedor: String(formData.get("vendedor") || "").trim(),
       pagamento: formData.get("pagamento"),
+      dataEntrega: formData.get("dataEntrega"),
       status: formData.get("status"),
+      pago: formData.get("status") === "Concluído" || formData.get("pago") === "on",
+      observacoes: String(formData.get("observacoes") || "").trim(),
       items: pedidoEditItems,
       valorTotal: valorCalculado,
       valorFinal: valorFinal,
     };
 
-    const semanaInicio = getWeekStart(originalPedido.dataEntrega);
-    const quotas = database.massas_semanais.find((m) => m.semana_inicio === semanaInicio) || { g_semana: 0, p_semana: 0, pc_semana: 0 };
-    const used = computeWeeklyUsage(semanaInicio);
+    try {
+      let cliente = database.clientes.find((c) =>
+        (c.nome || "").toLowerCase() === clienteNome.toLowerCase() &&
+        (c.cidade || "").toLowerCase() === cidade.toLowerCase()
+      );
+      if (!cliente && clienteNome && cidade) {
+        const { data, error } = await supabaseClient.from("clientes").insert({
+          nome: clienteNome,
+          telefone: updatedPedidoData.telefone,
+          cidade,
+          endereco: updatedPedidoData.endereco,
+        }).select().single();
+        if (error) throw error;
+        cliente = data;
+      } else if (cliente) {
+        await supabaseClient.from("clientes").update({
+          telefone: updatedPedidoData.telefone || cliente.telefone,
+          endereco: updatedPedidoData.endereco || cliente.endereco,
+        }).eq("id", cliente.id);
+      }
+      if (cliente?.id) updatedPedidoData.clienteId = cliente.id;
 
-    originalPedido.items.forEach((item) => {
-      if (item.isCustom) return;
-      const pizza = database.estoque.find((e) => e.id === item.pizzaId);
-      const doughType = mapPizzaToDough(pizza);
-      if (doughType) used[doughType] -= Number(item.qtd || 0);
-    });
+      const originalSemanaInicio = originalPedido.dataEntrega ? getWeekStart(originalPedido.dataEntrega) : null;
+      const semanaInicio = getWeekStart(updatedPedidoData.dataEntrega);
+      const quotas = database.massas_semanais.find((m) => m.semana_inicio === semanaInicio) || { g_semana: 0, p_semana: 0, pc_semana: 0 };
+      const used = computeWeeklyUsage(semanaInicio);
 
-    const newOrderDoughs = { G: 0, P: 0, PC: 0 };
-    updatedPedidoData.items.forEach((item) => {
-      if (item.isCustom) return;
-      const pizza = database.estoque.find((e) => e.id === item.pizzaId);
-      const doughType = mapPizzaToDough(pizza);
-      if (doughType) newOrderDoughs[doughType] += Number(item.qtd || 0);
-    });
+      if (originalSemanaInicio === semanaInicio) {
+        (originalPedido.items || []).forEach((item) => {
+          if (item.isCustom) return;
+          const pizza = database.estoque.find((e) => e.id === item.pizzaId);
+          const doughType = mapPizzaToDough(pizza);
+          if (doughType) used[doughType] -= Number(item.qtd || 0);
+        });
+      }
 
-    const exceeds = [];
-    if (used.G + newOrderDoughs.G > (quotas.g_semana || 0)) exceeds.push(`G: ${used.G + newOrderDoughs.G}/${quotas.g_semana || 0}`);
-    if (used.P + newOrderDoughs.P > (quotas.p_semana || 0)) exceeds.push(`P: ${used.P + newOrderDoughs.P}/${quotas.p_semana || 0}`);
-    if (used.PC + newOrderDoughs.PC > (quotas.pc_semana || 0)) exceeds.push(`P de Chocolate: ${used.PC + newOrderDoughs.PC}/${quotas.pc_semana || 0}`);
+      const newOrderDoughs = { G: 0, P: 0, PC: 0 };
+      updatedPedidoData.items.forEach((item) => {
+        if (item.isCustom) return;
+        const pizza = database.estoque.find((e) => e.id === item.pizzaId);
+        const doughType = mapPizzaToDough(pizza);
+        if (doughType) newOrderDoughs[doughType] += Number(item.qtd || 0);
+      });
 
-    if (exceeds.length > 0) {
-      hideLoader();
-      alert("Limite semanal de massas atingido para: " + exceeds.join(" | ") + ". Ajuste as quantidades.");
-      return;
-    }
+      const exceeds = [];
+      if (used.G + newOrderDoughs.G > (quotas.g_semana || 0)) exceeds.push(`G: ${used.G + newOrderDoughs.G}/${quotas.g_semana || 0}`);
+      if (used.P + newOrderDoughs.P > (quotas.p_semana || 0)) exceeds.push(`P: ${used.P + newOrderDoughs.P}/${quotas.p_semana || 0}`);
+      if (used.PC + newOrderDoughs.PC > (quotas.pc_semana || 0)) exceeds.push(`P de Chocolate: ${used.PC + newOrderDoughs.PC}/${quotas.pc_semana || 0}`);
+      if (exceeds.length > 0) throw new Error("Limite semanal de massas atingido para: " + exceeds.join(" | "));
 
-    const originalStatus = originalPedido.status;
-    const newStatus = updatedPedidoData.status;
-    const stockUpdatePromises = [];
+      const stockUpdatePromises = [];
+      const getItemsMap = (items) => {
+        const map = new Map();
+        (items || []).forEach(item => {
+          if (!item.isCustom && item.pizzaId) map.set(item.pizzaId, (map.get(item.pizzaId) || 0) + Number(item.qtd || 0));
+        });
+        return map;
+      };
+      const originalItemsMap = getItemsMap(originalPedido.items);
+      const newItemsMap = getItemsMap(updatedPedidoData.items);
+      const allPizzaIds = new Set([...originalItemsMap.keys(), ...newItemsMap.keys()]);
+      const affectsStock = (status) => ["Pronto", "Concluído"].includes(status);
+      const originalAffects = affectsStock(originalPedido.status);
+      const newAffects = affectsStock(updatedPedidoData.status);
 
-    const getItemsMap = (items) => {
-      const map = new Map();
-      (items || []).forEach(item => {
-        if (!item.isCustom && item.pizzaId) {
-          map.set(item.pizzaId, (map.get(item.pizzaId) || 0) + Number(item.qtd || 0));
+      allPizzaIds.forEach(pizzaId => {
+        const originalQtd = originalItemsMap.get(pizzaId) || 0;
+        const newQtd = newItemsMap.get(pizzaId) || 0;
+        const pizzaEstoque = database.estoque.find(p => p.id === pizzaId);
+        if (!pizzaEstoque) return;
+        let stockAdjustment = 0;
+        if (!originalAffects && newAffects) stockAdjustment = -newQtd;
+        else if (originalAffects && !newAffects) stockAdjustment = +originalQtd;
+        else if (originalAffects && newAffects) stockAdjustment = -(newQtd - originalQtd);
+        if (stockAdjustment !== 0) {
+          stockUpdatePromises.push(supabaseClient.from("estoque").update({ qtd: Number(pizzaEstoque.qtd || 0) + stockAdjustment }).eq("id", pizzaId));
         }
       });
-      return map;
-    };
 
-    const originalItemsMap = getItemsMap(originalPedido.items);
-    const newItemsMap = getItemsMap(updatedPedidoData.items);
-    const allPizzaIds = new Set([...originalItemsMap.keys(), ...newItemsMap.keys()]);
-
-    allPizzaIds.forEach(pizzaId => {
-      const originalQtd = originalItemsMap.get(pizzaId) || 0;
-      const newQtd = newItemsMap.get(pizzaId) || 0;
-      const diff = newQtd - originalQtd;
-
-      const pizzaEstoque = database.estoque.find(p => p.id === pizzaId);
-      if (!pizzaEstoque) return;
-
-      let stockAdjustment = 0;
-
-      if (originalStatus !== 'Pronto' && newStatus === 'Pronto') {
-        stockAdjustment = -newQtd;
-      } else if (originalStatus === 'Pronto' && newStatus !== 'Pronto') {
-        stockAdjustment = +originalQtd;
-      } else if (originalStatus === 'Pronto' && newStatus === 'Pronto') {
-        stockAdjustment = -diff;
-      }
-
-      if (stockAdjustment !== 0) {
-        const novaQtd = pizzaEstoque.qtd + stockAdjustment;
-        stockUpdatePromises.push(
-          supabaseClient.from("estoque").update({ qtd: novaQtd }).eq("id", pizzaId)
-        );
-      }
-    });
-
-    try {
       if (stockUpdatePromises.length > 0) {
         const results = await Promise.all(stockUpdatePromises);
         const stockErrors = results.map(r => r.error).filter(Boolean);
-        if (stockErrors.length > 0) {
-          throw new Error("Falha ao reconciliar o estoque: " + stockErrors.map(e => e.message).join("\n"));
-        }
-        showSaveStatus("Estoque reconciliado!");
+        if (stockErrors.length > 0) throw new Error("Falha ao reconciliar o estoque: " + stockErrors.map(e => e.message).join("\n"));
       }
 
       const { error: updateError } = await supabaseClient.from("pedidos").update(updatedPedidoData).eq("id", originalPedido.id);
       if (updateError) throw updateError;
 
-      if (originalPedido.clienteId && updatedPedidoData.endereco && updatedPedidoData.endereco !== originalPedido.endereco) {
-        await supabaseClient.from("clientes").update({ endereco: updatedPedidoData.endereco }).eq("id", originalPedido.clienteId);
-      }
-
       showSaveStatus("Pedido atualizado com sucesso!");
       closeModal("edit-modal");
       await loadDataFromSupabase();
-
     } catch (error) {
       showSaveStatus(`Erro ao atualizar pedido: ${error.message}`, false);
     } finally {
@@ -1643,73 +2425,119 @@ document.addEventListener("DOMContentLoaded", () => {
     return demand;
   };
 
+  const getPizzaWeekStats = (weekStart = getWeekStart()) => {
+    const demandByPizza = computePizzaDemandForWeek(weekStart);
+    return database.estoque.map((pizza) => {
+      const pedidosSemana = Number(demandByPizza[pizza.id] || 0);
+      const estoqueAtual = Number(pizza.qtd || 0);
+      const sobraProj = estoqueAtual - pedidosSemana;
+      return { ...pizza, pedidosSemana, estoqueAtual, sobraProj };
+    });
+  };
+
+  const getPizzaSobraForWeek = (pizzaId, weekStart = getWeekStart()) => {
+    const demandByPizza = computePizzaDemandForWeek(weekStart);
+    const pizza = database.estoque.find((p) => p.id === pizzaId);
+    return Number(pizza?.qtd || 0) - Number(demandByPizza[pizzaId] || 0);
+  };
+
+  const formatStockSobra = (pizzaId, weekStart = getWeekStart()) => {
+    const pizza = database.estoque.find((p) => p.id === pizzaId);
+    const estoque = Number(pizza?.qtd || 0);
+    const sobra = getPizzaSobraForWeek(pizzaId, weekStart);
+    return `est. ${estoque} · sobra ${sobra}`;
+  };
+
+  const generateSobrasMessage = (weekStart = getWeekStart()) => {
+    const available = getPizzaWeekStats(weekStart)
+      .filter((p) => Number(p.sobraProj || 0) > 0)
+      .sort((a, b) => b.sobraProj - a.sobraProj || String(a.nome).localeCompare(String(b.nome)));
+
+    if (available.length === 0) return "No momento não temos pizzas disponíveis para retirada imediata.";
+
+    const lines = available.map((p) => `• ${p.nome} (${p.tamanho}) — ${p.sobraProj} un.`);
+    return `Temos disponível para retirada:\n\n${lines.join("\n")}\n\nMe chama para reservar a sua 😊`;
+  };
+
   const renderConsultaRapidaSobras = () => {
     const selectSemana = document.getElementById("sobras-semana-select");
     const searchInput = document.getElementById("sobras-search-pizza");
     if (!selectSemana) return;
 
-    if (!selectSemana.value) {
-      populateWeekSelector(selectSemana);
-      selectSemana.value = getWeekStart();
+    if (!selectSemana.dataset.ready) {
+      populateWeekSelector(selectSemana, { futureOnly: true, futureWeeks: 4, setCurrentDefault: true, keepPlaceholder: false });
+      selectSemana.dataset.ready = "true";
     }
+    if (!selectSemana.value) selectSemana.value = getWeekStart();
 
     const refresh = () => {
       const weekStart = selectSemana.value || getWeekStart();
-      const searchTerm = searchInput.value.toLowerCase();
+      const searchTerm = (searchInput?.value || "").toLowerCase();
       const quotas = database.massas_semanais.find((m) => m.semana_inicio === weekStart) || { g_semana: 0, p_semana: 0, pc_semana: 0 };
       const used = computeWeeklyUsage(weekStart, true);
       const tbodyM = document.querySelector("#tabela-sobras-massas tbody");
       if (tbodyM) {
-        tbodyM.innerHTML = `
-                    <tr><td>G</td><td>${quotas.g_semana || 0}</td><td>${used.G}</td><td><b>${(quotas.g_semana || 0) - used.G}</b></td></tr>
-                    <tr><td>P</td><td>${quotas.p_semana || 0}</td><td>${used.P}</td><td><b>${(quotas.p_semana || 0) - used.P}</b></td></tr>
-                    <tr><td>P de Chocolate</td><td>${quotas.pc_semana || 0}</td><td>${used.PC}</td><td><b>${(quotas.pc_semana || 0) - used.PC}</b></td></tr>
-                `;
+        const rows = [
+          ["G", quotas.g_semana || 0, used.G],
+          ["P", quotas.p_semana || 0, used.P],
+          ["P Chocolate", quotas.pc_semana || 0, used.PC],
+        ];
+        tbodyM.innerHTML = rows.map(([tipo, quota, usado]) => {
+          const restante = Number(quota) - Number(usado);
+          return `<tr class="${restante < 0 ? "low-stock" : ""}"><td>${tipo}</td><td>${quota}</td><td>${usado}</td><td><b>${restante}</b></td></tr>`;
+        }).join("");
       }
 
-      const demandByPizza = computePizzaDemandForWeek(weekStart);
-      let pizzaData = database.estoque.map((e) => {
-        const pedidosSemana = demandByPizza[e.id] || 0;
-        const sobraProj = (e.qtd || 0) - pedidosSemana;
-        return { ...e, pedidosSemana, sobraProj };
-      });
+      let pizzaData = getPizzaWeekStats(weekStart);
+      if (searchTerm) pizzaData = pizzaData.filter((p) => `${p.nome} ${p.tamanho || ""}`.toLowerCase().includes(searchTerm));
 
-      if (searchTerm) {
-        pizzaData = pizzaData.filter((p) => p.nome.toLowerCase().includes(searchTerm));
+      const disponiveis = pizzaData.filter((p) => p.sobraProj > 0).sort((a, b) => b.sobraProj - a.sobraProj || a.nome.localeCompare(b.nome));
+      const faltando = pizzaData.filter((p) => p.sobraProj < 0).sort((a, b) => a.sobraProj - b.sobraProj || a.nome.localeCompare(b.nome));
+      const zeradas = pizzaData.filter((p) => p.sobraProj === 0).sort((a, b) => a.nome.localeCompare(b.nome));
+
+      const cardsBox = document.getElementById("sobras-cards");
+      if (cardsBox) {
+        const top = disponiveis.slice(0, 12);
+        cardsBox.innerHTML = top.length
+          ? top.map((p) => `<div class="sobra-card"><strong>${p.nome} <span>${p.tamanho}</span></strong><b>${p.sobraProj}</b><small>em estoque ${p.estoqueAtual} · pedidos ${p.pedidosSemana}</small></div>`).join("")
+          : `<div class="empty-state compact">Nenhuma pizza sobrando para essa semana.</div>`;
       }
 
-      const { column, direction } = sortState.sobras;
-      pizzaData.sort((a, b) => {
-        const valA = a[column];
-        const valB = b[column];
-        if (typeof valA === "number") {
-          return direction === "asc" ? valA - valB : valB - valA;
-        }
-        return direction === "asc" ? String(valA).localeCompare(String(valB)) : String(valB).localeCompare(String(valA));
-      });
+      const msg = document.getElementById("sobras-mensagem");
+      if (msg) msg.value = generateSobrasMessage(weekStart);
 
       const tbodyP = document.querySelector("#tabela-sobras-pizzas tbody");
       if (tbodyP) {
-        tbodyP.innerHTML = "";
-        pizzaData.forEach((e) => {
-          const tr = document.createElement("tr");
-          if (e.sobraProj < 0) tr.classList.add("low-stock");
-          tr.innerHTML = `
-                        <td data-label="Pizza">${e.nome} (${e.tamanho})</td>
-                        <td data-label="Em estoque">${e.qtd ?? 0}</td>
-                        <td data-label="Pedidos (semana)">${e.pedidosSemana}</td>
-                        <td data-label="Sobra projetada"><b>${e.sobraProj}</b></td>`;
-          tbodyP.appendChild(tr);
-        });
-        updateSortHeaders("tabela-sobras-pizzas", column, direction);
+        const ordered = [...faltando, ...disponiveis, ...zeradas];
+        tbodyP.innerHTML = ordered.map((e) => {
+          const state = e.sobraProj < 0 ? "low-stock" : e.sobraProj > 0 ? "has-surplus" : "";
+          const tag = e.sobraProj < 0 ? "Produzir" : e.sobraProj > 0 ? "Sobrando" : "Zerado";
+          return `<tr class="${state}">
+            <td data-label="Pizza"><b>${e.nome} (${e.tamanho})</b><br><small>${tag}</small></td>
+            <td data-label="Estoque">${e.estoqueAtual}</td>
+            <td data-label="Pedidos">${e.pedidosSemana}</td>
+            <td data-label="Sobra"><b>${e.sobraProj}</b></td>
+          </tr>`;
+        }).join("") || `<tr><td colspan="4">Nada encontrado.</td></tr>`;
       }
     };
 
-    selectSemana.removeEventListener("change", refresh);
-    searchInput.removeEventListener("input", refresh);
-    selectSemana.addEventListener("change", refresh);
-    searchInput.addEventListener("input", refresh);
+    selectSemana.onchange = refresh;
+    if (searchInput) searchInput.oninput = refresh;
     refresh();
+  };
+
+  window.copySobrasMensagem = async () => {
+    const textarea = document.getElementById("sobras-mensagem");
+    if (!textarea) return;
+    try {
+      await navigator.clipboard.writeText(textarea.value);
+      showSaveStatus("Mensagem copiada!");
+    } catch (error) {
+      textarea.select();
+      document.execCommand("copy");
+      showSaveStatus("Mensagem copiada!");
+    }
   };
 
   document.getElementById("btn-open-filter-modal")?.addEventListener("click", () => {
@@ -1720,13 +2548,14 @@ document.addEventListener("DOMContentLoaded", () => {
       vendedorSelect.innerHTML = "";
       if (firstOption) vendedorSelect.appendChild(firstOption);
 
-      const allFirstNames = database.pedidos.map(p => p.vendedor).filter(Boolean).map(vendedor => {
+      const vendedoresFromProfiles = (database.vendedores || []).map((v) => v.nome).filter(Boolean);
+      const vendedoresFromOrders = database.pedidos.map(p => p.vendedor).filter(Boolean).map(vendedor => {
         const firstName = vendedor.trim().split(" ")[0];
         return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
       });
-      const vendedores = [...new Set(allFirstNames)];
+      const vendedores = [...new Set([...vendedoresFromProfiles, ...vendedoresFromOrders])];
       vendedores.sort().forEach(v => {
-        vendedorSelect.innerHTML += `<option value="${v}">${v}</option>`;
+        vendedorSelect.innerHTML += `<option value="${escapeAttr(v)}">${escapeHTML(v)}</option>`;
       });
       vendedorSelect.value = currentVal;
     }
@@ -1751,6 +2580,7 @@ document.addEventListener("DOMContentLoaded", () => {
       semanaSelect.value = currentVal;
     }
 
+    updateFilterUX();
     openModal('filter-modal', 'Filtrar Pedidos');
   });
 
@@ -1760,10 +2590,49 @@ document.addEventListener("DOMContentLoaded", () => {
     closeModal('filter-modal');
   });
 
-  document.getElementById("btn-clear-filters")?.addEventListener("click", () => {
-    document.getElementById("filter-pedidos-form").reset();
-    renderPedidos();
+  const updateFilterUX = () => {
+    const statusValue = document.getElementById("filter-modal-status")?.value || "";
+    document.querySelectorAll("#filter-status-chips button").forEach((btn) => btn.classList.toggle("active", btn.dataset.status === statusValue));
+    const summary = document.getElementById("filter-active-summary");
+    if (!summary) return;
+    const parts = [];
+    const cliente = document.getElementById("filter-modal-cliente")?.value;
+    const cidade = document.getElementById("filter-modal-cidade")?.value;
+    const vendedor = document.getElementById("filter-modal-vendedor")?.value;
+    const semana = document.getElementById("filter-modal-semana")?.selectedOptions?.[0]?.textContent;
+    const pagamento = document.getElementById("filter-modal-pagamento-status")?.value;
+    const forma = document.getElementById("filter-modal-forma-pagamento")?.value;
+    if (statusValue) parts.push(`Status: ${statusValue}`);
+    if (cliente) parts.push(`Cliente: ${cliente}`);
+    if (cidade) parts.push(`Cidade: ${cidade}`);
+    if (vendedor) parts.push(`Vendedor: ${vendedor}`);
+    if (semana && document.getElementById("filter-modal-semana")?.value) parts.push(semana);
+    if (pagamento) parts.push(pagamento === "pago" ? "Pagos" : "Não pagos");
+    if (forma) parts.push(`Pagamento: ${forma}`);
+    summary.innerHTML = parts.length ? parts.map((p) => `<span>${escapeHTML(p)}</span>`).join("") : `<span>Nenhum filtro avançado além da busca rápida.</span>`;
+  };
+
+  document.querySelectorAll("#filter-status-chips button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.getElementById("filter-modal-status").value = btn.dataset.status;
+      updateFilterUX();
+    });
   });
+  document.querySelectorAll("#filter-pedidos-form input, #filter-pedidos-form select").forEach((el) => el.addEventListener("input", updateFilterUX));
+  document.querySelectorAll("#filter-pedidos-form select").forEach((el) => el.addEventListener("change", updateFilterUX));
+
+  const clearPedidoFilters = () => {
+    document.getElementById("filter-pedidos-form").reset();
+    const statusSelect = document.getElementById("filter-modal-status");
+    if (statusSelect) statusSelect.value = "Pendente";
+    document.getElementById("filter-modal-pagamento-status").value = "";
+    document.getElementById("filter-modal-forma-pagamento").value = "";
+    updateFilterUX();
+    renderPedidos();
+  };
+
+  document.getElementById("btn-clear-filters")?.addEventListener("click", clearPedidoFilters);
+  document.getElementById("btn-clear-filters-top")?.addEventListener("click", clearPedidoFilters);
 
   const getFilteredPedidos = (filterRange = "all") => {
     const customWeek = document.getElementById("dash-week-filter")?.value;
@@ -1814,6 +2683,7 @@ document.addEventListener("DOMContentLoaded", () => {
     renderPizzasMaisVendidasList(filteredPedidos);
     renderNovosClientesChart();
     renderPizzaRanking(filterRange);
+    renderDashboardCompareCards(filteredPedidos);
   };
 
   const renderBalancoChart = (t) => {
@@ -1837,7 +2707,7 @@ document.addEventListener("DOMContentLoaded", () => {
           { label: "Lucro", data: [r], backgroundColor: "#3498db" }
         ]
       },
-      options: { indexAxis: "y", responsive: true }
+      options: { indexAxis: "y", responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } }
     });
   };
 
@@ -1865,8 +2735,9 @@ document.addEventListener("DOMContentLoaded", () => {
       },
       options: {
         responsive: true,
+        maintainAspectRatio: false,
         plugins: {
-          legend: { position: "top" },
+          legend: { position: "bottom", labels: { boxWidth: 10 } },
           tooltip: { callbacks: { label: (t) => `${t.label}: ${formatCurrency(t.raw)}` } },
         },
       },
@@ -1892,6 +2763,8 @@ document.addEventListener("DOMContentLoaded", () => {
       },
       options: {
         responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
         scales: { y: { ticks: { callback: (t) => formatCurrency(t) } } },
       },
     });
@@ -1937,7 +2810,7 @@ document.addEventListener("DOMContentLoaded", () => {
           borderColor: "#e84118",
         }],
       },
-      options: { responsive: true, plugins: { legend: { display: true } } },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } },
     });
   };
 
@@ -1972,6 +2845,8 @@ document.addEventListener("DOMContentLoaded", () => {
       },
       options: {
         responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
         scales: { y: { ticks: { callback: (value) => formatCurrency(value) } } },
       },
     });
@@ -2165,7 +3040,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const agrupadoPorMes = {};
 
     Object.values(dataPrimeiroPedido).forEach(data => {
-      const mesChave = data.getFullYear() + "-" + String(data.getMonth()).padStart(2, '0');
+      const mesChave = data.getFullYear() + "-" + String(data.getMonth() + 1).padStart(2, '0');
       const rotulo = data.toLocaleDateString("pt-BR", { month: "short", year: "numeric" });
 
       if (!agrupadoPorMes[mesChave]) {
@@ -2193,7 +3068,7 @@ document.addEventListener("DOMContentLoaded", () => {
           borderRadius: 4
         }]
       },
-      options: { responsive: true, plugins: { legend: { display: false } } }
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
     });
   };
 
@@ -2252,30 +3127,76 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     exportToExcel(data, "sasses_receitas");
   });
-  document.getElementById("export-pedidos")?.addEventListener("click", () => {
-    const flatData = [];
-    database.pedidos.forEach((p) => {
-      if (p.items && p.items.length > 0) {
-        p.items.forEach((item) => {
-          flatData.push({
-            "ID Pedido": p.id,
-            Cliente: p.cliente,
-            Telefone: p.telefone,
-            Vendedor: p.vendedor,
-            Cidade: p.cidade,
-            Endereco: p.endereco,
-            "Semana Entrega": new Date(p.dataEntrega + "T00:00:00").toLocaleDateString("pt-BR"),
-            Status: p.status,
-            Pagamento: p.pagamento,
-            "Item Pizza": item.pizzaNome,
-            "Item Qtd": item.qtd,
-            "Valor Final Pedido": p.valorFinal,
-          });
-        });
-      }
+  const getPedidosHistoricoVisiveis = () => {
+    const searchTerm = (document.getElementById("search-pedidos")?.value || "").toLowerCase().trim();
+    const clienteFilter = (document.getElementById("filter-modal-cliente")?.value || "").toLowerCase().trim();
+    const cidadeFilter = (document.getElementById("filter-modal-cidade")?.value || "").toLowerCase().trim();
+    const vendedorFilter = document.getElementById("filter-modal-vendedor")?.value || "";
+    const semanaFilter = document.getElementById("filter-modal-semana")?.value || "";
+    const statusFilter = document.getElementById("filter-modal-status")?.value || "";
+    const pagamentoStatusFilter = document.getElementById("filter-modal-pagamento-status")?.value || "";
+    const formaPagamentoFilter = document.getElementById("filter-modal-forma-pagamento")?.value || "";
+    const valorMin = getNumberValue(document.getElementById("filter-modal-valor-min")?.value, 0);
+    const valorMaxRaw = document.getElementById("filter-modal-valor-max")?.value;
+    const valorMax = valorMaxRaw ? getNumberValue(valorMaxRaw, Infinity) : Infinity;
+
+    return database.pedidos.filter((p) => {
+      const haystack = `${p.cliente || ""} ${p.telefone || ""} ${p.cidade || ""} ${(p.items || []).map(i => i.pizzaNome).join(" ")}`.toLowerCase();
+      const searchMatch = !searchTerm || haystack.includes(searchTerm);
+      const clienteMatch = !clienteFilter || (p.cliente || "").toLowerCase().includes(clienteFilter);
+      const cidadeMatch = !cidadeFilter || (p.cidade || "").toLowerCase().includes(cidadeFilter);
+      const vendedorName = (p.vendedor || "").trim();
+      const vendedorFirstName = vendedorName.split(" ")[0];
+      const normalizedVendedor = vendedorFirstName.charAt(0).toUpperCase() + vendedorFirstName.slice(1).toLowerCase();
+      const vendedorMatch = !vendedorFilter || normalizedVendedor === vendedorFilter || vendedorName.toLowerCase() === vendedorFilter.toLowerCase();
+      const semanaMatch = !semanaFilter || (p.dataEntrega && getWeekStart(p.dataEntrega) === semanaFilter);
+      const statusMatch = !statusFilter || p.status === statusFilter;
+      const pagamentoStatusMatch = !pagamentoStatusFilter || (pagamentoStatusFilter === "pago" ? isPedidoPago(p) : !isPedidoPago(p));
+      const formaPagamentoMatch = !formaPagamentoFilter || p.pagamento === formaPagamentoFilter;
+      const valorExibido = p.valorFinal || p.valorTotal;
+      const valorMatch = valorExibido >= valorMin && valorExibido <= valorMax;
+      return searchMatch && clienteMatch && cidadeMatch && vendedorMatch && semanaMatch && statusMatch && pagamentoStatusMatch && formaPagamentoMatch && valorMatch;
     });
-    exportToExcel(flatData, "sasses_pedidos_detalhado");
-  });
+  };
+
+  window.printPedidosProducao = () => {
+    const pedidos = getPedidosHistoricoVisiveis();
+    if (!pedidos.length) return alert("Não há pedidos no histórico atual para imprimir.");
+
+    const totais = new Map();
+    const porMassa = { G: 0, P: 0, PC: 0, Outro: 0 };
+    pedidos.forEach((p) => (p.items || []).forEach((item) => {
+      const nome = item.pizzaNome || "Item sem nome";
+      totais.set(nome, (totais.get(nome) || 0) + Number(item.qtd || 0));
+      const pizza = database.estoque.find((e) => e.id === item.pizzaId);
+      const massa = item.isCustom ? "Outro" : (mapPizzaToDough(pizza) || "Outro");
+      porMassa[massa] = (porMassa[massa] || 0) + Number(item.qtd || 0);
+    }));
+
+    const pizzasHtml = Array.from(totais.entries())
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([nome, qtd]) => `<tr><td>${nome}</td><td>${qtd}</td></tr>`).join("");
+
+    const clientesHtml = pedidos
+      .sort((a, b) => String(a.cliente || "").localeCompare(String(b.cliente || "")))
+      .map((p) => `<tr><td>${p.cliente || "-"}</td><td>${(p.items || []).map(i => `${i.qtd}x ${i.pizzaNome}`).join("<br>")}</td><td>${p.cidade || "-"}</td><td>${p.pagamento || "-"}${isPedidoPago(p) ? " / Pago" : " / Pendente"}</td></tr>`).join("");
+
+    const periodo = document.getElementById("filter-modal-semana")?.selectedOptions?.[0]?.textContent || "Histórico filtrado";
+    const html = `<html><head><title>Produção - Sasse's Pizza</title><style>
+      body{font-family:Arial,sans-serif;padding:22px;color:#111;font-size:13px}h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin-top:22px;border-bottom:1px solid #111;padding-bottom:6px}.meta{color:#444;margin-bottom:14px}table{width:100%;border-collapse:collapse;margin-top:8px}th,td{border-bottom:1px solid #ddd;padding:7px;text-align:left;vertical-align:top}th{background:#f1f1f1;text-transform:uppercase;font-size:11px}.qtd{font-size:18px;font-weight:bold}.massas{display:flex;gap:10px;flex-wrap:wrap}.box{border:1px solid #111;padding:10px;min-width:110px}.page-break{page-break-before:always}@media print{button{display:none}body{padding:0}}
+    </style></head><body>
+      <h1>Sasse's Pizza — Lista de Produção</h1><div class="meta">${periodo} • ${pedidos.length} pedido(s) • impresso em ${new Date().toLocaleString("pt-BR")}</div>
+      <h2>Resumo de massas</h2><div class="massas"><div class="box">G<br><span class="qtd">${porMassa.G}</span></div><div class="box">P<br><span class="qtd">${porMassa.P}</span></div><div class="box">P Chocolate<br><span class="qtd">${porMassa.PC}</span></div><div class="box">Outro<br><span class="qtd">${porMassa.Outro}</span></div></div>
+      <h2>Produzir por sabor</h2><table><thead><tr><th>Sabor</th><th>Quantidade</th></tr></thead><tbody>${pizzasHtml}</tbody></table>
+      <h2 class="page-break">Conferência por cliente</h2><table><thead><tr><th>Cliente</th><th>Itens</th><th>Cidade</th><th>Pagamento</th></tr></thead><tbody>${clientesHtml}</tbody></table>
+      <script>window.print(); setTimeout(()=>window.close(),300);<\/script>
+    </body></html>`;
+    const w = window.open("", "", "height=800,width=1000");
+    w.document.write(html);
+    w.document.close();
+  };
+
+  document.getElementById("print-pedidos")?.addEventListener("click", window.printPedidosProducao);
 
   document.getElementById("btn-lista-compras")?.addEventListener("click", () => {
     const itemsBaixos = database.ingredientes.filter((i) => i.qtd < i.estoqueMinimo);
@@ -2289,11 +3210,13 @@ document.addEventListener("DOMContentLoaded", () => {
       });
       contentHTML += "</tbody></table>";
     }
-    openModal("modal-lista-compras", "Lista de Compras Sugerida", contentHTML);
+    const listaContent = document.getElementById("lista-compras-content");
+    if (listaContent) listaContent.innerHTML = contentHTML;
+    document.getElementById("modal-lista-compras").style.display = "block";
   });
 
   document.getElementById("btn-print-lista")?.addEventListener("click", () => {
-    const modalContent = document.getElementById("modal-lista-compras").innerHTML;
+    const modalContent = document.getElementById("lista-compras-content")?.innerHTML || "";
     const printWindow = window.open("", "", "height=600,width=800");
     printWindow.document.write("<html><head><title>Lista de Compras</title>");
     printWindow.document.write('<link rel="stylesheet" href="style.css">');
@@ -2315,7 +3238,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const pizza = database.estoque.find((p) => p.id === pizzaId);
-    if (!confirm(`Confirma a produção de ${quantidade}x ${pizza.nome}? \n(Esta ação apenas adicionará ao estoque, sem baixa de ingredientes).`)) {
+    if (!confirm(`Confirma a produção de ${quantidade}x ${pizza.nome}? 
+(Esta ação apenas adicionará ao estoque, sem baixa de ingredientes).`)) {
       return;
     }
 
@@ -2356,5 +3280,681 @@ document.addEventListener("DOMContentLoaded", () => {
     exportToExcel(dataForExcel, "demanda_de_producao");
   });
 
-  loadDataFromSupabase();
+  document.getElementById("btn-notificacoes")?.addEventListener("click", window.openNotificationsModal);
+
+
+  // ===== V4: Caixa, produção, impressão, venda rápida e clientes inteligentes =====
+  const getWeekOrders = (weekStart, statuses = ["Pendente", "Pronto", "Concluído"]) => database.pedidos.filter(p => p.dataEntrega && getWeekStart(p.dataEntrega) === weekStart && statuses.includes(p.status));
+
+  window.marcarPedidoPago = async (id) => {
+    showLoader();
+    const { error } = await supabaseClient.from("pedidos").update({ pago: true }).eq("id", id);
+    hideLoader();
+    if (error) return showSaveStatus("Erro ao marcar como pago: " + error.message, false);
+    showSaveStatus("Pedido marcado como pago.");
+    await loadDataFromSupabase();
+  };
+
+  window.printPedido = (id) => {
+    const p = database.pedidos.find(x => x.id === id);
+    if (!p) return;
+    const itens = (p.items || []).map(i => `<li>${i.qtd}x ${i.pizzaNome}</li>`).join("");
+    const html = `<html><head><title>Pedido</title><style>body{font-family:Arial;padding:20px;font-size:14px}.ticket{max-width:360px}.line{border-top:1px dashed #999;margin:12px 0}h2{margin:0 0 8px}ul{padding-left:18px}.big{font-size:18px;font-weight:bold}</style></head><body><div class="ticket"><h2>Sasse's Pizza</h2><div class="line"></div><p><b>Cliente:</b> ${p.cliente}<br><b>Tel:</b> ${p.telefone || "-"}<br><b>Cidade:</b> ${p.cidade || "-"}<br><b>Endereço:</b> ${p.endereco || "-"}<br><b>Vendedor:</b> ${p.vendedor || "-"}<br><b>Semana:</b> ${new Date(p.dataEntrega + "T00:00:00").toLocaleDateString("pt-BR")}</p><div class="line"></div><ul>${itens}</ul><div class="line"></div><p class="big">Total: ${formatCurrency(p.valorFinal || p.valorTotal)}</p><p>Pagamento: ${p.pagamento || "-"} | ${p.pago ? "PAGO" : "PENDENTE"}</p></div><script>window.print(); setTimeout(()=>window.close(),300);<\/script></body></html>`;
+    const w = window.open("", "", "width=420,height=700");
+    w.document.write(html); w.document.close();
+  };
+
+  const renderV4Panels = () => {
+    renderQuickSale();
+    renderCaixa();
+    renderProducaoAuto();
+    renderClientIntelligence();
+    renderKitchenMode();
+    renderHome();
+  };
+
+  const renderQuickSale = () => {
+    const box = document.getElementById("quick-pizzas");
+    if (!box) return;
+
+    const term = (document.getElementById("quick-pizza-search")?.value || "").toLowerCase().trim();
+    const pagamento = document.getElementById("quick-pagamento")?.value || "";
+    const pizzas = database.estoque.filter((pizza) =>
+      !term || `${pizza.nome} ${pizza.tamanho || ""}`.toLowerCase().includes(term)
+    );
+
+    box.innerHTML = pizzas.map((pizza) => {
+      const qty = Number(quickSaleItems[pizza.id] || 0);
+      const price = getPrecoPorPagamento(pizza.precoVenda, pagamento);
+      const stockClass = Number(pizza.qtd || 0) <= 0 ? "is-empty" : "";
+      const weekStart = document.getElementById("quick-semana")?.value || getWeekStart();
+      return `<div class="quick-pizza ${stockClass}">
+        <span>${pizza.nome} (${pizza.tamanho})<small>${formatCurrency(price)} · ${formatStockSobra(pizza.id, weekStart)}</small></span>
+        <div class="qty-stepper">
+          <button type="button" onclick="window.adjustQuickPizza('${pizza.id}', -1)">−</button>
+          <input type="number" min="0" value="${qty}" data-pizza-id="${pizza.id}" inputmode="numeric">
+          <button type="button" onclick="window.adjustQuickPizza('${pizza.id}', 1)">+</button>
+        </div>
+      </div>`;
+    }).join("") || `<p class="empty-state compact">Nenhuma pizza encontrada.</p>`;
+
+    box.querySelectorAll("input[data-pizza-id]").forEach((input) => {
+      input.addEventListener("input", () => {
+        quickSaleItems[input.dataset.pizzaId] = Math.max(0, parseInt(input.value) || 0);
+        updateQuickTotal();
+      });
+    });
+
+    const quickPagamento = document.getElementById("quick-pagamento");
+    if (quickPagamento) quickPagamento.onchange = () => {
+      renderQuickSale();
+      updateQuickTotal();
+    };
+
+    const quickDesconto = document.getElementById("quick-desconto");
+    if (quickDesconto) {
+      quickDesconto.oninput = updateQuickTotal;
+      quickDesconto.onblur = (e) => {
+        formatPercentField(e.target);
+        updateQuickTotal();
+      };
+    }
+
+    const quickSearch = document.getElementById("quick-pizza-search");
+    if (quickSearch) quickSearch.oninput = renderQuickSale;
+    const quickSemana = document.getElementById("quick-semana");
+    if (quickSemana) quickSemana.onchange = renderQuickSale;
+    const clearBtn = document.getElementById("quick-clear");
+    if (clearBtn) clearBtn.onclick = () => {
+      quickSaleItems = {};
+      renderQuickSale();
+      updateQuickTotal();
+      document.getElementById("quick-pix-box")?.classList.add("hidden");
+    };
+
+    ["quick-save","quick-pix"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.onclick = id === "quick-save" ? saveQuickSale : showQuickPix;
+    });
+
+    const d = document.getElementById("quick-cliente");
+    if (d) d.oninput = () => {
+      const c = database.clientes.find(x => x.nome.toLowerCase() === d.value.toLowerCase());
+      if(c){
+        document.getElementById("quick-telefone").value = c.telefone || "";
+        document.getElementById("quick-cidade").value = c.cidade || "";
+      }
+    };
+
+    updateQuickTotal();
+  };
+
+  window.adjustQuickPizza = (pizzaId, delta) => {
+    quickSaleItems[pizzaId] = Math.max(0, Number(quickSaleItems[pizzaId] || 0) + delta);
+    const input = document.querySelector(`#quick-pizzas input[data-pizza-id="${pizzaId}"]`);
+    if (input) input.value = quickSaleItems[pizzaId];
+    updateQuickTotal();
+  };
+
+  const getQuickItems = () => {
+    const pagamento = document.getElementById("quick-pagamento")?.value || "";
+    return Object.entries(quickSaleItems).map(([pizzaId, q]) => {
+      const qty = parseInt(q) || 0;
+      const pizza = database.estoque.find(p => p.id === pizzaId);
+      return qty > 0 && pizza ? {
+        pizzaId: pizza.id,
+        pizzaNome: `${pizza.nome} (${pizza.tamanho})`,
+        qtd: qty,
+        isCustom: false,
+        preco: getPrecoPorPagamento(pizza.precoVenda, pagamento)
+      } : null;
+    }).filter(Boolean);
+  };
+
+  const getQuickTotals = () => {
+    const base = getQuickItems().reduce((acc, item) => acc + item.preco * item.qtd, 0);
+    const desconto = getQuickDiscountPercent();
+    const final = applyDiscount(base, desconto);
+    return { base, desconto, final };
+  };
+
+  const updateQuickTotal = () => {
+    const el = document.getElementById("quick-total");
+    const info = document.getElementById("quick-desconto-info");
+    const totals = getQuickTotals();
+    if (el) el.textContent = formatCurrency(totals.final);
+    if (info) {
+      const discountValue = totals.base - totals.final;
+      info.textContent = totals.desconto > 0 ? `Desconto ${totals.desconto}% (${formatCurrency(discountValue)}) · ` : "";
+    }
+  };
+
+  const saveQuickSale = async () => {
+    const items = getQuickItems();
+    if (!items.length) return alert("Escolha pelo menos uma pizza.");
+    const clienteNome = document.getElementById("quick-cliente").value.trim();
+    const cidade = document.getElementById("quick-cidade").value.trim();
+    const vendedor = document.getElementById("quick-vendedor").value.trim();
+    const dataEntrega = document.getElementById("quick-semana").value || getWeekStart();
+    if (!clienteNome || !cidade || !vendedor) return alert("Preencha cliente, cidade e vendedor.");
+    showLoader();
+    let cliente = database.clientes.find(c=>c.nome.toLowerCase()===clienteNome.toLowerCase() && c.cidade.toLowerCase()===cidade.toLowerCase());
+    let clienteId = cliente?.id;
+    if(!clienteId){
+      const r=await supabaseClient.from("clientes").insert({nome:clienteNome, telefone:document.getElementById("quick-telefone").value, cidade}).select().single();
+      if(r.error){hideLoader(); return showSaveStatus(r.error.message,false)}
+      clienteId=r.data.id;
+    }
+    const totals = getQuickTotals();
+    const { error } = await supabaseClient.from("pedidos").insert({
+      cliente: clienteNome,
+      clienteId,
+      telefone: document.getElementById("quick-telefone").value,
+      cidade,
+      vendedor,
+      pagamento: document.getElementById("quick-pagamento").value,
+      dataEntrega,
+      status: "Pendente",
+      items,
+      valorTotal: totals.base,
+      valorFinal: totals.final,
+      pago: false
+    });
+    hideLoader();
+    if(error) return showSaveStatus("Erro: "+error.message,false);
+    showSaveStatus("Pedido rápido registrado!");
+    quickSaleItems = {};
+    document.getElementById("quick-pix-box")?.classList.add("hidden");
+    await loadDataFromSupabase();
+  };
+
+  
+  window.openPedidoPix = (id) => {
+    const pedido = database.pedidos.find((p) => p.id === id);
+    if (!pedido) return;
+    const amount = Number(pedido.valorFinal || pedido.valorTotal || 0);
+    const payload = makePixPayload(amount);
+    openModal('edit-modal', 'Pix do pedido', `
+      <div class="pix-box">
+        <h4>${escapeHTML(pedido.cliente || 'Cliente')}</h4>
+        <p class="small-muted">Valor: <b>${formatCurrency(amount)}</b></p>
+        <textarea readonly style="width:100%;min-height:120px;">${payload}</textarea>
+        <img alt="QR Code Pix" src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(payload)}" style="display:block;margin:1rem auto;max-width:220px;">
+        <button type="button" onclick="navigator.clipboard.writeText('${payload}');">Copiar código Pix</button>
+      </div>
+    `);
+  };
+const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++){crc^=payload.charCodeAt(i)<<8; for(let j=0;j<8;j++) crc=(crc&0x8000)?((crc<<1)^0x1021):(crc<<1); crc&=0xFFFF;} return crc.toString(16).toUpperCase().padStart(4,"0"); };
+  const emv = (id, value) => id + String(value.length).padStart(2,"0") + value;
+  const makePixPayload = (amount) => { const merchant="SASSES PIZZA".slice(0,25); const city="MASSARANDUBA".slice(0,15); const mai=emv("00","BR.GOV.BCB.PIX")+emv("01","carlos.sasse@gmail.com"); let p=emv("00","01")+emv("26",mai)+emv("52","0000")+emv("53","986")+(amount>0?emv("54",amount.toFixed(2)):"")+emv("58","BR")+emv("59",merchant)+emv("60",city)+emv("62",emv("05","SASSES"))+"6304"; return p+pixCRC16(p); };
+  const showQuickPix = () => {
+    const amount = getQuickTotals().final;
+    const payload = makePixPayload(amount);
+    const box = document.getElementById("quick-pix-box");
+    if(!box) return;
+    box.classList.remove("hidden");
+    box.innerHTML = `<h4>Pix copia e cola</h4><p class="small-muted">Valor: <b>${formatCurrency(amount)}</b></p><textarea readonly>${payload}</textarea><img alt="QR Code Pix" src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(payload)}">`;
+  };
+
+  const renderCaixa = () => {
+    const resumo = document.getElementById("caixa-resumo");
+    if (!resumo) return;
+    const pagos = database.pedidos.filter(p => p.pago);
+    const receita = pagos.reduce((a, p) => a + Number(p.valorFinal || p.valorTotal || 0), 0);
+    const entradas = (database.caixa_movimentos || []).filter(m => m.tipo === "entrada").reduce((a, m) => a + Number(m.valor || 0), 0);
+    const despesas = (database.caixa_movimentos || []).filter(m => m.tipo === "despesa").reduce((a, m) => a + Number(m.valor || 0), 0);
+    resumo.innerHTML = `<div class="kpi-card"><span>Receita paga</span><b>${formatCurrency(receita)}</b></div><div class="kpi-card"><span>Entradas extras</span><b>${formatCurrency(entradas)}</b></div><div class="kpi-card"><span>Despesas</span><b>${formatCurrency(despesas)}</b></div><div class="kpi-card"><span>Saldo</span><b>${formatCurrency(receita + entradas - despesas)}</b></div>`;
+
+    const tbody = document.querySelector("#tabela-caixa tbody");
+    if (tbody) {
+      tbody.innerHTML = (database.caixa_movimentos || []).map(m => `
+        <tr>
+          <td data-label="Data">${new Date(m.data + "T00:00:00").toLocaleDateString("pt-BR")}</td>
+          <td data-label="Tipo">${m.tipo === "entrada" ? "Entrada" : "Despesa"}</td>
+          <td data-label="Descrição">${escapeHTML(m.descricao || "")}</td>
+          <td data-label="Valor">${formatCurrency(m.valor)}</td>
+          <td data-label="Ações">
+            <button class="action-btn edit-btn" onclick="window.editCaixa('${m.id}')">Editar</button>
+            <button class="action-btn remove-btn" onclick="window.removeCaixa('${m.id}')">Remover</button>
+          </td>
+        </tr>`).join("");
+    }
+  };
+
+  document.getElementById("form-caixa")?.addEventListener("submit", async e => {
+    e.preventDefault();
+    showLoader();
+    const data = {
+      tipo: document.getElementById("caixa-tipo").value,
+      descricao: document.getElementById("caixa-descricao").value,
+      valor: parseFloat(document.getElementById("caixa-valor").value) || 0,
+      data: document.getElementById("caixa-data").value || formatDateToYYYYMMDD(new Date())
+    };
+    const r = await supabaseClient.from("caixa_movimentos").insert(data);
+    hideLoader();
+    if (r.error) return showSaveStatus("Erro no caixa: " + r.error.message, false);
+    e.target.reset();
+    showSaveStatus("Movimento salvo.");
+    await loadDataFromSupabase();
+  });
+
+  window.editCaixa = (id) => {
+    const movimento = (database.caixa_movimentos || []).find((m) => m.id === id);
+    if (!movimento) return;
+    const formHTML = `
+      <form id="edit-caixa-form" class="edit-form">
+        <div class="edit-section">
+          <div class="edit-section-title"><span>Movimento de caixa</span><small>Edite todos os campos</small></div>
+          <div class="edit-grid two">
+            <label>Tipo
+              <select name="tipo" required>
+                <option value="despesa" ${movimento.tipo === "despesa" ? "selected" : ""}>Despesa</option>
+                <option value="entrada" ${movimento.tipo === "entrada" ? "selected" : ""}>Entrada extra</option>
+              </select>
+            </label>
+            <label>Data
+              <input type="date" name="data" value="${escapeAttr(movimento.data || formatDateToYYYYMMDD(new Date()))}" required>
+            </label>
+            <label>Descrição
+              <input type="text" name="descricao" value="${escapeAttr(movimento.descricao || "")}" required>
+            </label>
+            <label>Valor
+              <input type="number" name="valor" value="${safeNumber(movimento.valor).toFixed(2)}" min="0" step="0.01" required>
+            </label>
+          </div>
+        </div>
+        <div class="edit-actions">
+          <button type="button" class="secondary-btn" onclick="closeModal('edit-modal')">Cancelar</button>
+          <button type="submit">Salvar movimento</button>
+        </div>
+      </form>`;
+    openModal("edit-modal", "Editar movimento de caixa", formHTML, () => {
+      document.getElementById("edit-caixa-form").onsubmit = async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        showLoader();
+        const { error } = await supabaseClient.from("caixa_movimentos").update({
+          tipo: formData.get("tipo"),
+          data: formData.get("data"),
+          descricao: String(formData.get("descricao") || "").trim(),
+          valor: safeNumber(formData.get("valor")),
+        }).eq("id", id);
+        hideLoader();
+        if (error) return showSaveStatus("Erro ao atualizar caixa: " + error.message, false);
+        showSaveStatus("Movimento atualizado.");
+        closeModal("edit-modal");
+        await loadDataFromSupabase();
+      };
+    });
+  };
+
+  window.removeCaixa = async (id) => {
+    if (!confirm("Remover movimento?")) return;
+    await supabaseClient.from("caixa_movimentos").delete().eq("id", id);
+    await loadDataFromSupabase();
+  };
+
+  document.getElementById("export-caixa")?.addEventListener("click", () => {
+    const data = (database.caixa_movimentos || []).map(m => ({ Data: m.data, Tipo: m.tipo, Descricao: m.descricao, Valor: m.valor }));
+    exportToExcel(data, "sasses_caixa");
+  });
+
+  const getWeeklyPizzaSales = (weekStart) => {
+    const totals = {};
+    database.pedidos
+      .filter((pedido) => {
+        if (!pedido.dataEntrega) return false;
+        return getWeekStart(pedido.dataEntrega) === weekStart && ["Pendente", "Pronto", "Concluído"].includes(pedido.status);
+      })
+      .forEach((pedido) => {
+        (pedido.items || []).forEach((item) => {
+          if (item.isCustom || !item.pizzaId) return;
+          totals[item.pizzaId] = (totals[item.pizzaId] || 0) + Number(item.qtd || 0);
+        });
+      });
+    return totals;
+  };
+
+  const getPreviousWeekStarts = (weekStart, count = 4) => {
+    const base = new Date(weekStart + "T00:00:00");
+    return Array.from({ length: count }, (_, index) => {
+      const d = new Date(base);
+      d.setDate(d.getDate() - ((index + 1) * 7));
+      return getWeekStart(d.toISOString().slice(0, 10));
+    });
+  };
+
+  const getProductionSuggestion = (weekStart) => {
+    const demand = computePizzaDemandForWeek(weekStart);
+    const previousWeeks = getPreviousWeekStarts(weekStart, 4).map((ws) => getWeeklyPizzaSales(ws));
+
+    return database.estoque.map((pizza) => {
+      const pedidos = Number(demand[pizza.id] || 0);
+      const historico = previousWeeks.map((weekMap) => Number(weekMap[pizza.id] || 0));
+      const mediaAnterior = historico.length ? historico.reduce((a, b) => a + b, 0) / historico.length : 0;
+      const maiorSemana = Math.max(0, ...historico);
+      const estoque = Number(pizza.qtd || 0);
+      const produzirPedidos = Math.max(0, pedidos - estoque);
+      const alvoSugerido = Math.ceil(Math.max(pedidos, mediaAnterior));
+      const produzirSugerido = Math.max(0, alvoSugerido - estoque);
+      return { pizza, pedidos, estoque, sobra: estoque - pedidos, mediaAnterior, maiorSemana, produzirPedidos, produzirSugerido };
+    })
+      .filter((x) => x.pedidos > 0 || x.produzirPedidos > 0 || x.produzirSugerido > 0 || x.mediaAnterior >= 1)
+      .sort((a, b) => b.produzirPedidos - a.produzirPedidos || b.produzirSugerido - a.produzirSugerido || b.pedidos - a.pedidos);
+  };
+
+  const renderProducaoAuto = () => {
+    const sel = document.getElementById("producao-semana");
+    if (!sel) return;
+    if (!sel.dataset.ready) {
+      populateWeekSelector(sel, { futureOnly: true, futureWeeks: 4, setCurrentDefault: true, keepPlaceholder: false });
+      sel.dataset.ready = "true";
+    }
+    const week = sel.value || getWeekStart();
+    sel.onchange = renderProducaoAuto;
+
+    const data = getProductionSuggestion(week);
+    const precisaProduzir = data.filter((x) => x.produzirPedidos > 0);
+    const sugerida = data.filter((x) => x.produzirSugerido > 0);
+    const tbody = document.querySelector("#tabela-producao-auto tbody");
+    if (tbody) {
+      tbody.innerHTML = precisaProduzir.map((x) => `<tr class="low-stock">
+        <td data-label="Pizza"><b>${x.pizza.nome} (${x.pizza.tamanho})</b><br><small>Média 4 sem.: ${x.mediaAnterior.toFixed(1)} · pico: ${x.maiorSemana}</small></td>
+        <td data-label="Pedidos">${x.pedidos}</td>
+        <td data-label="Estoque">${x.estoque}</td>
+        <td data-label="Sobra">${x.sobra}</td>
+        <td data-label="Produzir agora"><b>${x.produzirPedidos}</b></td>
+      </tr>`).join("") || `<tr><td colspan="5">Nenhuma pizza precisa ser produzida para os pedidos pendentes dessa semana.</td></tr>`;
+    }
+
+    const tbodySug = document.querySelector("#tabela-producao-sugerida tbody");
+    if (tbodySug) {
+      tbodySug.innerHTML = sugerida.map((x) => `<tr>
+        <td data-label="Pizza"><b>${x.pizza.nome} (${x.pizza.tamanho})</b></td>
+        <td data-label="Pedidos semana">${x.pedidos}</td>
+        <td data-label="Média anterior">${x.mediaAnterior.toFixed(1)}</td>
+        <td data-label="Estoque">${x.estoque}</td>
+        <td data-label="Sugestão"><b>${x.produzirSugerido}</b></td>
+      </tr>`).join("") || `<tr><td colspan="5">Sem sugestão extra com base nas semanas anteriores.</td></tr>`;
+    }
+
+    const insumos = {};
+    const baseInsumos = precisaProduzir.length ? precisaProduzir : sugerida;
+    baseInsumos.forEach((x) => {
+      const qtd = Math.max(x.produzirPedidos, x.produzirSugerido);
+      const rec = database.receitas.find((r) => r.pizzaId === x.pizza.id);
+      (rec?.ingredientes || []).forEach((it) => {
+        insumos[it.ingredienteId] = (insumos[it.ingredienteId] || 0) + (Number(it.qtd) || 0) * qtd;
+      });
+    });
+    const tbody2 = document.querySelector("#tabela-insumos-auto tbody");
+    if (tbody2) {
+      tbody2.innerHTML = Object.entries(insumos).map(([id, need]) => {
+        const ing = database.ingredientes.find((i) => i.id === id) || {};
+        const comprar = Math.max(0, need - (ing.qtd || 0));
+        return `<tr class="${comprar > 0 ? "low-stock" : ""}"><td data-label="Ingrediente">${ing.nome || "Ingrediente"}</td><td data-label="Necessário">${need.toFixed(3)}</td><td data-label="Estoque">${Number(ing.qtd || 0).toFixed(3)}</td><td data-label="Comprar"><b>${comprar.toFixed(3)}</b></td></tr>`;
+      }).join("") || `<tr><td colspan="4">Sem necessidade extra.</td></tr>`;
+    }
+
+    const alertas = document.getElementById("producao-alertas");
+    if (alertas) {
+      const cards = [
+        `<span>Pedidos pendentes: ${data.reduce((a, x) => a + x.pedidos, 0)}</span>`,
+        `<span>Produzir por pedido: ${precisaProduzir.reduce((a, x) => a + x.produzirPedidos, 0)}</span>`,
+        `<span>Sugestão pela média: ${sugerida.reduce((a, x) => a + x.produzirSugerido, 0)}</span>`,
+      ];
+      alertas.innerHTML = cards.join("");
+    }
+  };
+  document.getElementById("print-producao")?.addEventListener("click", () => { const content=document.getElementById("producao")?.innerHTML||""; const w=window.open("","","width=900,height=700"); w.document.write(`<html><head><title>Produção</title><link rel="stylesheet" href="style.css"></head><body>${content}<script>window.print()<\/script></body></html>`); w.document.close(); });
+
+  const getPedidosDoCliente = (cliente) => database.pedidos.filter((pedido) => {
+    const sameId = cliente.id && pedido.clienteId === cliente.id;
+    const sameName = (pedido.cliente || "").toLowerCase() === (cliente.nome || "").toLowerCase();
+    const sameCity = !cliente.cidade || !pedido.cidade || (pedido.cidade || "").toLowerCase() === (cliente.cidade || "").toLowerCase();
+    return sameId || (sameName && sameCity);
+  });
+
+  const getClientInsight = (cliente) => {
+    const pedidos = getPedidosDoCliente(cliente);
+    const total = pedidos.reduce((acc, pedido) => acc + Number(pedido.valorFinal || pedido.valorTotal || 0), 0);
+    const pendentes = pedidos.filter((pedido) => !isPedidoPago(pedido));
+    const valorPendente = pendentes.reduce((acc, pedido) => acc + Number(pedido.valorFinal || pedido.valorTotal || 0), 0);
+    const ticketMedio = pedidos.length ? total / pedidos.length : 0;
+    const lastDate = pedidos
+      .map((pedido) => pedido.dataEntrega || pedido.created_at)
+      .filter(Boolean)
+      .sort()
+      .pop();
+    const daysSinceLast = lastDate ? Math.floor((new Date() - new Date(lastDate + (lastDate.includes("T") ? "" : "T00:00:00"))) / 86400000) : null;
+
+    const reasons = [];
+    const tags = [];
+    let score = 0;
+
+    if (valorPendente > 0) {
+      reasons.push(`tem ${pendentes.length} pagamento(s) pendente(s), somando ${formatCurrency(valorPendente)}`);
+      tags.push("⚠️ Deve");
+      score += 100000 + valorPendente;
+    }
+    if (pedidos.length >= 6) {
+      reasons.push(`compra bastante: ${pedidos.length} pedidos registrados`);
+      tags.push("🔥 Recorrente");
+      score += pedidos.length * 400;
+    }
+    if (total >= 600) {
+      reasons.push(`gera alto faturamento: ${formatCurrency(total)} no histórico`);
+      tags.push("💰 Alto valor");
+      score += total;
+    }
+    if (ticketMedio >= 90) {
+      reasons.push(`tem ticket médio alto: ${formatCurrency(ticketMedio)}`);
+      tags.push("⭐ Ticket alto");
+      score += ticketMedio * 10;
+    }
+    if (daysSinceLast !== null && daysSinceLast >= 45 && pedidos.length >= 2 && valorPendente === 0) {
+      reasons.push(`sumiu há ${daysSinceLast} dias`);
+      tags.push("📞 Reativar");
+      score += 800;
+    }
+    if (pedidos.length > 0 && reasons.length === 0) {
+      reasons.push("cliente com histórico recente, mas sem alerta especial");
+      tags.push("✅ Normal");
+      score += pedidos.length * 100 + total;
+    }
+
+    return { cliente, pedidos, total, pendentes, valorPendente, ticketMedio, daysSinceLast, reasons, tags, score };
+  };
+
+  const renderClientIntelligence = () => {
+    const clientesTab = document.getElementById("clientes");
+    if (!clientesTab) return;
+    let card = document.getElementById("client-intelligence");
+    if (!card) {
+      card = document.createElement("div");
+      card.id = "client-intelligence";
+      card.className = "card";
+      clientesTab.prepend(card);
+    }
+
+    const rows = database.clientes
+      .map(getClientInsight)
+      .filter((row) => row.pedidos.length > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 12);
+
+    card.innerHTML = `
+      <div class="section-title-row">
+        <div>
+          <h3>Clientes inteligentes</h3>
+          <p class="small-muted">Mostra quem merece atenção e o motivo: compra muito, deve, tem ticket alto ou sumiu.</p>
+        </div>
+      </div>
+      <div class="smart-clients">
+        ${rows.map((row) => {
+          const primaryClass = row.valorPendente > 0 ? "danger" : row.total >= 600 ? "success" : "";
+          return `<div class="smart-client ${primaryClass}">
+            <div class="smart-client-head">
+              <b>${row.valorPendente > 0 ? '<span class="debt-dot">!</span> ' : ''}${row.cliente.nome}</b>
+              <span>${row.tags.slice(0, 2).join(" ")}</span>
+            </div>
+            <div class="smart-client-stats">
+              <span>${row.pedidos.length} pedidos</span>
+              <span>${formatCurrency(row.total)}</span>
+              <span>Ticket ${formatCurrency(row.ticketMedio)}</span>
+            </div>
+            <small><b>Por que aparece:</b> ${row.reasons.join("; ")}.</small>
+          </div>`;
+        }).join("") || '<p class="empty-state compact">Ainda não há histórico suficiente.</p>'}
+      </div>
+    `;
+  };
+
+
+
+  
+  const getWeekPedidos = (weekStart, onlyPending = false) => database.pedidos.filter((pedido) => {
+    const sameWeek = getWeekStart(pedido.dataEntrega || pedido.created_at || getWeekStart()) === weekStart;
+    if (!sameWeek) return false;
+    return onlyPending ? pedido.status !== "Concluído" : true;
+  });
+
+  const getFutureWeekOptions = (count = 4) => {
+    const current = new Date(getWeekStart() + "T00:00:00");
+    return Array.from({ length: count }, (_, i) => {
+      const d = new Date(current);
+      d.setDate(d.getDate() + (i * 7));
+      const ws = getWeekStart(d.toISOString().slice(0, 10));
+      const end = new Date(d); end.setDate(end.getDate() + 6);
+      return { value: ws, label: `Semana de ${d.toLocaleDateString("pt-BR", {day:"2-digit", month:"short"})} a ${end.toLocaleDateString("pt-BR", {day:"2-digit", month:"short"})}` };
+    });
+  };
+
+  const renderHome = () => {
+    const week = getWeekStart();
+    const homeKpis = document.getElementById("home-kpis");
+    const pendingBox = document.getElementById("home-pedidos-pendentes");
+    const prodBox = document.getElementById("home-producao");
+    const sobraBox = document.getElementById("home-sobras");
+    const alertBox = document.getElementById("home-alertas");
+    if (!homeKpis || !pendingBox || !prodBox || !sobraBox || !alertBox) return;
+
+    const pedidosSemana = getWeekPedidos(week, false);
+    const pendentes = pedidosSemana.filter((p) => p.status !== "Concluído");
+    const pagosSemana = pedidosSemana.filter((p) => isPedidoPago(p));
+    const faturamentoSemana = pagosSemana.reduce((a, p) => a + Number(p.valorFinal || p.valorTotal || 0), 0);
+    const quantidadeSemana = pedidosSemana.reduce((a, p) => a + (p.items || []).reduce((n, it) => n + Number(it.qtd || 0), 0), 0);
+    const sugerida = getProductionSuggestion(week);
+    const precisaProduzir = sugerida.filter((x) => x.produzirPedidos > 0);
+    const sobras = database.estoque
+      .map((pizza) => ({ pizza, sobra: Number(pizza.qtd || 0) - Number((computePizzaDemandForWeek(week)[pizza.id] || 0)) }))
+      .filter((x) => x.sobra > 0)
+      .sort((a,b) => b.sobra - a.sobra)
+      .slice(0, 8);
+    const pendencias = getSystemAlerts();
+    homeKpis.innerHTML = `
+      <div class="kpi-tile"><span>Pedidos pendentes</span><b>${pendentes.length}</b><small>Semana atual</small></div>
+      <div class="kpi-tile"><span>Pizzas na semana</span><b>${quantidadeSemana}</b><small>Entre pedidos registrados</small></div>
+      <div class="kpi-tile"><span>Receita já paga</span><b>${formatCurrency(faturamentoSemana)}</b><small>Pagamentos confirmados</small></div>
+      <div class="kpi-tile"><span>Alertas</span><b>${pendencias.total}</b><small>Pagamentos e estoque</small></div>`;
+
+    pendingBox.innerHTML = `<div class="home-list">${pendentes.slice(0,6).map((p) => `<div class="home-list-item"><b>${escapeHTML(p.cliente || 'Cliente')}</b><span class="badge-inline ${isPedidoPago(p)?'success':'warning'}">${escapeHTML(p.status || 'Pendente')}</span><small>${(p.items || []).map((it) => `${it.qtd}x ${it.pizzaNome}`).join(' · ') || 'Sem itens'}<br>${formatCurrency(p.valorFinal || p.valorTotal || 0)}</small></div>`).join('') || '<p class="empty-state compact">Sem pedidos pendentes na semana.</p>'}</div>`;
+
+    prodBox.innerHTML = `<div class="home-list">${precisaProduzir.slice(0,6).map((x) => `<div class="home-list-item"><b>${escapeHTML(x.pizza.nome)} (${escapeHTML(x.pizza.tamanho)})</b><span class="badge-inline danger">Produzir ${x.produzirPedidos}</span><small>Pedidos: ${x.pedidos} · Estoque: ${x.estoque} · Média 4 semanas: ${x.mediaAnterior.toFixed(1)}</small></div>`).join('') || '<p class="empty-state compact">Nada urgente para produzir.</p>'}</div>`;
+
+    sobraBox.innerHTML = `<div class="home-list">${sobras.map((x) => `<div class="home-list-item"><b>${escapeHTML(x.pizza.nome)} (${escapeHTML(x.pizza.tamanho)})</b><span class="badge-inline success">${x.sobra} disponível</span><small>Estoque: ${x.pizza.qtd} · Demanda da semana: ${computePizzaDemandForWeek(week)[x.pizza.id] || 0}</small></div>`).join('') || '<p class="empty-state compact">Sem sobras positivas nesta semana.</p>'}</div>`;
+
+    alertBox.innerHTML = `<div class="home-list">
+      <div class="home-list-item"><b>Pagamentos pendentes</b><span class="badge-inline ${pendencias.pagamentos.length ? 'danger' : 'success'}">${pendencias.pagamentos.length}</span><small>${pendencias.pagamentos.slice(0,4).map((p) => `${p.cliente} · ${formatCurrency(p.valorFinal || p.valorTotal || 0)}`).join('<br>') || 'Nenhuma pendência.'}</small></div>
+      <div class="home-list-item"><b>Estoque negativo</b><span class="badge-inline ${pendencias.estoqueNegativo.length ? 'danger' : 'success'}">${pendencias.estoqueNegativo.length}</span><small>${pendencias.estoqueNegativo.slice(0,4).map((p) => `${p.nome} (${p.tamanho}) · ${p.qtd}`).join('<br>') || 'Nenhum item negativo.'}</small></div>
+      <div class="home-list-item"><b>Ações rápidas</b><small><button class="home-action" data-open-tab="pedidos">Novo pedido</button> <button class="home-action" data-open-tab="cozinha">Abrir cozinha</button></small></div>
+    </div>`;
+    document.querySelectorAll("#inicio [data-open-tab]").forEach((btn) => btn.onclick = () => openTab(btn.dataset.openTab));
+  };
+
+  const renderKitchenMode = () => {
+    const select = document.getElementById("cozinha-semana");
+    const list = document.getElementById("cozinha-lista");
+    if (!select || !list) return;
+    if (!select.dataset.ready) {
+      populateWeekSelector(select, { futureOnly: true, futureWeeks: 4, setCurrentDefault: true, keepPlaceholder: false });
+      select.dataset.ready = '1';
+    }
+    const week = select.value || getWeekStart();
+    select.onchange = renderKitchenMode;
+    const data = getProductionSuggestion(week).filter((x) => x.produzirPedidos > 0 || x.produzirSugerido > 0);
+    list.innerHTML = data.map((x) => `<div class="kitchen-item ${x.produzirPedidos > 0 ? 'low-stock' : ''}">
+      <div class="kitchen-item-main">
+        <b>${escapeHTML(x.pizza.nome)} (${escapeHTML(x.pizza.tamanho)})</b>
+        <small>Pedidos: ${x.pedidos} · Estoque: ${x.estoque} · Sobra: ${x.sobra} · Sugestão: ${x.produzirSugerido}</small>
+      </div>
+      <div class="kitchen-qty">${Math.max(x.produzirPedidos, x.produzirSugerido)}</div>
+    </div>`).join('') || `<p class="empty-state">Nenhuma pizza para produzir nessa semana.</p>`;
+  };
+
+  document.getElementById("print-cozinha")?.addEventListener("click", () => {
+    const content = document.getElementById("cozinha")?.innerHTML || "";
+    const w = window.open("", "", "width=900,height=700");
+    w.document.write(`<html><head><title>Modo Cozinha</title><link rel="stylesheet" href="style.css"></head><body>${content}<script>window.print()<\/script></body></html>`);
+    w.document.close();
+  });
+
+  const renderDashboardCompareCards = (filteredPedidos) => {
+    const box = document.getElementById("dashboard-compare-cards");
+    if (!box) return;
+    const currentWs = getWeekStart();
+    const prevDate = new Date(currentWs + "T00:00:00");
+    prevDate.setDate(prevDate.getDate() - 7);
+    const prevWs = getWeekStart(prevDate.toISOString().slice(0,10));
+    const getWeekStats = (ws) => {
+      const pedidos = getWeekPedidos(ws, false);
+      const receita = pedidos.filter((p) => isPedidoPago(p)).reduce((a,p) => a + Number(p.valorFinal || p.valorTotal || 0), 0);
+      const pizzas = pedidos.reduce((a,p) => a + (p.items || []).reduce((n,it) => n + Number(it.qtd || 0), 0), 0);
+      const clientes = new Set(pedidos.map((p) => (p.cliente || '').toLowerCase()).filter(Boolean)).size;
+      const pendencias = pedidos.filter((p) => !isPedidoPago(p)).reduce((a,p) => a + Number(p.valorFinal || p.valorTotal || 0), 0);
+      return { pedidos: pedidos.length, receita, pizzas, clientes, pendencias };
+    };
+    const cur = getWeekStats(currentWs), prev = getWeekStats(prevWs);
+    const diff = (a,b,prefix='') => {
+      const delta = a-b; const sign = delta > 0 ? '▲' : delta < 0 ? '▼' : '•';
+      return `${sign} ${prefix}${Math.abs(delta).toFixed(prefix ? 2 : 0).replace('.', ',')}`;
+    };
+    box.innerHTML = `
+      <div class="kpi-tile"><span>Pedidos na semana</span><b>${cur.pedidos}</b><small>Semana passada: ${prev.pedidos} · ${diff(cur.pedidos, prev.pedidos)}</small></div>
+      <div class="kpi-tile"><span>Receita paga</span><b>${formatCurrency(cur.receita)}</b><small>Semana passada: ${formatCurrency(prev.receita)} · ${diff(cur.receita, prev.receita, 'R$ ')}</small></div>
+      <div class="kpi-tile"><span>Pizzas vendidas</span><b>${cur.pizzas}</b><small>Semana passada: ${prev.pizzas} · ${diff(cur.pizzas, prev.pizzas)}</small></div>
+      <div class="kpi-tile"><span>Em aberto</span><b>${formatCurrency(cur.pendencias)}</b><small>Semana passada: ${formatCurrency(prev.pendencias)} · ${diff(cur.pendencias, prev.pendencias, 'R$ ')}</small></div>`;
+  };
+
+  const runGlobalSearch = () => {
+    const term = (document.getElementById("global-search")?.value || '').toLowerCase().trim();
+    const box = document.getElementById("global-search-results");
+    if (!box) return;
+    if (!term) {
+      box.innerHTML = '<p class="empty-state">Digite algo para buscar.</p>';
+      openModal('global-search-modal', 'Busca global', box.innerHTML);
+      return;
+    }
+    const clientes = database.clientes.filter((c) => [c.nome, c.cidade, c.telefone].some((v) => String(v || '').toLowerCase().includes(term))).slice(0,8);
+    const pedidos = database.pedidos.filter((p) => [p.cliente, p.cidade, p.vendedor, ...(p.items || []).map((it) => it.pizzaNome)].some((v) => String(v || '').toLowerCase().includes(term))).slice(0,8);
+    const pizzas = database.estoque.filter((p) => [p.nome, p.tamanho].some((v) => String(v || '').toLowerCase().includes(term))).slice(0,8);
+    box.innerHTML = `<div class="search-results-groups">
+      <div class="search-group"><h3>Clientes</h3>${clientes.map((c) => `<div class="search-result-item"><div><b>${escapeHTML(c.nome)}</b><small>${escapeHTML(c.cidade || 'Sem cidade')} · ${escapeHTML(c.telefone || 'Sem telefone')}</small></div><button class="home-action" data-open-tab="clientes">Abrir</button></div>`).join('') || '<p class="empty-state compact">Nenhum cliente.</p>'}</div>
+      <div class="search-group"><h3>Pedidos</h3>${pedidos.map((p) => `<div class="search-result-item"><div><b>${escapeHTML(p.cliente || 'Cliente')}</b><small>${escapeHTML((p.items || []).map((it) => `${it.qtd}x ${it.pizzaNome}`).join(' · '))}<br>${formatCurrency(p.valorFinal || p.valorTotal || 0)} · ${escapeHTML(p.status || '')}</small></div><button class="home-action" data-open-tab="pedidos">Abrir</button></div>`).join('') || '<p class="empty-state compact">Nenhum pedido.</p>'}</div>
+      <div class="search-group"><h3>Pizzas</h3>${pizzas.map((p) => `<div class="search-result-item"><div><b>${escapeHTML(p.nome)} (${escapeHTML(p.tamanho)})</b><small>Estoque ${p.qtd} · Preço ${formatCurrency(p.precoVenda)}</small></div><button class="home-action" data-open-tab="estoque">Abrir</button></div>`).join('') || '<p class="empty-state compact">Nenhuma pizza.</p>'}</div>
+    </div>`;
+    openModal('global-search-modal', 'Busca global', box.innerHTML, () => {
+      document.querySelectorAll('#global-search-modal [data-open-tab]').forEach((btn) => btn.onclick = () => { closeModal('global-search-modal'); openTab(btn.dataset.openTab); });
+    });
+  };
+  document.getElementById("global-search-btn")?.addEventListener("click", runGlobalSearch);
+  document.getElementById("global-search")?.addEventListener("keydown", (e) => { if (e.key === 'Enter') { e.preventDefault(); runGlobalSearch(); } });
+
+  const keepMobileViewportLocked = () => {
+    document.documentElement.scrollLeft = 0;
+    document.body.scrollLeft = 0;
+  };
+  window.addEventListener("resize", keepMobileViewportLocked);
+  window.addEventListener("orientationchange", () => setTimeout(keepMobileViewportLocked, 80));
+loadDataFromSupabase();
 });
