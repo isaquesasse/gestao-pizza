@@ -4534,7 +4534,7 @@ button {
     width: 100% !important;
     padding: 12px !important;
     border-radius: 16px !important;
-    background: #ffffff !important; 
+    background: #ffffff !important;
     border: 1px solid #dbe5ef !important;
     box-shadow: 0 8px 20px rgba(15,23,42,.05) !important;
   }
@@ -4560,4 +4560,185 @@ button {
     padding: 10px !important;
     background: #f8fafc !important;
   }
+}
+
+/* V31 — gestão da loja online dentro do editar sabor */
+.shop-meta-preview {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-muted, #667085);
+  font-size: .78rem;
+}
+.payment-tag.info {
+  background: #e8f2ff;
+  color: #1d4ed8;
+}
+.edit-grid .edit-wide {
+  grid-column: 1 / -1;
+}
+.loja-checks {
+  margin-top: 12px;
+}
+.loja-checks .check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  color: var(--text-color, #333);
+}
+.loja-checks input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+}
+#edit-estoque-form textarea {
+  min-height: 92px;
+  resize: vertical;
+}
+
+/* V35 - agenda de entregas/retiradas */
+.logistics-filters {
+  display: flex;
+  gap: .6rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.logistics-filters select,
+.logistics-filters input {
+  min-width: 170px;
+}
+.logistica-agenda {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+.logistica-day-card {
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 14px;
+  padding: 1rem;
+  background: var(--card-bg, #fff);
+}
+.logistica-day-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  margin-bottom: .85rem;
+}
+.logistica-day-card header strong,
+.logistica-order-item b {
+  display: block;
+}
+.logistica-day-card header small,
+.logistica-order-item span,
+.logistica-order-item small {
+  color: var(--text-light-color, #6b7280);
+}
+.logistica-day-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: .35rem;
+}
+.logistica-day-tags span,
+.payment-tag.info {
+  border-radius: 999px;
+  padding: .2rem .5rem;
+  background: #eef6ff;
+  color: #075985;
+  font-size: .78rem;
+  font-weight: 700;
+}
+.logistica-order-list {
+  display: grid;
+  gap: .55rem;
+}
+.logistica-order-item {
+  border-left: 4px solid #9ca3af;
+  padding: .6rem .7rem;
+  border-radius: 10px;
+  background: rgba(0,0,0,.025);
+}
+.logistica-order-item.entrega {
+  border-left-color: #2563eb;
+}
+.logistica-order-item.retirada {
+  border-left-color: #16a34a;
+}
+.rota-panel .empty-state,
+.logistica-agenda .empty-state {
+  grid-column: 1 / -1;
+  padding: 1.25rem;
+  border: 1px dashed var(--border-color, #e5e7eb);
+  border-radius: 12px;
+  color: var(--text-light-color, #6b7280);
+  text-align: center;
+}
+.rota-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+.rota-summary strong {
+  margin-right: auto;
+}
+.rota-list {
+  display: grid;
+  gap: .6rem;
+  padding-left: 1.2rem;
+}
+.rota-list li {
+  padding: .6rem .75rem;
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 10px;
+  background: var(--card-bg, #fff);
+}
+.rota-list b,
+.rota-list span,
+.rota-list small {
+  display: block;
+}
+.rota-list span,
+.rota-list small {
+  color: var(--text-light-color, #6b7280);
+}
+@media (max-width: 700px) {
+  .logistics-filters,
+  .logistics-filters select,
+  .logistics-filters input,
+  .logistics-filters button {
+    width: 100%;
+  }
+  .logistica-day-card header {
+    display: grid;
+  }
+  .logistica-day-tags {
+    justify-content: flex-start;
+  }
+}
+
+
+/* V36 - Loja hub e situação dos pedidos */
+.status-stack{display:flex;flex-direction:column;gap:.45rem;min-width:210px}.status-row{display:flex;align-items:center;justify-content:space-between;gap:.75rem}.status-key{font-size:.76rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-light-color)}.status-chip{display:inline-flex;align-items:center;justify-content:center;padding:.28rem .7rem;border-radius:999px;font-size:.78rem;font-weight:700;white-space:nowrap}.status-chip.warning{background:#fff1cf;color:#9a6200}.status-chip.success{background:#daf5e3;color:#166534}.status-chip.info{background:#deedff;color:#1d4ed8}.status-chip.danger{background:#fee2e2;color:#b91c1c}.status-chip.muted{background:#e5e7eb;color:#4b5563}.confirm-btn{background:#16a34a!important}.reject-btn{background:#dc2626!important}.loja-grid{grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}.loja-list{display:flex;flex-direction:column;gap:.8rem}.loja-list.compact{gap:.65rem}.loja-item{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.9rem 1rem;border:1px solid #e5e7eb;border-radius:14px;background:#fff}.loja-item.simple{align-items:flex-start}.loja-item.entrega{border-left:4px solid #2563eb}.loja-item.retirada{border-left:4px solid #6b7280}.loja-item-main{display:flex;flex-direction:column;gap:.2rem;min-width:0}.loja-item-main span,.loja-item-main small{color:var(--text-light-color)}.loja-item-actions{display:flex;flex-wrap:wrap;gap:.55rem;justify-content:flex-end}.loja-actions-static{display:flex;flex-wrap:wrap;gap:.75rem}.kpi-card small{display:block;margin-top:.35rem;color:var(--text-light-color)}
+@media (max-width: 900px){.status-stack{min-width:0}.status-row{flex-direction:column;align-items:flex-start}.loja-item{flex-direction:column;align-items:flex-start}.loja-item-actions{width:100%;justify-content:flex-start}}
+
+
+/* V37 - menu Mais */
+.main-nav-compact{gap:.35rem;align-items:center;justify-content:center;position:relative;overflow:visible}.more-menu-wrap{position:relative;display:inline-flex}.tab-more-btn{border:1px solid #d9e2ef;background:#fff;color:var(--text-color);padding:.75rem 1rem;border-radius:999px;font-weight:700;box-shadow:0 1px 2px rgba(15,23,42,.05);cursor:pointer}.tab-more-btn:hover,.tab-more-btn.active{border-color:var(--primary-color);color:var(--primary-color);background:#f8fbff}.more-tabs-menu{position:absolute;top:calc(100% + .5rem);right:0;z-index:1500;min-width:230px;background:#fff;border:1px solid #dce6f2;border-radius:16px;padding:.45rem;box-shadow:0 20px 45px rgba(15,23,42,.14);display:flex;flex-direction:column;gap:.25rem}.more-tabs-menu .tab-link{width:100%;justify-content:flex-start;text-align:left;border-radius:12px;padding:.75rem .9rem}.more-tabs-menu .tab-link.active{background:#edf4ff;color:var(--primary-color)}
+@media (max-width:900px){.main-nav-compact{justify-content:flex-start;overflow-x:auto;padding:.6rem .75rem}.more-tabs-menu{right:auto;left:0}}
+
+
+/* V38 - correção do menu Mais e mobile */
+.more-tabs-menu[hidden], .more-tabs-menu:not(.is-open){display:none!important;}
+.more-tabs-menu.is-open{display:flex!important;}
+.tab-more-btn[aria-expanded="true"]{border-color:var(--primary-color);color:var(--primary-color);background:#f8fbff;}
+@media (max-width: 900px){
+  .main-nav-compact{position:sticky;top:0;z-index:1000;}
+  .more-menu-wrap{position:static;}
+  .more-tabs-menu{position:fixed!important;left:12px!important;right:12px!important;top:88px!important;min-width:0!important;max-height:calc(100dvh - 120px);overflow:auto;}
+  #mobile-app .mobile-app-nav{grid-template-columns:repeat(5,1fr)!important;}
+  #mobile-app .mobile-app-nav button{font-size:.75rem!important;padding:.55rem .25rem!important;}
+  #mobile-app .m-actions .m-mini-btn.green{background:#16a34a;color:#fff;border:0;}
+  #mobile-app .m-actions .m-mini-btn.danger{background:#dc2626;color:#fff;border:0;}
 }
