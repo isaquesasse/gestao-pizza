@@ -491,6 +491,7 @@
             <div class="card full-width">
                 <div class="table-header">
                     <h3>Demanda de Produção (Pedidos Pendentes)</h3>
+                    <p class="small-muted">Na V21, pedidos novos já reservam estoque ao serem criados. Esta área continua mostrando demanda de produção por semana, mas o estoque exibido já é o disponível após reservas.</p>
                     <div class="filters-container">
                         <label for="filter-demanda-semana">Semana:</label>
                         <select id="filter-demanda-semana">
@@ -633,12 +634,16 @@
                         <button type="button" data-status="Pendente" class="active">Pendentes</button>
                         <button type="button" data-status="Pronto">Prontos</button>
                         <button type="button" data-status="Concluído">Concluídos</button>
+                        <button type="button" data-status="Cancelado">Cancelados</button>
+                        <button type="button" data-status="Negado">Negados</button>
                     </div>
                     <select id="filter-modal-status" class="hidden-select">
                         <option value="">Todos</option>
                         <option value="Pendente" selected>Pendente</option>
                         <option value="Pronto">Pronto</option>
                         <option value="Concluído">Concluído</option>
+                        <option value="Cancelado">Cancelado</option>
+                        <option value="Negado">Negado</option>
                     </select>
                 </section>
                 <section class="filter-section">
