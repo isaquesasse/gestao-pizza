@@ -1,5 +1,5 @@
 document.addEventListener("DOMContentLoaded", () => {
-  window.SASSES_VERSION = "v20-mobile-pix";
+  window.SASSES_VERSION = "v21-estoque-seguro";
   console.log("Sasse's Pizza", window.SASSES_VERSION);
   const SUPABASE_URL = "https://iprnfzevdfmnraexthpy.supabase.co";
   const SUPABASE_ANON_KEY =
@@ -30,6 +30,11 @@ document.addEventListener("DOMContentLoaded", () => {
     caixa_movimentos: [],
     vendedores: [],
   };
+
+  const STOCK_ACTIVE_STATUSES = ["Pendente", "Pronto", "Concluído"];
+  const STOCK_RELEASED_STATUSES = ["Cancelado", "Negado"];
+  const ALL_ORDER_STATUSES = [...STOCK_ACTIVE_STATUSES, ...STOCK_RELEASED_STATUSES];
+  const orderHoldsStock = (status) => STOCK_ACTIVE_STATUSES.includes(status || "Pendente");
 
   let sortState = {
     pedidos: { column: "dataEntrega", direction: "desc" },
@@ -126,6 +131,46 @@ document.addEventListener("DOMContentLoaded", () => {
   const getPedidoPagamentoAtual = () => document.getElementById("pedido-pagamento")?.value || "";
 
   const isPedidoPago = (pedido) => pedido?.pago === true || pedido?.status === "Concluído";
+  const isPedidoAtivoFinanceiro = (pedido) => !STOCK_RELEASED_STATUSES.includes(pedido?.status);
+
+  const formatSupabaseError = (error, fallback = "Erro ao salvar") => {
+    const message = error?.message || String(error || fallback);
+    const needsMigration = /criar_pedido_com_reserva|atualizar_status_pedido_seguro|atualizar_pedido_seguro|cancelar_pedido_seguro|ajustar_estoque_pizza_seguro|estoque_baixado|schema cache|function .* does not exist|Could not find/i.test(message);
+    return needsMigration
+      ? `${fallback}: ${message}. Rode a MIGRACAO_V21_ESTOQUE_SEGURO.sql no Supabase e recarregue o site.`
+      : `${fallback}: ${message}`;
+  };
+
+  const getStockMapFromItems = (items) => {
+    const map = new Map();
+    (items || []).forEach((item) => {
+      if (item?.isCustom || !item?.pizzaId || item.pizzaId === "outro") return;
+      map.set(item.pizzaId, (map.get(item.pizzaId) || 0) + Number(item.qtd || 0));
+    });
+    return map;
+  };
+
+  const getStockValidationError = (items, options = {}) => {
+    const requested = getStockMapFromItems(items);
+    const releasedMap = options.releaseMap || new Map();
+    for (const [pizzaId, qtd] of requested.entries()) {
+      const pizza = database.estoque.find((p) => p.id === pizzaId);
+      if (!pizza) return `Pizza não encontrada no estoque: ${pizzaId}.`;
+      const available = Number(pizza.qtd || 0) + Number(releasedMap.get(pizzaId) || 0);
+      if (qtd > available) {
+        const label = pizza.tamanho ? `${pizza.nome} (${pizza.tamanho})` : pizza.nome;
+        return `Estoque insuficiente para ${label}. Disponível: ${available}, pedido: ${qtd}.`;
+      }
+    }
+    return "";
+  };
+
+  const getAvailableStockForPizza = (pizzaId, items = [], releaseMap = new Map()) => {
+    const pizza = database.estoque.find((p) => p.id === pizzaId);
+    if (!pizza) return 0;
+    const alreadyInCart = getStockMapFromItems(items).get(pizzaId) || 0;
+    return Number(pizza.qtd || 0) + Number(releaseMap.get(pizzaId) || 0) - alreadyInCart;
+  };
 
   const getClientHasUnpaid = (cliente) => {
     if (!cliente) return false;
@@ -133,14 +178,15 @@ document.addEventListener("DOMContentLoaded", () => {
       const sameId = cliente.id && p.clienteId === cliente.id;
       const sameNameCity = (p.cliente || "").toLowerCase() === (cliente.nome || "").toLowerCase() &&
         (p.cidade || "").toLowerCase() === (cliente.cidade || "").toLowerCase();
-      return (sameId || sameNameCity) && !isPedidoPago(p);
+      return (sameId || sameNameCity) && isPedidoAtivoFinanceiro(p) && !isPedidoPago(p);
     });
   };
 
   const getSystemAlerts = () => {
-    const pagamentos = database.pedidos.filter((p) => !isPedidoPago(p));
+    const pagamentos = database.pedidos.filter((p) => !isPedidoPago(p) && !STOCK_RELEASED_STATUSES.includes(p.status));
     const estoqueNegativo = database.estoque.filter((p) => Number(p.qtd || 0) < 0);
-    return { pagamentos, estoqueNegativo, total: pagamentos.length + estoqueNegativo.length };
+    const pedidosSemReserva = database.pedidos.filter((p) => orderHoldsStock(p.status) && p.estoque_baixado === false);
+    return { pagamentos, estoqueNegativo, pedidosSemReserva, total: pagamentos.length + estoqueNegativo.length + pedidosSemReserva.length };
   };
 
   const refreshNotificationBadge = () => {
@@ -253,6 +299,12 @@ document.addEventListener("DOMContentLoaded", () => {
         contentHTML += `<h3>Estoque negativo</h3>`;
         estoqueNegativo.forEach((p) => {
           contentHTML += `<div class="notification-item danger"><b>${p.nome} (${p.tamanho || ""})</b><span>${p.qtd} unidade(s)</span></div>`;
+        });
+      }
+      if (pedidosSemReserva.length > 0) {
+        contentHTML += `<h3>Pedidos antigos sem reserva</h3>`;
+        pedidosSemReserva.slice(0, 30).forEach((p) => {
+          contentHTML += `<div class="notification-item warning"><b>${escapeHTML(p.cliente || "Cliente")}</b><span>Abra o pedido e salve ou avance o status para reservar pelo fluxo novo.</span></div>`;
         });
       }
     }
@@ -970,7 +1022,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
         const startOfWeek = new Date(dateSource.includes("T") ? dateSource : dateSource + "T00:00:00");
         const weekStartFormatted = startOfWeek.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
         const valorExibido = p.valorFinal || p.valorTotal;
-        const payTag = isPedidoPago(p) ? '<span class="payment-tag paid">Pago</span>' : '<span class="payment-tag unpaid">Pendente</span>';
+        const payTag = !isPedidoAtivoFinanceiro(p) ? '<span class="payment-tag muted">Sem cobrança</span>' : (isPedidoPago(p) ? '<span class="payment-tag paid">Pago</span>' : '<span class="payment-tag unpaid">Pendente</span>');
         tableHTML += `
                     <tr>
                         <td>${weekStartFormatted}</td>
@@ -1013,7 +1065,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       const vendedorMatch = !vendedorFilter || normalizedVendedor === vendedorFilter || vendedorName.toLowerCase() === vendedorFilter.toLowerCase();
       const semanaMatch = !semanaFilter || (p.dataEntrega && getWeekStart(p.dataEntrega) === semanaFilter);
       const statusMatch = !statusFilter || p.status === statusFilter;
-      const pagamentoStatusMatch = !pagamentoStatusFilter || (pagamentoStatusFilter === "pago" ? isPedidoPago(p) : !isPedidoPago(p));
+      const pagamentoStatusMatch = !pagamentoStatusFilter || (pagamentoStatusFilter === "pago" ? isPedidoPago(p) : (isPedidoAtivoFinanceiro(p) && !isPedidoPago(p)));
       const formaPagamentoMatch = !formaPagamentoFilter || p.pagamento === formaPagamentoFilter;
       const valorExibido = p.valorFinal || p.valorTotal;
       const valorMatch = valorExibido >= valorMin && valorExibido <= valorMax;
@@ -1040,7 +1092,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       const weekStartFormatted = startOfWeek.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
       const valorExibido = p.valorFinal || p.valorTotal;
       const pago = isPedidoPago(p);
-      const pagamentoTag = pago ? '<span class="payment-tag paid">Pago</span>' : '<span class="payment-tag unpaid">Pendente</span>';
+      const pagamentoTag = !isPedidoAtivoFinanceiro(p) ? '<span class="payment-tag muted">Sem cobrança</span>' : (pago ? '<span class="payment-tag paid">Pago</span>' : '<span class="payment-tag unpaid">Pendente</span>');
 
       row.innerHTML = `
                 <td data-label="Cliente">${p.cliente}</b><br><small>${p.telefone || "N/A"}</small></td>
@@ -1058,68 +1110,44 @@ Deseja adicionar esse frete ao Valor Final?`)) {
   document.getElementById("search-pedidos")?.addEventListener("input", renderPedidos);
 
   const renderActionButtons = (pedido) => {
-    const removerBtn = `<button class="action-btn remove-btn" onclick="window.removerPedido('${pedido.id}')">Remover</button>`;
+    const cancelarBtn = STOCK_RELEASED_STATUSES.includes(pedido.status) ? "" : `<button class="action-btn remove-btn" onclick="window.cancelarPedido('${pedido.id}')">Cancelar</button>`;
     const editarBtn = `<button class="action-btn edit-btn" onclick="window.openEditPedidoModal('${pedido.id}')">Editar</button>`;
-    const pagoBtn = (typeof isPedidoPago === "function" ? isPedidoPago(pedido) : pedido.pago) ? "" : `<button class="action-btn paid-btn complete-btn" onclick="window.marcarPedidoPago('${pedido.id}')">Pago</button>`;
+    const pagoBtn = isPedidoPago(pedido) || STOCK_RELEASED_STATUSES.includes(pedido.status) ? "" : `<button class="action-btn paid-btn complete-btn" onclick="window.marcarPedidoPago('${pedido.id}')">Pago</button>`;
     const pixBtn = `<button class="action-btn info-btn" onclick="window.openPedidoPix('${pedido.id}')">Pix</button>`;
     const printBtn = `<button class="action-btn info-btn" onclick="window.printPedido('${pedido.id}')">🖨️</button>`;
     switch (pedido.status) {
       case "Pendente":
-        return `${editarBtn}<button class="action-btn" style="background-color:var(--accent-color)" onclick="window.updatePedidoStatus('${pedido.id}', 'Pronto')">Marcar Pronto</button>${pagoBtn}${pixBtn}${printBtn}${removerBtn}`;
+        return `${editarBtn}<button class="action-btn" style="background-color:var(--accent-color)" onclick="window.updatePedidoStatus('${pedido.id}', 'Pronto')">Marcar Pronto</button>${pagoBtn}${pixBtn}${printBtn}${cancelarBtn}`;
       case "Pronto":
-        return `${editarBtn}<button class="action-btn complete-btn" onclick="window.updatePedidoStatus('${pedido.id}', 'Concluído')">Concluir</button>${pagoBtn}${pixBtn}${printBtn}${removerBtn}`;
+        return `${editarBtn}<button class="action-btn complete-btn" onclick="window.updatePedidoStatus('${pedido.id}', 'Concluído')">Concluir</button>${pagoBtn}${pixBtn}${printBtn}${cancelarBtn}`;
       case "Concluído":
-        return `${editarBtn}${pagoBtn}${pixBtn}${printBtn}${removerBtn}`;
+        return `${editarBtn}${pixBtn}${printBtn}`;
+      case "Cancelado":
+      case "Negado":
+        return `${editarBtn}${printBtn}`;
       default:
-        return `${pagoBtn}${pixBtn}${printBtn}${removerBtn}`;
+        return `${editarBtn}${pagoBtn}${pixBtn}${printBtn}${cancelarBtn}`;
     }
   };
 
   window.updatePedidoStatus = async (id, newStatus) => {
+    if (!ALL_ORDER_STATUSES.includes(newStatus)) {
+      showSaveStatus(`Status inválido: ${newStatus}`, false);
+      return;
+    }
     if (!confirm(`Tem certeza que deseja alterar o status para "${newStatus}"?`)) return;
 
     showLoader();
-    const pedido = database.pedidos.find((p) => p.id === id);
-    if (!pedido) {
-      showSaveStatus("Erro: Pedido não encontrado.", false);
-      hideLoader();
-      return;
-    }
-
     try {
-      if (newStatus === "Pronto" && pedido.status !== "Pronto") {
-        const stockUpdatePromises = [];
-        for (const item of pedido.items) {
-          if (!item.isCustom) {
-            const pizzaEmEstoque = database.estoque.find((p) => p.id === item.pizzaId);
-            if (pizzaEmEstoque) {
-              const novaQtd = pizzaEmEstoque.qtd - item.qtd;
-              if (novaQtd < 0) {
-                throw new Error(`Estoque insuficiente para ${item.pizzaNome}. Disponível: ${pizzaEmEstoque.qtd}, pedido: ${item.qtd}.`);
-              }
-              stockUpdatePromises.push(
-                supabaseClient.from("estoque").update({ qtd: novaQtd }).eq("id", item.pizzaId)
-              );
-            }
-          }
-        }
-        const results = await Promise.all(stockUpdatePromises);
-        const stockErrors = results.map((r) => r.error).filter(Boolean);
-        if (stockErrors.length > 0) {
-          throw new Error("Falha ao dar baixa no estoque: " + stockErrors.map((e) => e.message).join("\n"));
-        }
-        showSaveStatus("Estoque atualizado!");
-      }
-
-      const statusPayload = { status: newStatus };
-      if (newStatus === "Concluído") statusPayload.pago = true;
-      const { error: statusError } = await supabaseClient.from("pedidos").update(statusPayload).eq("id", id);
-      if (statusError) throw statusError;
-
-      showSaveStatus("Status do pedido atualizado com sucesso!");
+      const { error } = await supabaseClient.rpc("atualizar_status_pedido_seguro", {
+        p_pedido_id: id,
+        p_novo_status: newStatus,
+      });
+      if (error) throw error;
+      showSaveStatus("Status atualizado com estoque protegido.");
       await loadDataFromSupabase();
     } catch (error) {
-      showSaveStatus(`Erro ao atualizar pedido: ${error.message}`, false);
+      showSaveStatus(formatSupabaseError(error, "Erro ao atualizar pedido"), false);
     } finally {
       hideLoader();
     }
@@ -1148,6 +1176,11 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       const pizzaData = database.estoque.find((p) => p.id === pizzaId);
       pizzaNome = pizzaData.tamanho ? `${pizzaData.nome} (${pizzaData.tamanho})` : pizzaData.nome;
       preco = pizzaData.precoVenda;
+      const disponivel = getAvailableStockForPizza(pizzaId, pedidoAtualItems);
+      if (qtd > disponivel) {
+        alert(`Estoque insuficiente para ${pizzaNome}. Disponível: ${disponivel}, tentando adicionar: ${qtd}.`);
+        return;
+      }
     }
     pedidoAtualItems.push({ pizzaId, pizzaNome, qtd, isCustom, preco });
     renderPedidoCarrinho();
@@ -1187,8 +1220,9 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       const label = pizza.tamanho ? `${pizza.nome} (${pizza.tamanho})` : pizza.nome;
       const price = getPrecoPorPagamento(pizza.precoVenda, pagamento);
       const stockClass = Number(pizza.qtd || 0) <= 0 ? "is-empty" : "";
+      const disabled = Number(pizza.qtd || 0) <= 0 ? "disabled" : "";
       const weekStart = document.getElementById("pedido-semana-entrega")?.value || getWeekStart();
-      return `<button type="button" class="pizza-shortcut ${stockClass}" onclick="window.quickAddPedidoItem('${pizza.id}')">
+      return `<button type="button" class="pizza-shortcut ${stockClass}" ${disabled} onclick="window.quickAddPedidoItem('${pizza.id}')">
         <b>${label}</b>
         <small>${formatCurrency(price)} · ${formatStockSobra(pizza.id, weekStart)}</small>
       </button>`;
@@ -1199,6 +1233,11 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     const pizzaData = database.estoque.find((p) => p.id === pizzaId);
     if (!pizzaData) return;
     const pizzaNome = pizzaData.tamanho ? `${pizzaData.nome} (${pizzaData.tamanho})` : pizzaData.nome;
+    const disponivel = getAvailableStockForPizza(pizzaId, pedidoAtualItems);
+    if (disponivel < 1) {
+      alert(`Sem estoque disponível para ${pizzaNome}.`);
+      return;
+    }
     const existing = pedidoAtualItems.find((item) => item.pizzaId === pizzaId && !item.isCustom);
     if (existing) existing.qtd += 1;
     else pedidoAtualItems.push({ pizzaId, pizzaNome, qtd: 1, isCustom: false, preco: pizzaData.precoVenda });
@@ -1266,6 +1305,12 @@ Deseja adicionar esse frete ao Valor Final?`)) {
 
     if (!clienteNome || !pagamento || !vendedor || !cidade || !dataEntrega) {
       alert("Preencha todos os campos obrigatórios do pedido.");
+      return;
+    }
+
+    const stockError = getStockValidationError(pedidoAtualItems);
+    if (stockError) {
+      alert(stockError);
       return;
     }
 
@@ -1344,15 +1389,17 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       return;
     }
 
-    const { data: pedidoSalvo, error: insertError } = await supabaseClient.from("pedidos").insert(newPedidoData).select().single();
+    const { data: pedidoSalvo, error: insertError } = await supabaseClient.rpc("criar_pedido_com_reserva", {
+      p_pedido: newPedidoData,
+    });
 
     if (insertError) {
-      showSaveStatus("Erro ao registrar pedido: " + insertError.message, false);
+      showSaveStatus(formatSupabaseError(insertError, "Erro ao registrar pedido"), false);
       hideLoader();
       return;
     }
 
-    showSaveStatus("Pedido registrado com sucesso!");
+    showSaveStatus("Pedido registrado e estoque reservado com sucesso!");
     resetFormPedido();
     await loadDataFromSupabase();
     hideLoader();
@@ -1374,23 +1421,29 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     updateTotalPedido();
   };
 
-  window.removerPedido = async (id) => {
+  window.cancelarPedido = async (id) => {
     const pedido = database.pedidos.find((p) => p.id === id);
     if (!pedido) return;
-    if (confirm(`Tem certeza que deseja remover o pedido de ${pedido.cliente}?`)) {
+    if (pedido.status === "Concluído") {
+      alert("Pedido concluído não deve ser cancelado pelo botão rápido. Se foi erro, abra Editar e mude o status manualmente para Cancelado.");
+      return;
+    }
+    if (confirm(`Cancelar o pedido de ${pedido.cliente}? O estoque reservado será devolvido automaticamente.`)) {
       showLoader();
       try {
-        const { error: deleteError } = await supabaseClient.from("pedidos").delete().eq("id", id);
-        if (deleteError) throw deleteError;
-        showSaveStatus("Pedido removido.");
+        const { error } = await supabaseClient.rpc("cancelar_pedido_seguro", { p_pedido_id: id });
+        if (error) throw error;
+        showSaveStatus("Pedido cancelado e estoque devolvido.");
         await loadDataFromSupabase();
       } catch (error) {
-        showSaveStatus(`Erro ao remover pedido: ${error.message}`, false);
+        showSaveStatus(formatSupabaseError(error, "Erro ao cancelar pedido"), false);
       } finally {
         hideLoader();
       }
     }
   };
+
+  window.removerPedido = window.cancelarPedido;
 
   const renderWeeklyMassasPanel = () => {
     const container = document.getElementById("calendario-container");
@@ -1465,7 +1518,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
   const computeWeeklyUsage = (weekStart) => {
     const totals = { G: 0, P: 0, PC: 0 };
     database.pedidos.forEach((p) => {
-      if (!p.dataEntrega) return;
+      if (!p.dataEntrega || !orderHoldsStock(p.status)) return;
       const ws = getWeekStart(p.dataEntrega);
       if (ws !== weekStart) return;
       (p.items || []).forEach((item) => {
@@ -2140,6 +2193,8 @@ Deseja adicionar esse frete ao Valor Final?`)) {
                 <option value="Pendente" ${pedido.status === "Pendente" ? "selected" : ""}>Pendente</option>
                 <option value="Pronto" ${pedido.status === "Pronto" ? "selected" : ""}>Pronto</option>
                 <option value="Concluído" ${pedido.status === "Concluído" ? "selected" : ""}>Concluído</option>
+                <option value="Cancelado" ${pedido.status === "Cancelado" ? "selected" : ""}>Cancelado</option>
+                <option value="Negado" ${pedido.status === "Negado" ? "selected" : ""}>Negado</option>
               </select>
             </label>
             <label>Desconto rápido
@@ -2375,7 +2430,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       const quotas = database.massas_semanais.find((m) => m.semana_inicio === semanaInicio) || { g_semana: 0, p_semana: 0, pc_semana: 0 };
       const used = computeWeeklyUsage(semanaInicio);
 
-      if (originalSemanaInicio === semanaInicio) {
+      if (originalSemanaInicio === semanaInicio && orderHoldsStock(originalPedido.status)) {
         (originalPedido.items || []).forEach((item) => {
           if (item.isCustom) return;
           const pizza = database.estoque.find((e) => e.id === item.pizzaId);
@@ -2398,49 +2453,22 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       if (used.PC + newOrderDoughs.PC > (quotas.pc_semana || 0)) exceeds.push(`P de Chocolate: ${used.PC + newOrderDoughs.PC}/${quotas.pc_semana || 0}`);
       if (exceeds.length > 0) throw new Error("Limite semanal de massas atingido para: " + exceeds.join(" | "));
 
-      const stockUpdatePromises = [];
-      const getItemsMap = (items) => {
-        const map = new Map();
-        (items || []).forEach(item => {
-          if (!item.isCustom && item.pizzaId) map.set(item.pizzaId, (map.get(item.pizzaId) || 0) + Number(item.qtd || 0));
-        });
-        return map;
-      };
-      const originalItemsMap = getItemsMap(originalPedido.items);
-      const newItemsMap = getItemsMap(updatedPedidoData.items);
-      const allPizzaIds = new Set([...originalItemsMap.keys(), ...newItemsMap.keys()]);
-      const affectsStock = (status) => ["Pronto", "Concluído"].includes(status);
-      const originalAffects = affectsStock(originalPedido.status);
-      const newAffects = affectsStock(updatedPedidoData.status);
+      const releaseMap = originalPedido.estoque_baixado ? getStockMapFromItems(originalPedido.items) : new Map();
+      const stockError = getStockValidationError(updatedPedidoData.items, { releaseMap });
+      if (orderHoldsStock(updatedPedidoData.status) && stockError) throw new Error(stockError);
 
-      allPizzaIds.forEach(pizzaId => {
-        const originalQtd = originalItemsMap.get(pizzaId) || 0;
-        const newQtd = newItemsMap.get(pizzaId) || 0;
-        const pizzaEstoque = database.estoque.find(p => p.id === pizzaId);
-        if (!pizzaEstoque) return;
-        let stockAdjustment = 0;
-        if (!originalAffects && newAffects) stockAdjustment = -newQtd;
-        else if (originalAffects && !newAffects) stockAdjustment = +originalQtd;
-        else if (originalAffects && newAffects) stockAdjustment = -(newQtd - originalQtd);
-        if (stockAdjustment !== 0) {
-          stockUpdatePromises.push(supabaseClient.from("estoque").update({ qtd: Number(pizzaEstoque.qtd || 0) + stockAdjustment }).eq("id", pizzaId));
-        }
+      // Estoque agora é reconciliado pela RPC atualizar_pedido_seguro em uma única transação no banco.
+      const { error: updateError } = await supabaseClient.rpc("atualizar_pedido_seguro", {
+        p_pedido_id: originalPedido.id,
+        p_pedido: updatedPedidoData,
       });
-
-      if (stockUpdatePromises.length > 0) {
-        const results = await Promise.all(stockUpdatePromises);
-        const stockErrors = results.map(r => r.error).filter(Boolean);
-        if (stockErrors.length > 0) throw new Error("Falha ao reconciliar o estoque: " + stockErrors.map(e => e.message).join("\n"));
-      }
-
-      const { error: updateError } = await supabaseClient.from("pedidos").update(updatedPedidoData).eq("id", originalPedido.id);
       if (updateError) throw updateError;
 
-      showSaveStatus("Pedido atualizado com sucesso!");
+      showSaveStatus("Pedido atualizado com estoque protegido!");
       closeModal("edit-modal");
       await loadDataFromSupabase();
     } catch (error) {
-      showSaveStatus(`Erro ao atualizar pedido: ${error.message}`, false);
+      showSaveStatus(formatSupabaseError(error, "Erro ao atualizar pedido"), false);
     } finally {
       hideLoader();
     }
@@ -2452,7 +2480,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       .filter(p => {
         if (!p.dataEntrega) return false;
         const ws = getWeekStart(p.dataEntrega);
-        return ws === weekStart && p.status === 'Pendente';
+        return ws === weekStart && orderHoldsStock(p.status) && p.estoque_baixado === false;
       })
       .forEach(p => {
         (p.items || []).forEach(item => {
@@ -2483,7 +2511,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     const pizza = database.estoque.find((p) => p.id === pizzaId);
     const estoque = Number(pizza?.qtd || 0);
     const sobra = getPizzaSobraForWeek(pizzaId, weekStart);
-    return `est. ${estoque} · sobra ${sobra}`;
+    return `disp. ${Math.max(0, sobra)} · estoque ${estoque}`;
   };
 
   const generateSobrasMessage = (weekStart = getWeekStart()) => {
@@ -3189,7 +3217,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       const vendedorMatch = !vendedorFilter || normalizedVendedor === vendedorFilter || vendedorName.toLowerCase() === vendedorFilter.toLowerCase();
       const semanaMatch = !semanaFilter || (p.dataEntrega && getWeekStart(p.dataEntrega) === semanaFilter);
       const statusMatch = !statusFilter || p.status === statusFilter;
-      const pagamentoStatusMatch = !pagamentoStatusFilter || (pagamentoStatusFilter === "pago" ? isPedidoPago(p) : !isPedidoPago(p));
+      const pagamentoStatusMatch = !pagamentoStatusFilter || (pagamentoStatusFilter === "pago" ? isPedidoPago(p) : (isPedidoAtivoFinanceiro(p) && !isPedidoPago(p)));
       const formaPagamentoMatch = !formaPagamentoFilter || p.pagamento === formaPagamentoFilter;
       const valorExibido = p.valorFinal || p.valorTotal;
       const valorMatch = valorExibido >= valorMin && valorExibido <= valorMax;
@@ -3289,8 +3317,11 @@ Deseja adicionar esse frete ao Valor Final?`)) {
         throw new Error("Pizza não encontrada no banco de dados de estoque.");
       }
 
-      const novaQuantidade = pizzaEstoque.qtd + quantidade;
-      const { error } = await supabaseClient.from("estoque").update({ qtd: novaQuantidade }).eq("id", pizzaId);
+      const { error } = await supabaseClient.rpc("ajustar_estoque_pizza_seguro", {
+        p_pizza_id: pizzaId,
+        p_delta: quantidade,
+        p_observacao: "Produção registrada pelo painel",
+      });
 
       if (error) throw error;
 
@@ -3298,7 +3329,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       await loadDataFromSupabase();
       e.target.reset();
     } catch (error) {
-      showSaveStatus(`Erro ao registrar produção: ${error.message}`, false);
+      showSaveStatus(formatSupabaseError(error, "Erro ao registrar produção"), false);
     } finally {
       hideLoader();
     }
@@ -3366,19 +3397,24 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       const price = getPrecoPorPagamento(pizza.precoVenda, pagamento);
       const stockClass = Number(pizza.qtd || 0) <= 0 ? "is-empty" : "";
       const weekStart = document.getElementById("quick-semana")?.value || getWeekStart();
+      const disabledPlus = Number(pizza.qtd || 0) <= 0 ? "disabled" : "";
       return `<div class="quick-pizza ${stockClass}">
         <span>${pizza.nome} (${pizza.tamanho})<small>${formatCurrency(price)} · ${formatStockSobra(pizza.id, weekStart)}</small></span>
         <div class="qty-stepper">
           <button type="button" onclick="window.adjustQuickPizza('${pizza.id}', -1)">−</button>
-          <input type="number" min="0" value="${qty}" data-pizza-id="${pizza.id}" inputmode="numeric">
-          <button type="button" onclick="window.adjustQuickPizza('${pizza.id}', 1)">+</button>
+          <input type="number" min="0" max="${Number(pizza.qtd || 0)}" value="${qty}" data-pizza-id="${pizza.id}" inputmode="numeric">
+          <button type="button" ${disabledPlus} onclick="window.adjustQuickPizza('${pizza.id}', 1)">+</button>
         </div>
       </div>`;
     }).join("") || `<p class="empty-state compact">Nenhuma pizza encontrada.</p>`;
 
     box.querySelectorAll("input[data-pizza-id]").forEach((input) => {
       input.addEventListener("input", () => {
-        quickSaleItems[input.dataset.pizzaId] = Math.max(0, parseInt(input.value) || 0);
+        const pizza = database.estoque.find((p) => p.id === input.dataset.pizzaId);
+        const max = Number(pizza?.qtd || 0);
+        const value = Math.max(0, parseInt(input.value) || 0);
+        quickSaleItems[input.dataset.pizzaId] = Math.min(value, max);
+        input.value = quickSaleItems[input.dataset.pizzaId];
         updateQuickTotal();
       });
     });
@@ -3428,7 +3464,11 @@ Deseja adicionar esse frete ao Valor Final?`)) {
   };
 
   window.adjustQuickPizza = (pizzaId, delta) => {
-    quickSaleItems[pizzaId] = Math.max(0, Number(quickSaleItems[pizzaId] || 0) + delta);
+    const pizza = database.estoque.find((p) => p.id === pizzaId);
+    const max = Number(pizza?.qtd || 0);
+    const next = Math.max(0, Number(quickSaleItems[pizzaId] || 0) + delta);
+    quickSaleItems[pizzaId] = Math.min(next, max);
+    if (delta > 0 && next > max) alert("Não há mais estoque disponível para esta pizza.");
     const input = document.querySelector(`#quick-pizzas input[data-pizza-id="${pizzaId}"]`);
     if (input) input.value = quickSaleItems[pizzaId];
     updateQuickTotal();
@@ -3470,6 +3510,8 @@ Deseja adicionar esse frete ao Valor Final?`)) {
   const saveQuickSale = async () => {
     const items = getQuickItems();
     if (!items.length) return alert("Escolha pelo menos uma pizza.");
+    const stockError = getStockValidationError(items);
+    if (stockError) return alert(stockError);
     const clienteNome = document.getElementById("quick-cliente").value.trim();
     const cidade = document.getElementById("quick-cidade").value.trim();
     const vendedor = document.getElementById("quick-vendedor").value.trim();
@@ -3484,7 +3526,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       clienteId=r.data.id;
     }
     const totals = getQuickTotals();
-    const { error } = await supabaseClient.from("pedidos").insert({
+    const quickPedidoData = {
       cliente: clienteNome,
       clienteId,
       telefone: document.getElementById("quick-telefone").value,
@@ -3497,10 +3539,11 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       valorTotal: totals.base,
       valorFinal: totals.final,
       pago: false
-    });
+    };
+    const { error } = await supabaseClient.rpc("criar_pedido_com_reserva", { p_pedido: quickPedidoData });
     hideLoader();
-    if(error) return showSaveStatus("Erro: "+error.message,false);
-    showSaveStatus("Pedido rápido registrado!");
+    if(error) return showSaveStatus(formatSupabaseError(error, "Erro ao registrar venda rápida"), false);
+    showSaveStatus("Pedido rápido registrado e estoque reservado!");
     quickSaleItems = {};
     document.getElementById("quick-pix-box")?.classList.add("hidden");
     await loadDataFromSupabase();
@@ -3756,7 +3799,7 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
   const getClientInsight = (cliente) => {
     const pedidos = getPedidosDoCliente(cliente);
     const total = pedidos.reduce((acc, pedido) => acc + Number(pedido.valorFinal || pedido.valorTotal || 0), 0);
-    const pendentes = pedidos.filter((pedido) => !isPedidoPago(pedido));
+    const pendentes = pedidos.filter((pedido) => isPedidoAtivoFinanceiro(pedido) && !isPedidoPago(pedido));
     const valorPendente = pendentes.reduce((acc, pedido) => acc + Number(pedido.valorFinal || pedido.valorTotal || 0), 0);
     const ticketMedio = pedidos.length ? total / pedidos.length : 0;
     const lastDate = pedidos
@@ -3853,7 +3896,7 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
   
   const getWeekPedidos = (weekStart, onlyPending = false) => database.pedidos.filter((pedido) => {
     const sameWeek = getWeekStart(pedido.dataEntrega || pedido.created_at || getWeekStart()) === weekStart;
-    if (!sameWeek) return false;
+    if (!sameWeek || !isPedidoAtivoFinanceiro(pedido)) return false;
     return onlyPending ? pedido.status !== "Concluído" : true;
   });
 
@@ -3878,7 +3921,7 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
     if (!homeKpis || !pendingBox || !prodBox || !sobraBox || !alertBox) return;
 
     const pedidosSemana = getWeekPedidos(week, false);
-    const pendentes = pedidosSemana.filter((p) => p.status !== "Concluído");
+    const pendentes = pedidosSemana.filter((p) => isPedidoAtivoFinanceiro(p) && p.status !== "Concluído");
     const pagosSemana = pedidosSemana.filter((p) => isPedidoPago(p));
     const faturamentoSemana = pagosSemana.reduce((a, p) => a + Number(p.valorFinal || p.valorTotal || 0), 0);
     const quantidadeSemana = pedidosSemana.reduce((a, p) => a + (p.items || []).reduce((n, it) => n + Number(it.qtd || 0), 0), 0);
@@ -3949,7 +3992,7 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
       const receita = pedidos.filter((p) => isPedidoPago(p)).reduce((a,p) => a + Number(p.valorFinal || p.valorTotal || 0), 0);
       const pizzas = pedidos.reduce((a,p) => a + (p.items || []).reduce((n,it) => n + Number(it.qtd || 0), 0), 0);
       const clientes = new Set(pedidos.map((p) => (p.cliente || '').toLowerCase()).filter(Boolean)).size;
-      const pendencias = pedidos.filter((p) => !isPedidoPago(p)).reduce((a,p) => a + Number(p.valorFinal || p.valorTotal || 0), 0);
+      const pendencias = pedidos.filter((p) => isPedidoAtivoFinanceiro(p) && !isPedidoPago(p)).reduce((a,p) => a + Number(p.valorFinal || p.valorTotal || 0), 0);
       return { pedidos: pedidos.length, receita, pizzas, clientes, pendencias };
     };
     const cur = getWeekStats(currentWs), prev = getWeekStats(prevWs);
@@ -4119,7 +4162,7 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
   const renderMobileInicio = () => {
     const week = getWeekStart();
     const pedidosSemana = database.pedidos.filter((p) => p.dataEntrega && getWeekStart(p.dataEntrega) === week);
-    const pendentes = pedidosSemana.filter((p) => p.status !== "Concluído");
+    const pendentes = pedidosSemana.filter((p) => isPedidoAtivoFinanceiro(p) && p.status !== "Concluído");
     const receitaPaga = pedidosSemana.filter(isPedidoPago).reduce((a, p) => a + Number(p.valorFinal || p.valorTotal || 0), 0);
     const pizzasSemana = pedidosSemana.reduce((a, p) => a + (p.items || []).reduce((n, it) => n + Number(it.qtd || 0), 0), 0);
     const prod = getProductionSuggestion(week).filter((x) => x.produzirPedidos > 0).slice(0, 5);
@@ -4185,6 +4228,8 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
       const pizza = database.estoque.find((p) => p.id === pizzaId);
       if (!pizza) return alert("Selecione uma pizza.");
       const pagamento = document.getElementById("m-pedido-pagamento").value;
+      const disponivel = getAvailableStockForPizza(pizzaId, mobileOrderItems);
+      if (qtd > disponivel) return alert(`Estoque insuficiente para ${pizza.nome}. Disponível: ${disponivel}.`);
       mobileOrderItems.push({ pizzaId, pizzaNome: `${pizza.nome} (${pizza.tamanho || ""})`, qtd, isCustom: false, preco: getPrecoPorPagamento(pizza.precoVenda, pagamento) });
       renderMobileOrderCart(); updateMobileOrderTotal();
     });
@@ -4218,7 +4263,15 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
   };
 
   const saveMobilePedido = async (pedidoData) => {
-    if (!pedidoData.cliente || !pedidoData.cidade || !pedidoData.vendedor) return alert("Preencha cliente, cidade e vendedor.");
+    if (!pedidoData.cliente || !pedidoData.cidade || !pedidoData.vendedor) {
+      alert("Preencha cliente, cidade e vendedor.");
+      return false;
+    }
+    const stockError = getStockValidationError(pedidoData.items || []);
+    if (stockError) {
+      alert(stockError);
+      return false;
+    }
     showLoader();
     try {
       let cliente = database.clientes.find((c) => (c.nome || "").toLowerCase() === pedidoData.cliente.toLowerCase() && (c.cidade || "").toLowerCase() === pedidoData.cidade.toLowerCase());
@@ -4229,18 +4282,20 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
         clienteId = r.data.id;
       }
       const newPedido = { ...pedidoData, clienteId, status: "Pendente", pago: false };
-      const r = await supabaseClient.from("pedidos").insert(newPedido).select().single();
+      const r = await supabaseClient.rpc("criar_pedido_com_reserva", { p_pedido: newPedido });
       if (r.error) throw r.error;
       mobileOrderItems = [];
-      showSaveStatus("Pedido registrado pelo celular!");
+      showSaveStatus("Pedido registrado pelo celular e estoque reservado!");
       await loadDataFromSupabase();
       if ((pedidoData.pagamento || "").toLowerCase() === "pix") {
         openMobilePixModal(pedidoData.valorFinal || pedidoData.valorTotal, pedidoData.cliente);
       }
       mobilePage = "inicio";
       renderMobileApp();
+      return true;
     } catch (err) {
-      showSaveStatus("Erro ao registrar pedido: " + err.message, false);
+      showSaveStatus(formatSupabaseError(err, "Erro ao registrar pedido"), false);
+      return false;
     } finally { hideLoader(); }
   };
 
@@ -4268,10 +4323,27 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
       const box = document.getElementById("m-venda-pizzas");
       if (!box) return;
       const pay = document.getElementById("m-venda-pagamento")?.value || pagamento;
-      box.innerHTML = database.estoque.filter((p) => !term || (p.nome || "").toLowerCase().includes(term)).slice(0, 60).map((p) => `<div class="m-pizza-row"><div><b>${escapeHTML(p.nome)} (${escapeHTML(p.tamanho)})</b><div class="m-line">Estoque ${p.qtd} · ${formatCurrency(getPrecoPorPagamento(p.precoVenda, pay))}</div></div><button type="button" class="m-mini-btn" data-pizza-minus="${p.id}">−</button><input type="number" min="0" value="${mobileSaleItems[p.id] || 0}" data-pizza-qty="${p.id}"><button type="button" class="m-mini-btn" data-pizza-plus="${p.id}">+</button></div>`).join("");
-      box.querySelectorAll("[data-pizza-plus]").forEach((btn) => btn.onclick = () => { mobileSaleItems[btn.dataset.pizzaPlus] = Number(mobileSaleItems[btn.dataset.pizzaPlus] || 0) + 1; renderRows(); updateSaleTotal(); });
+      box.innerHTML = database.estoque.filter((p) => !term || (p.nome || "").toLowerCase().includes(term)).slice(0, 60).map((p) => {
+        const max = Number(p.qtd || 0);
+        const qty = Math.min(Number(mobileSaleItems[p.id] || 0), max);
+        mobileSaleItems[p.id] = qty;
+        const plusDisabled = qty >= max ? "disabled" : "";
+        return `<div class="m-pizza-row"><div><b>${escapeHTML(p.nome)} (${escapeHTML(p.tamanho)})</b><div class="m-line">Estoque ${p.qtd} · ${formatCurrency(getPrecoPorPagamento(p.precoVenda, pay))}</div></div><button type="button" class="m-mini-btn" data-pizza-minus="${p.id}">−</button><input type="number" min="0" max="${max}" value="${qty}" data-pizza-qty="${p.id}"><button type="button" class="m-mini-btn" ${plusDisabled} data-pizza-plus="${p.id}">+</button></div>`;
+      }).join("");
+      box.querySelectorAll("[data-pizza-plus]").forEach((btn) => btn.onclick = () => {
+        const pizza = database.estoque.find((p) => p.id === btn.dataset.pizzaPlus);
+        const max = Number(pizza?.qtd || 0);
+        mobileSaleItems[btn.dataset.pizzaPlus] = Math.min(max, Number(mobileSaleItems[btn.dataset.pizzaPlus] || 0) + 1);
+        renderRows(); updateSaleTotal();
+      });
       box.querySelectorAll("[data-pizza-minus]").forEach((btn) => btn.onclick = () => { mobileSaleItems[btn.dataset.pizzaMinus] = Math.max(0, Number(mobileSaleItems[btn.dataset.pizzaMinus] || 0) - 1); renderRows(); updateSaleTotal(); });
-      box.querySelectorAll("[data-pizza-qty]").forEach((inp) => inp.oninput = () => { mobileSaleItems[inp.dataset.pizzaQty] = Math.max(0, parseInt(inp.value) || 0); updateSaleTotal(); });
+      box.querySelectorAll("[data-pizza-qty]").forEach((inp) => inp.oninput = () => {
+        const pizza = database.estoque.find((p) => p.id === inp.dataset.pizzaQty);
+        const max = Number(pizza?.qtd || 0);
+        mobileSaleItems[inp.dataset.pizzaQty] = Math.min(max, Math.max(0, parseInt(inp.value) || 0));
+        inp.value = mobileSaleItems[inp.dataset.pizzaQty];
+        updateSaleTotal();
+      });
     };
     const updateSaleTotal = () => {
       const pay = document.getElementById("m-venda-pagamento")?.value || pagamento;
@@ -4307,8 +4379,8 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
       });
       if (!items.length) return alert("Selecione pelo menos uma pizza.");
       const valorTotal = items.reduce((a,it) => a + it.preco * it.qtd, 0);
-      await saveMobilePedido({ cliente: document.getElementById("m-venda-cliente").value.trim(), telefone: "", cidade: document.getElementById("m-venda-cidade").value.trim(), endereco: "", vendedor: document.getElementById("m-venda-vendedor").value.trim(), pagamento: pay, dataEntrega: document.getElementById("m-venda-semana").value || week, items, valorTotal, valorFinal: valorTotal });
-      mobileSaleItems = {};
+      const saved = await saveMobilePedido({ cliente: document.getElementById("m-venda-cliente").value.trim(), telefone: "", cidade: document.getElementById("m-venda-cidade").value.trim(), endereco: "", vendedor: document.getElementById("m-venda-vendedor").value.trim(), pagamento: pay, dataEntrega: document.getElementById("m-venda-semana").value || week, items, valorTotal, valorFinal: valorTotal });
+      if (saved) mobileSaleItems = {};
     });
   };
 
