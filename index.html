@@ -32,7 +32,7 @@
         <nav class="mobile-app-nav">
             <button type="button" data-mobile-page="inicio" class="active">Início</button>
             <button type="button" data-mobile-page="pedido">Pedido</button>
-            <button type="button" data-mobile-page="venda">Venda</button>
+            <button type="button" data-mobile-page="loja">Loja</button>
             <button type="button" data-mobile-page="producao">Produção</button>
             <button type="button" data-mobile-page="mais">Mais</button>
         </nav>
@@ -55,18 +55,25 @@
         </div>
     </header>
 
-    <nav class="main-nav">
+    <nav class="main-nav main-nav-compact">
         <button class="tab-link active" data-tab="inicio">Início</button>
         <button class="tab-link" data-tab="pedidos">Pedidos</button>
-        <button class="tab-link admin-only seller-visible" data-tab="vendedor-rapido">Venda Rápida</button>
-        <button class="tab-link admin-only" data-tab="caixa">Caixa</button>
+        <button class="tab-link admin-only" data-tab="loja">Loja</button>
         <button class="tab-link admin-only" data-tab="producao">Produção</button>
-        <button class="tab-link admin-only" data-tab="cozinha">Modo Cozinha</button>
-        <button class="tab-link admin-only" data-tab="clientes">Clientes</button>
-        <button class="tab-link admin-only seller-visible" data-tab="estoque">Estoque</button>
-        <button class="tab-link admin-only" data-tab="receitas">Receitas</button>
-        <button class="tab-link admin-only" data-tab="ingredientes">Ingredientes</button>
-        <button class="tab-link admin-only" data-tab="graficos">Dashboard</button>
+        <div class="more-menu-wrap admin-only">
+            <button type="button" id="btn-more-tabs" class="tab-more-btn" aria-expanded="false" aria-controls="more-tabs-menu">☰ Mais</button>
+            <div id="more-tabs-menu" class="more-tabs-menu" hidden>
+                <button class="tab-link" data-tab="logistica">Agenda</button>
+                <button class="tab-link seller-visible" data-tab="vendedor-rapido">Venda Rápida</button>
+                <button class="tab-link" data-tab="caixa">Caixa</button>
+                <button class="tab-link" data-tab="cozinha">Modo Cozinha</button>
+                <button class="tab-link" data-tab="clientes">Clientes</button>
+                <button class="tab-link seller-visible" data-tab="estoque">Estoque</button>
+                <button class="tab-link" data-tab="receitas">Receitas</button>
+                <button class="tab-link" data-tab="ingredientes">Ingredientes</button>
+                <button class="tab-link" data-tab="graficos">Dashboard</button>
+            </div>
+        </div>
     </nav>
 
     <main>
@@ -89,6 +96,34 @@
                 <div class="card"><h3>Produção da semana</h3><div id="home-producao"></div></div>
                 <div class="card"><h3>Disponíveis para retirada</h3><div id="home-sobras"></div></div>
                 <div class="card"><h3>Pagamentos e alertas</h3><div id="home-alertas"></div></div>
+            </section>
+        </div>
+
+        <div id="loja" class="tab-content">
+            <section class="home-hero card">
+                <div>
+                    <h2 style="margin-bottom: .35rem; border-bottom: 0; padding-bottom: 0;">Loja online</h2>
+                    <p class="small-muted">Acompanhe as confirmações, o catálogo e o que está chegando para entrega ou retirada.</p>
+                </div>
+                <div class="home-actions">
+                    <button class="home-action" data-open-tab="pedidos">Abrir pedidos</button>
+                    <button class="home-action" data-open-tab="logistica">Abrir agenda</button>
+                    <button class="home-action" data-open-tab="estoque">Abrir sabores</button>
+                </div>
+            </section>
+            <section id="loja-kpis" class="home-kpis"></section>
+            <section class="home-grid loja-grid">
+                <div class="card"><h3>Confirmações de pedidos</h3><div id="loja-confirmacoes-list"></div></div>
+                <div class="card"><h3>Catálogo da loja</h3><div id="loja-catalogo-list"></div></div>
+                <div class="card"><h3>Próximas entregas e retiradas</h3><div id="loja-proximos-list"></div></div>
+                <div class="card"><h3>Ações rápidas</h3>
+                    <div id="loja-acoes-list" class="loja-actions-static">
+                        <button class="home-action" data-open-tab="pedidos">Novo pedido manual</button>
+                        <button class="home-action" data-open-tab="estoque">Editar sabores da loja</button>
+                        <button class="home-action" data-open-tab="logistica">Ver agenda</button>
+                        <button class="home-action" data-open-tab="clientes">Consultar clientes</button>
+                    </div>
+                </div>
             </section>
         </div>
 
@@ -175,11 +210,11 @@
                         <thead>
                             <tr>
                                 <th data-sort-by="cliente">Cliente (Telefone)</th>
-                                <th data-sort-by="dataEntrega">Semana Entrega</th>
+                                <th data-sort-by="dataEntrega">Data/horário</th>
                                 <th>Itens do Pedido</th>
-                                <th data-sort-by="vendedor">Detalhes (Vendedor/Cidade)</th>
+                                <th data-sort-by="vendedor">Entrega/Retirada</th>
                                 <th data-sort-by="valorFinal">Valores</th>
-                                <th data-sort-by="status">Status</th>
+                                <th data-sort-by="status">Situação</th>
                                 <th>Ações</th>
                             </tr>
                         </thead>
@@ -242,6 +277,47 @@
                     </div>
                 </div>
             </div>
+        </div>
+
+
+
+        <div id="logistica" class="tab-content">
+            <section class="card">
+                <div class="table-header">
+                    <div>
+                        <h2>Agenda de Entregas e Retiradas</h2>
+                        <p class="small-muted">Pedidos dos próximos dias separados por data, cidade e tipo.</p>
+                    </div>
+                    <div class="filters-container logistics-filters">
+                        <select id="logistica-cidade-filter">
+                            <option value="">Todas as cidades</option>
+                        </select>
+                        <select id="logistica-tipo-filter">
+                            <option value="">Entrega e retirada</option>
+                            <option value="entrega">Só entregas</option>
+                            <option value="retirada">Só retiradas</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="logistica-agenda" class="logistica-agenda"></div>
+            </section>
+
+            <section class="card">
+                <div class="table-header">
+                    <div>
+                        <h3>Rota de entrega</h3>
+                        <p class="small-muted">Selecione o dia e a cidade para montar uma rota aproximada.</p>
+                    </div>
+                    <div class="filters-container logistics-filters">
+                        <input type="date" id="rota-data-filter">
+                        <select id="rota-cidade-filter">
+                            <option value="">Todas as cidades</option>
+                        </select>
+                        <button id="btn-calcular-rota" class="action-btn" type="button">Calcular rota</button>
+                    </div>
+                </div>
+                <div id="rota-entrega-panel" class="rota-panel"></div>
+            </section>
         </div>
 
         <div id="vendedor-rapido" class="tab-content">
@@ -391,6 +467,7 @@
                                 <th data-sort-by="qtd">Qtd.</th>
                                 <th class="admin-only" data-sort-by="custo">Custo</th>
                                 <th data-sort-by="precoVenda">Preço Venda</th>
+                                <th>Loja</th>
                                 <th class="admin-only" data-sort-by="lucro">Lucro Bruto</th>
                                 <th>Ações</th>
                             </tr>
@@ -631,7 +708,8 @@
                     <h3>Status</h3>
                     <div class="filter-chips" id="filter-status-chips">
                         <button type="button" data-status="">Todos</button>
-                        <button type="button" data-status="Pendente" class="active">Pendentes</button>
+                        <button type="button" data-status="Pendente">Aguardando confirmação</button>
+                        <button type="button" data-status="ConfirmadoNaoConcluido" class="active">Confirmados não concluídos</button>
                         <button type="button" data-status="Pronto">Prontos</button>
                         <button type="button" data-status="Concluído">Concluídos</button>
                         <button type="button" data-status="Cancelado">Cancelados</button>
@@ -639,7 +717,9 @@
                     </div>
                     <select id="filter-modal-status" class="hidden-select">
                         <option value="">Todos</option>
-                        <option value="Pendente" selected>Pendente</option>
+                        <option value="Pendente">Aguardando confirmação</option>
+                        <option value="ConfirmadoNaoConcluido" selected>Confirmados não concluídos</option>
+                        <option value="Confirmado">Confirmados</option>
                         <option value="Pronto">Pronto</option>
                         <option value="Concluído">Concluído</option>
                         <option value="Cancelado">Cancelado</option>
@@ -775,6 +855,8 @@
     <nav class="mobile-bottom-nav">
         <button class="tab-link active" data-tab="inicio">Início</button>
         <button class="tab-link" data-tab="pedidos">Pedidos</button>
+        <button class="tab-link admin-only" data-tab="loja">Loja</button>
+        <button class="tab-link admin-only" data-tab="logistica">Agenda</button>
         <button class="tab-link admin-only seller-visible" data-tab="vendedor-rapido">Venda</button>
         <button class="tab-link admin-only" data-tab="producao">Produção</button>
         <button class="tab-link admin-only" data-tab="graficos">Mais</button>
