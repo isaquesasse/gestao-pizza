@@ -1,5 +1,5 @@
 document.addEventListener("DOMContentLoaded", () => {
-  window.SASSES_VERSION = "v21-estoque-seguro";
+  window.SASSES_VERSION = "v26-gestao-encomenda";
   console.log("Sasse's Pizza", window.SASSES_VERSION);
   const SUPABASE_URL = "https://iprnfzevdfmnraexthpy.supabase.co";
   const SUPABASE_ANON_KEY =
@@ -282,7 +282,7 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   window.openNotificationsModal = () => {
-    const { pagamentos, estoqueNegativo, total } = getSystemAlerts();
+    const { pagamentos, estoqueNegativo, pedidosSemReserva, total } = getSystemAlerts();
     let contentHTML = `<div class="notification-list">`;
     if (total === 0) {
       contentHTML += `<p class="empty-state">Tudo certo por aqui.</p>`;
@@ -302,9 +302,9 @@ document.addEventListener("DOMContentLoaded", () => {
         });
       }
       if (pedidosSemReserva.length > 0) {
-        contentHTML += `<h3>Pedidos antigos sem reserva</h3>`;
+        contentHTML += `<h3>Pedidos para produzir</h3>`;
         pedidosSemReserva.slice(0, 30).forEach((p) => {
-          contentHTML += `<div class="notification-item warning"><b>${escapeHTML(p.cliente || "Cliente")}</b><span>Abra o pedido e salve ou avance o status para reservar pelo fluxo novo.</span></div>`;
+          contentHTML += `<div class="notification-item warning"><b>${escapeHTML(p.cliente || "Cliente")}</b><span>Pedido interno sem reserva de estoque. Produza/adicione ao estoque antes de marcar como pronto.</span></div>`;
         });
       }
     }
@@ -1093,6 +1093,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       const valorExibido = p.valorFinal || p.valorTotal;
       const pago = isPedidoPago(p);
       const pagamentoTag = !isPedidoAtivoFinanceiro(p) ? '<span class="payment-tag muted">Sem cobrança</span>' : (pago ? '<span class="payment-tag paid">Pago</span>' : '<span class="payment-tag unpaid">Pendente</span>');
+      const reservaTag = orderHoldsStock(p.status) ? (p.estoque_baixado === false ? '<span class="payment-tag unpaid">Produzir</span>' : '<span class="payment-tag paid">Reservado</span>') : '';
 
       row.innerHTML = `
                 <td data-label="Cliente">${p.cliente}</b><br><small>${p.telefone || "N/A"}</small></td>
@@ -1100,7 +1101,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
                 <td data-label="Itens"><ul style="padding-left:15px;margin:0">${itemsHtml}</ul></td>
                 <td data-label="Detalhes"><small>Vend.: ${p.vendedor}<br>Cid.: ${p.cidade}<br>End.: ${p.endereco || "N/A"}</small></td>
                 <td data-label="Valores"><b>${formatCurrency(valorExibido)}</b><br><small class="admin-only">Calc: ${formatCurrency(p.valorTotal)}</small></td>
-                <td data-label="Status"><span class="status-${statusClass}">${p.status}</span>${pagamentoTag}</td>
+                <td data-label="Status"><span class="status-${statusClass}">${p.status}</span>${pagamentoTag}${reservaTag}</td>
                 <td data-label="Ações">${renderActionButtons(p)}</td>
             `;
     });
@@ -1178,8 +1179,10 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       preco = pizzaData.precoVenda;
       const disponivel = getAvailableStockForPizza(pizzaId, pedidoAtualItems);
       if (qtd > disponivel) {
-        alert(`Estoque insuficiente para ${pizzaNome}. Disponível: ${disponivel}, tentando adicionar: ${qtd}.`);
-        return;
+        const seguir = confirm(`Estoque atual livre para ${pizzaNome}: ${disponivel}.
+
+Deseja lançar mesmo assim como encomenda/produção pendente?`);
+        if (!seguir) return;
       }
     }
     pedidoAtualItems.push({ pizzaId, pizzaNome, qtd, isCustom, preco });
@@ -1220,9 +1223,8 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       const label = pizza.tamanho ? `${pizza.nome} (${pizza.tamanho})` : pizza.nome;
       const price = getPrecoPorPagamento(pizza.precoVenda, pagamento);
       const stockClass = Number(pizza.qtd || 0) <= 0 ? "is-empty" : "";
-      const disabled = Number(pizza.qtd || 0) <= 0 ? "disabled" : "";
       const weekStart = document.getElementById("pedido-semana-entrega")?.value || getWeekStart();
-      return `<button type="button" class="pizza-shortcut ${stockClass}" ${disabled} onclick="window.quickAddPedidoItem('${pizza.id}')">
+      return `<button type="button" class="pizza-shortcut ${stockClass}" onclick="window.quickAddPedidoItem('${pizza.id}')">
         <b>${label}</b>
         <small>${formatCurrency(price)} · ${formatStockSobra(pizza.id, weekStart)}</small>
       </button>`;
@@ -1235,8 +1237,10 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     const pizzaNome = pizzaData.tamanho ? `${pizzaData.nome} (${pizzaData.tamanho})` : pizzaData.nome;
     const disponivel = getAvailableStockForPizza(pizzaId, pedidoAtualItems);
     if (disponivel < 1) {
-      alert(`Sem estoque disponível para ${pizzaNome}.`);
-      return;
+      const seguir = confirm(`Sem estoque livre para ${pizzaNome}.
+
+Deseja lançar mesmo assim como encomenda/produção pendente?`);
+      if (!seguir) return;
     }
     const existing = pedidoAtualItems.find((item) => item.pizzaId === pizzaId && !item.isCustom);
     if (existing) existing.qtd += 1;
@@ -1305,12 +1309,6 @@ Deseja adicionar esse frete ao Valor Final?`)) {
 
     if (!clienteNome || !pagamento || !vendedor || !cidade || !dataEntrega) {
       alert("Preencha todos os campos obrigatórios do pedido.");
-      return;
-    }
-
-    const stockError = getStockValidationError(pedidoAtualItems);
-    if (stockError) {
-      alert(stockError);
       return;
     }
 
@@ -1399,7 +1397,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       return;
     }
 
-    showSaveStatus("Pedido registrado e estoque reservado com sucesso!");
+    showSaveStatus(pedidoSalvo?.estoque_baixado ? "Pedido registrado e estoque reservado." : "Pedido registrado como encomenda/produção pendente.");
     resetFormPedido();
     await loadDataFromSupabase();
     hideLoader();
@@ -2453,18 +2451,15 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       if (used.PC + newOrderDoughs.PC > (quotas.pc_semana || 0)) exceeds.push(`P de Chocolate: ${used.PC + newOrderDoughs.PC}/${quotas.pc_semana || 0}`);
       if (exceeds.length > 0) throw new Error("Limite semanal de massas atingido para: " + exceeds.join(" | "));
 
-      const releaseMap = originalPedido.estoque_baixado ? getStockMapFromItems(originalPedido.items) : new Map();
-      const stockError = getStockValidationError(updatedPedidoData.items, { releaseMap });
-      if (orderHoldsStock(updatedPedidoData.status) && stockError) throw new Error(stockError);
-
       // Estoque agora é reconciliado pela RPC atualizar_pedido_seguro em uma única transação no banco.
-      const { error: updateError } = await supabaseClient.rpc("atualizar_pedido_seguro", {
+      // Status Pendente pode ficar como encomenda/produção pendente sem reservar estoque.
+      const { data: pedidoAtualizado, error: updateError } = await supabaseClient.rpc("atualizar_pedido_seguro", {
         p_pedido_id: originalPedido.id,
         p_pedido: updatedPedidoData,
       });
       if (updateError) throw updateError;
 
-      showSaveStatus("Pedido atualizado com estoque protegido!");
+      showSaveStatus(pedidoAtualizado?.estoque_baixado ? "Pedido atualizado e estoque reservado." : "Pedido atualizado como encomenda/produção pendente.");
       closeModal("edit-modal");
       await loadDataFromSupabase();
     } catch (error) {
@@ -3397,23 +3392,20 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       const price = getPrecoPorPagamento(pizza.precoVenda, pagamento);
       const stockClass = Number(pizza.qtd || 0) <= 0 ? "is-empty" : "";
       const weekStart = document.getElementById("quick-semana")?.value || getWeekStart();
-      const disabledPlus = Number(pizza.qtd || 0) <= 0 ? "disabled" : "";
       return `<div class="quick-pizza ${stockClass}">
         <span>${pizza.nome} (${pizza.tamanho})<small>${formatCurrency(price)} · ${formatStockSobra(pizza.id, weekStart)}</small></span>
         <div class="qty-stepper">
           <button type="button" onclick="window.adjustQuickPizza('${pizza.id}', -1)">−</button>
-          <input type="number" min="0" max="${Number(pizza.qtd || 0)}" value="${qty}" data-pizza-id="${pizza.id}" inputmode="numeric">
-          <button type="button" ${disabledPlus} onclick="window.adjustQuickPizza('${pizza.id}', 1)">+</button>
+          <input type="number" min="0" value="${qty}" data-pizza-id="${pizza.id}" inputmode="numeric">
+          <button type="button" onclick="window.adjustQuickPizza('${pizza.id}', 1)">+</button>
         </div>
       </div>`;
     }).join("") || `<p class="empty-state compact">Nenhuma pizza encontrada.</p>`;
 
     box.querySelectorAll("input[data-pizza-id]").forEach((input) => {
       input.addEventListener("input", () => {
-        const pizza = database.estoque.find((p) => p.id === input.dataset.pizzaId);
-        const max = Number(pizza?.qtd || 0);
         const value = Math.max(0, parseInt(input.value) || 0);
-        quickSaleItems[input.dataset.pizzaId] = Math.min(value, max);
+        quickSaleItems[input.dataset.pizzaId] = value;
         input.value = quickSaleItems[input.dataset.pizzaId];
         updateQuickTotal();
       });
@@ -3464,11 +3456,8 @@ Deseja adicionar esse frete ao Valor Final?`)) {
   };
 
   window.adjustQuickPizza = (pizzaId, delta) => {
-    const pizza = database.estoque.find((p) => p.id === pizzaId);
-    const max = Number(pizza?.qtd || 0);
     const next = Math.max(0, Number(quickSaleItems[pizzaId] || 0) + delta);
-    quickSaleItems[pizzaId] = Math.min(next, max);
-    if (delta > 0 && next > max) alert("Não há mais estoque disponível para esta pizza.");
+    quickSaleItems[pizzaId] = next;
     const input = document.querySelector(`#quick-pizzas input[data-pizza-id="${pizzaId}"]`);
     if (input) input.value = quickSaleItems[pizzaId];
     updateQuickTotal();
@@ -3510,8 +3499,6 @@ Deseja adicionar esse frete ao Valor Final?`)) {
   const saveQuickSale = async () => {
     const items = getQuickItems();
     if (!items.length) return alert("Escolha pelo menos uma pizza.");
-    const stockError = getStockValidationError(items);
-    if (stockError) return alert(stockError);
     const clienteNome = document.getElementById("quick-cliente").value.trim();
     const cidade = document.getElementById("quick-cidade").value.trim();
     const vendedor = document.getElementById("quick-vendedor").value.trim();
@@ -3540,10 +3527,10 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       valorFinal: totals.final,
       pago: false
     };
-    const { error } = await supabaseClient.rpc("criar_pedido_com_reserva", { p_pedido: quickPedidoData });
+    const { data: pedidoSalvo, error } = await supabaseClient.rpc("criar_pedido_com_reserva", { p_pedido: quickPedidoData });
     hideLoader();
     if(error) return showSaveStatus(formatSupabaseError(error, "Erro ao registrar venda rápida"), false);
-    showSaveStatus("Pedido rápido registrado e estoque reservado!");
+    showSaveStatus(pedidoSalvo?.estoque_baixado ? "Pedido rápido registrado e estoque reservado." : "Pedido rápido registrado como encomenda/produção pendente.");
     quickSaleItems = {};
     document.getElementById("quick-pix-box")?.classList.add("hidden");
     await loadDataFromSupabase();
@@ -4229,7 +4216,12 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
       if (!pizza) return alert("Selecione uma pizza.");
       const pagamento = document.getElementById("m-pedido-pagamento").value;
       const disponivel = getAvailableStockForPizza(pizzaId, mobileOrderItems);
-      if (qtd > disponivel) return alert(`Estoque insuficiente para ${pizza.nome}. Disponível: ${disponivel}.`);
+      if (qtd > disponivel) {
+        const seguir = confirm(`Estoque livre para ${pizza.nome}: ${disponivel}.
+
+Lançar mesmo assim como encomenda/produção pendente?`);
+        if (!seguir) return;
+      }
       mobileOrderItems.push({ pizzaId, pizzaNome: `${pizza.nome} (${pizza.tamanho || ""})`, qtd, isCustom: false, preco: getPrecoPorPagamento(pizza.precoVenda, pagamento) });
       renderMobileOrderCart(); updateMobileOrderTotal();
     });
@@ -4267,11 +4259,6 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
       alert("Preencha cliente, cidade e vendedor.");
       return false;
     }
-    const stockError = getStockValidationError(pedidoData.items || []);
-    if (stockError) {
-      alert(stockError);
-      return false;
-    }
     showLoader();
     try {
       let cliente = database.clientes.find((c) => (c.nome || "").toLowerCase() === pedidoData.cliente.toLowerCase() && (c.cidade || "").toLowerCase() === pedidoData.cidade.toLowerCase());
@@ -4285,7 +4272,7 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
       const r = await supabaseClient.rpc("criar_pedido_com_reserva", { p_pedido: newPedido });
       if (r.error) throw r.error;
       mobileOrderItems = [];
-      showSaveStatus("Pedido registrado pelo celular e estoque reservado!");
+      showSaveStatus(r.data?.estoque_baixado ? "Pedido registrado pelo celular e estoque reservado." : "Pedido registrado pelo celular como encomenda/produção pendente.");
       await loadDataFromSupabase();
       if ((pedidoData.pagamento || "").toLowerCase() === "pix") {
         openMobilePixModal(pedidoData.valorFinal || pedidoData.valorTotal, pedidoData.cliente);
@@ -4324,23 +4311,17 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
       if (!box) return;
       const pay = document.getElementById("m-venda-pagamento")?.value || pagamento;
       box.innerHTML = database.estoque.filter((p) => !term || (p.nome || "").toLowerCase().includes(term)).slice(0, 60).map((p) => {
-        const max = Number(p.qtd || 0);
-        const qty = Math.min(Number(mobileSaleItems[p.id] || 0), max);
+        const qty = Number(mobileSaleItems[p.id] || 0);
         mobileSaleItems[p.id] = qty;
-        const plusDisabled = qty >= max ? "disabled" : "";
-        return `<div class="m-pizza-row"><div><b>${escapeHTML(p.nome)} (${escapeHTML(p.tamanho)})</b><div class="m-line">Estoque ${p.qtd} · ${formatCurrency(getPrecoPorPagamento(p.precoVenda, pay))}</div></div><button type="button" class="m-mini-btn" data-pizza-minus="${p.id}">−</button><input type="number" min="0" max="${max}" value="${qty}" data-pizza-qty="${p.id}"><button type="button" class="m-mini-btn" ${plusDisabled} data-pizza-plus="${p.id}">+</button></div>`;
+        return `<div class="m-pizza-row"><div><b>${escapeHTML(p.nome)} (${escapeHTML(p.tamanho)})</b><div class="m-line">Estoque ${p.qtd} · ${formatCurrency(getPrecoPorPagamento(p.precoVenda, pay))}</div></div><button type="button" class="m-mini-btn" data-pizza-minus="${p.id}">−</button><input type="number" min="0" value="${qty}" data-pizza-qty="${p.id}"><button type="button" class="m-mini-btn" data-pizza-plus="${p.id}">+</button></div>`;
       }).join("");
       box.querySelectorAll("[data-pizza-plus]").forEach((btn) => btn.onclick = () => {
-        const pizza = database.estoque.find((p) => p.id === btn.dataset.pizzaPlus);
-        const max = Number(pizza?.qtd || 0);
-        mobileSaleItems[btn.dataset.pizzaPlus] = Math.min(max, Number(mobileSaleItems[btn.dataset.pizzaPlus] || 0) + 1);
+        mobileSaleItems[btn.dataset.pizzaPlus] = Number(mobileSaleItems[btn.dataset.pizzaPlus] || 0) + 1;
         renderRows(); updateSaleTotal();
       });
       box.querySelectorAll("[data-pizza-minus]").forEach((btn) => btn.onclick = () => { mobileSaleItems[btn.dataset.pizzaMinus] = Math.max(0, Number(mobileSaleItems[btn.dataset.pizzaMinus] || 0) - 1); renderRows(); updateSaleTotal(); });
       box.querySelectorAll("[data-pizza-qty]").forEach((inp) => inp.oninput = () => {
-        const pizza = database.estoque.find((p) => p.id === inp.dataset.pizzaQty);
-        const max = Number(pizza?.qtd || 0);
-        mobileSaleItems[inp.dataset.pizzaQty] = Math.min(max, Math.max(0, parseInt(inp.value) || 0));
+        mobileSaleItems[inp.dataset.pizzaQty] = Math.max(0, parseInt(inp.value) || 0);
         inp.value = mobileSaleItems[inp.dataset.pizzaQty];
         updateSaleTotal();
       });
