@@ -1,5 +1,5 @@
 document.addEventListener("DOMContentLoaded", () => {
-  window.SASSES_VERSION = "v38-menu-mobile-fix";
+  window.SASSES_VERSION = "v48-textos-cupons";
   console.log("Sasse's Pizza", window.SASSES_VERSION);
   const SUPABASE_URL = "https://iprnfzevdfmnraexthpy.supabase.co";
   const SUPABASE_ANON_KEY =
@@ -29,6 +29,9 @@ document.addEventListener("DOMContentLoaded", () => {
     massas_semanais: [],
     caixa_movimentos: [],
     vendedores: [],
+    loja_entrega_calendario: [],
+    loja_entrega_recorrencia: [],
+    loja_cupons: [],
   };
 
   const STOCK_ACTIVE_STATUSES = ["Pendente", "Confirmado", "Pronto", "Concluído"];
@@ -51,6 +54,20 @@ document.addEventListener("DOMContentLoaded", () => {
   let receitaAtualIngredientes = [];
   let saveStatusTimeout;
   const chartInstances = {};
+  let lojaCalendarMonth = new Date();
+  lojaCalendarMonth.setDate(1);
+  const lojaCalendarSelectedDates = new Set();
+  const lojaCalendarSelectedWeekdays = new Set();
+  let lojaCalendarMode = "datas";
+  const LOJA_WEEKDAYS = [
+    { value: 0, short: "Dom", label: "Domingo" },
+    { value: 1, short: "Seg", label: "Segunda" },
+    { value: 2, short: "Ter", label: "Terça" },
+    { value: 3, short: "Qua", label: "Quarta" },
+    { value: 4, short: "Qui", label: "Quinta" },
+    { value: 5, short: "Sex", label: "Sexta" },
+    { value: 6, short: "Sáb", label: "Sábado" },
+  ];
 
   const showLoader = () => (LOADER.style.display = "flex");
   const hideLoader = () => (LOADER.style.display = "none");
@@ -133,12 +150,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const isPedidoPago = (pedido) => pedido?.pago === true || pedido?.status === "Concluído";
   const isPedidoAtivoFinanceiro = (pedido) => !STOCK_RELEASED_STATUSES.includes(pedido?.status);
 
-  const formatSupabaseError = (error, fallback = "Erro ao salvar") => {
+  const formatSupabaseError = (error, fallback = "Não foi possível salvar") => {
     const message = error?.message || String(error || fallback);
-    const needsMigration = /criar_pedido_com_reserva|atualizar_status_pedido_seguro|atualizar_pedido_seguro|cancelar_pedido_seguro|ajustar_estoque_pizza_seguro|estoque_baixado|schema cache|function .* does not exist|Could not find/i.test(message);
-    return needsMigration
-      ? `${fallback}: ${message}. Rode a MIGRACAO_V21_ESTOQUE_SEGURO.sql no Supabase e recarregue o site.`
-      : `${fallback}: ${message}`;
+    console.error('[Sasses Gestão]', error);
+    if (/row-level security|RLS|permission denied|not allowed/i.test(message)) return `${fallback}: acesso bloqueado.`;
+    if (/schema cache|function .* does not exist|Could not find|column .* does not exist|relation .* does not exist/i.test(message)) return `${fallback}: atualização pendente no banco.`;
+    if (/duplicate key|unique constraint/i.test(message)) return `${fallback}: já existe um cadastro igual.`;
+    return `${fallback}: ${message}`;
   };
 
   const getStockMapFromItems = (items) => {
@@ -183,10 +201,10 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const getSystemAlerts = () => {
-    const pagamentos = database.pedidos.filter((p) => !isPedidoPago(p) && !STOCK_RELEASED_STATUSES.includes(p.status));
-    const estoqueNegativo = database.estoque.filter((p) => Number(p.qtd || 0) < 0);
-    const pedidosSemReserva = database.pedidos.filter((p) => orderHoldsStock(p.status) && p.estoque_baixado === false);
-    return { pagamentos, estoqueNegativo, pedidosSemReserva, total: pagamentos.length + estoqueNegativo.length + pedidosSemReserva.length };
+    const prontosParaConcluir = database.pedidos
+      .filter((p) => p.status === "Pronto")
+      .sort((a, b) => `${a.dataEntrega || ""} ${a.cliente || ""}`.localeCompare(`${b.dataEntrega || ""} ${b.cliente || ""}`));
+    return { prontosParaConcluir, total: prontosParaConcluir.length };
   };
 
   const refreshNotificationBadge = () => {
@@ -196,7 +214,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const alerts = getSystemAlerts();
     badge.textContent = alerts.total;
     btn.classList.toggle("has-alerts", alerts.total > 0);
-    btn.title = alerts.total > 0 ? `${alerts.total} pendência(s)` : "Sem pendências";
+    btn.title = alerts.total > 0 ? `${alerts.total} pedido(s) pronto(s) para concluir` : "Sem pendências";
   };
 
   const getCurrentSellerId = () => localStorage.getItem(SELLER_PROFILE_KEY) || "";
@@ -282,34 +300,23 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   window.openNotificationsModal = () => {
-    const { pagamentos, estoqueNegativo, pedidosSemReserva, total } = getSystemAlerts();
+    const { prontosParaConcluir, total } = getSystemAlerts();
     let contentHTML = `<div class="notification-list">`;
     if (total === 0) {
-      contentHTML += `<p class="empty-state">Tudo certo por aqui.</p>`;
+      contentHTML += `<p class="empty-state">Nenhum pedido pronto aguardando conclusão.</p>`;
     } else {
-      if (pagamentos.length > 0) {
-        contentHTML += `<h3>Pagamentos pendentes</h3>`;
-        pagamentos.slice(0, 30).forEach((p) => {
-          const valor = formatCurrency(p.valorFinal || p.valorTotal);
-          const semana = p.dataEntrega ? new Date(p.dataEntrega + "T00:00:00").toLocaleDateString("pt-BR") : "sem data";
-          contentHTML += `<div class="notification-item danger"><b>${p.cliente}</b><span>${valor} • ${semana}</span></div>`;
-        });
-      }
-      if (estoqueNegativo.length > 0) {
-        contentHTML += `<h3>Estoque negativo</h3>`;
-        estoqueNegativo.forEach((p) => {
-          contentHTML += `<div class="notification-item danger"><b>${p.nome} (${p.tamanho || ""})</b><span>${p.qtd} unidade(s)</span></div>`;
-        });
-      }
-      if (pedidosSemReserva.length > 0) {
-        contentHTML += `<h3>Pedidos para produzir</h3>`;
-        pedidosSemReserva.slice(0, 30).forEach((p) => {
-          contentHTML += `<div class="notification-item warning"><b>${escapeHTML(p.cliente || "Cliente")}</b><span>Pedido interno sem reserva de estoque. Produza/adicione ao estoque antes de marcar como pronto.</span></div>`;
-        });
-      }
+      contentHTML += `<h3>Prontos para concluir</h3>`;
+      prontosParaConcluir.slice(0, 40).forEach((p) => {
+        const valor = formatCurrency(p.valorFinal || p.valorTotal);
+        const data = p.dataEntrega ? new Date(p.dataEntrega + "T00:00:00").toLocaleDateString("pt-BR") : "sem data";
+        const action = isPedidoPago(p)
+          ? `<button class="action-btn complete-btn" onclick="window.updatePedidoStatus('${p.id}', 'Concluído')">Concluir</button>`
+          : `<button class="action-btn paid-btn complete-btn" onclick="window.marcarPedidoPago('${p.id}')">Pago</button>`;
+        contentHTML += `<div class="notification-item ready-to-finish"><div><b>${escapeHTML(p.cliente || "Cliente")}</b><span>${valor} • ${data}</span></div><div class="notification-actions">${action}<button class="action-btn edit-btn" onclick="window.openEditPedidoModal('${p.id}')">Abrir</button></div></div>`;
+      });
     }
     contentHTML += `</div>`;
-    openModal("notifications-modal", "Pendências", contentHTML);
+    openModal("notifications-modal", "Prontos para concluir", contentHTML);
   };
 
   const formatDateToYYYYMMDD = (date) => {
@@ -376,12 +383,17 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!y || !m || !d) return raw;
     return `${d}/${m}/${y}`;
   };
-  const formatHoraPreferencia = (value) => value ? String(value).slice(0, 5) : "-";
+  const formatHoraPreferencia = (value) => {
+    const hora = value ? String(value).slice(0, 5) : "";
+    return !hora || hora === "00:00" ? "-" : hora;
+  };
   const formatPedidoAgenda = (pedido) => {
     const data = formatDateBR(pedido?.dataEntrega);
     const hora = formatHoraPreferencia(pedido?.horario_preferencia || pedido?.horarioPreferencia);
     return hora === "-" ? data : `${data} às ${hora}`;
   };
+  const normalizeCidadeKey = (value) => String(value || "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase().replace(/\s+/g, " ");
+  const formatCalendarSlot = () => "Entrega cadastrada";
   const toRad = (value) => Number(value || 0) * Math.PI / 180;
   const distanceKm = (a, b) => {
     if (!Number.isFinite(Number(a?.lat)) || !Number.isFinite(Number(a?.lon)) || !Number.isFinite(Number(b?.lat)) || !Number.isFinite(Number(b?.lon))) return Infinity;
@@ -499,11 +511,29 @@ Deseja adicionar esse frete ao Valor Final?`)) {
         database.vendedores = vendedoresRes.data || [];
       } catch (e) { database.vendedores = []; }
 
+      try {
+        const calendarioRes = await supabaseClient
+          .from("loja_entrega_calendario")
+          .select("*")
+          .order("data", { ascending: true })
+          .order("cidade", { ascending: true });
+        database.loja_entrega_calendario = calendarioRes.data || [];
+      } catch (e) { database.loja_entrega_calendario = []; }
+
+      try {
+        const recorrenciaRes = await supabaseClient
+          .from("loja_entrega_recorrencia")
+          .select("*")
+          .order("cidade", { ascending: true })
+          .order("dia_semana", { ascending: true });
+        database.loja_entrega_recorrencia = recorrenciaRes.data || [];
+      } catch (e) { database.loja_entrega_recorrencia = []; }
+
       await syncClientsFromOrders();
       renderAll();
     } catch (error) {
       console.error(error);
-      showSaveStatus("Falha ao carregar dados.", false);
+      showSaveStatus("Não foi possível carregar os dados agora.", false);
     } finally {
       hideLoader();
     }
@@ -656,12 +686,292 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     `;
   };
 
+  const getLojaWeekdayLabel = (value) => (LOJA_WEEKDAYS.find((d) => d.value === Number(value))?.label || "Dia");
+  const getLojaWeekdayShort = (value) => (LOJA_WEEKDAYS.find((d) => d.value === Number(value))?.short || "Dia");
+
+  const populateLojaCalendarCityDatalist = () => {
+    const datalist = document.getElementById("loja-cal-cidades-list");
+    if (!datalist) return;
+    const cities = [...new Set([
+      ...database.clientes.map((c) => c.cidade),
+      ...database.pedidos.map((p) => p.cidade),
+      ...database.loja_entrega_calendario.map((e) => e.cidade),
+      ...database.loja_entrega_recorrencia.map((e) => e.cidade),
+      "Jaraguá do Sul", "Massaranduba", "Blumenau", "Guaramirim"
+    ].map((v) => String(v || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    datalist.innerHTML = cities.map((city) => `<option value="${escapeAttr(city)}"></option>`).join("");
+  };
+
+  const getLojaCalendarMonthKey = () => `${lojaCalendarMonth.getFullYear()}-${String(lojaCalendarMonth.getMonth() + 1).padStart(2, "0")}`;
+  const getLojaCalendarCity = () => document.getElementById("loja-cal-cidade")?.value.trim() || "";
+  const getLojaCalendarCityKey = () => normalizeCidadeKey(getLojaCalendarCity());
+
+  const getExistingDeliveryDaysForCurrentCity = () => {
+    const cityKey = getLojaCalendarCityKey();
+    const monthKey = getLojaCalendarMonthKey();
+    if (!cityKey) return {};
+    return database.loja_entrega_calendario
+      .filter((entry) => normalizeCidadeKey(entry.cidade) === cityKey && String(entry.data || "").startsWith(monthKey))
+      .reduce((acc, entry) => {
+        if (!acc[entry.data]) acc[entry.data] = [];
+        acc[entry.data].push(entry);
+        return acc;
+      }, {});
+  };
+
+  const getExistingRecurrencesForCurrentCity = () => {
+    const cityKey = getLojaCalendarCityKey();
+    if (!cityKey) return [];
+    return database.loja_entrega_recorrencia.filter((entry) => normalizeCidadeKey(entry.cidade) === cityKey);
+  };
+
+  const getActiveRecurrenceWeekdaysForCurrentCity = () => new Set(
+    getExistingRecurrencesForCurrentCity()
+      .filter((entry) => entry.ativo !== false)
+      .map((entry) => Number(entry.dia_semana))
+  );
+
+  const setLojaCalendarMode = (mode) => {
+    lojaCalendarMode = mode === "recorrente" ? "recorrente" : "datas";
+    document.querySelectorAll("[data-calendar-mode]").forEach((button) => {
+      const active = button.dataset.calendarMode === lojaCalendarMode;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+    document.querySelectorAll("[data-calendar-panel]").forEach((panel) => {
+      panel.hidden = panel.dataset.calendarPanel !== lojaCalendarMode;
+    });
+    if (lojaCalendarMode === "recorrente") renderLojaRecorrenciaPanel();
+    else renderLojaCalendarioGrade();
+  };
+
+  const renderLojaCalendarioGrade = () => {
+    const grid = document.getElementById("loja-calendario-grade");
+    const label = document.getElementById("loja-cal-month-label");
+    const counter = document.getElementById("loja-cal-selected-count");
+    const selectedList = document.getElementById("loja-cal-selected-list");
+    if (!grid) return;
+
+    const monthLabel = lojaCalendarMonth.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+    if (label) label.textContent = monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1);
+
+    const city = getLojaCalendarCity();
+    const existingByDate = getExistingDeliveryDaysForCurrentCity();
+    const recurrenceWeekdays = getActiveRecurrenceWeekdaysForCurrentCity();
+    const today = formatDateToYYYYMMDD(new Date());
+    const year = lojaCalendarMonth.getFullYear();
+    const month = lojaCalendarMonth.getMonth();
+    const first = new Date(year, month, 1);
+    const last = new Date(year, month + 1, 0);
+    const startOffset = first.getDay();
+    const weekDays = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+
+    const cells = weekDays.map((day) => `<div class="bulk-calendar-weekday">${day}</div>`);
+    for (let i = 0; i < startOffset; i++) cells.push('<div class="bulk-calendar-empty"></div>');
+
+    for (let day = 1; day <= last.getDate(); day++) {
+      const date = new Date(year, month, day);
+      const iso = formatDateToYYYYMMDD(date);
+      const isPast = iso < today;
+      const existing = existingByDate[iso] || [];
+      const hasOneOffActive = existing.some((entry) => entry.ativo !== false);
+      const hasPausedDate = existing.length && !hasOneOffActive;
+      const isRecurring = recurrenceWeekdays.has(date.getDay()) && !hasPausedDate;
+      const isSelected = lojaCalendarSelectedDates.has(iso);
+      const isAlreadyAvailable = hasOneOffActive || isRecurring;
+      const disabled = isPast || isAlreadyAvailable;
+      const labelText = hasOneOffActive ? "Marcado" : hasPausedDate ? "Pausado" : isRecurring ? "Recorrente" : isSelected ? "Selecionado" : "";
+      cells.push(`
+        <button type="button" class="bulk-calendar-day ${isSelected ? 'is-selected' : ''} ${hasOneOffActive ? 'is-registered' : ''} ${isRecurring ? 'is-recurring' : ''} ${hasPausedDate ? 'is-paused' : ''} ${isPast ? 'is-past' : ''}" data-date="${iso}" ${disabled ? 'disabled' : ''}>
+          <strong>${day}</strong>
+          <span>${labelText}</span>
+        </button>`);
+    }
+
+    grid.innerHTML = cells.join("");
+    grid.querySelectorAll(".bulk-calendar-day[data-date]:not(:disabled)").forEach((button) => {
+      button.addEventListener("click", () => {
+        const date = button.dataset.date;
+        if (lojaCalendarSelectedDates.has(date)) lojaCalendarSelectedDates.delete(date);
+        else lojaCalendarSelectedDates.add(date);
+        renderLojaCalendarioGrade();
+      });
+    });
+
+    const selectedDates = [...lojaCalendarSelectedDates].sort();
+    if (counter) {
+      const count = selectedDates.length;
+      counter.textContent = count ? `${count} dia(s) selecionado(s)${city ? ` para ${city}` : ''}.` : 'Nenhum dia selecionado.';
+    }
+    if (selectedList) {
+      selectedList.innerHTML = selectedDates.length
+        ? selectedDates.map((date) => `<button type="button" class="selected-day-chip" data-remove-date="${date}">${formatDateBR(date)} <span>×</span></button>`).join("")
+        : '<div class="empty-state compact">Clique nos dias do calendário para marcar entregas avulsas.</div>';
+      selectedList.querySelectorAll('[data-remove-date]').forEach((button) => {
+        button.addEventListener('click', () => {
+          lojaCalendarSelectedDates.delete(button.dataset.removeDate);
+          renderLojaCalendarioGrade();
+        });
+      });
+    }
+  };
+
+  const renderLojaRecorrenciaPanel = () => {
+    const container = document.getElementById("loja-recorrencia-weekdays");
+    const counter = document.getElementById("loja-rec-selected-count");
+    if (!container) return;
+    const existing = getExistingRecurrencesForCurrentCity();
+    const active = new Set(existing.filter((entry) => entry.ativo !== false).map((entry) => Number(entry.dia_semana)));
+    const paused = new Set(existing.filter((entry) => entry.ativo === false).map((entry) => Number(entry.dia_semana)));
+
+    container.innerHTML = LOJA_WEEKDAYS.map((day) => {
+      const selected = lojaCalendarSelectedWeekdays.has(day.value);
+      const isActive = active.has(day.value);
+      const isPaused = paused.has(day.value);
+      return `<button type="button" class="weekday-toggle ${selected ? 'is-selected' : ''} ${isActive ? 'is-registered' : ''} ${isPaused ? 'is-paused' : ''}" data-weekday="${day.value}">
+        <strong>${day.short}</strong>
+        <span>${isActive ? 'Recorrente' : isPaused ? 'Pausado' : selected ? 'Selecionado' : day.label}</span>
+      </button>`;
+    }).join("");
+
+    container.querySelectorAll("[data-weekday]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const day = Number(button.dataset.weekday);
+        if (lojaCalendarSelectedWeekdays.has(day)) lojaCalendarSelectedWeekdays.delete(day);
+        else lojaCalendarSelectedWeekdays.add(day);
+        renderLojaRecorrenciaPanel();
+      });
+    });
+
+    if (counter) {
+      const selected = [...lojaCalendarSelectedWeekdays].sort((a, b) => a - b).map(getLojaWeekdayLabel);
+      counter.textContent = selected.length ? `${selected.length} dia(s) da semana selecionado(s): ${selected.join(', ')}.` : 'Nenhum dia da semana selecionado.';
+    }
+  };
+
+  const renderLojaCalendario = () => {
+    const list = document.getElementById("loja-calendario-list");
+    if (!list) return;
+    populateLojaCalendarCityDatalist();
+    renderLojaCalendarioGrade();
+    renderLojaRecorrenciaPanel();
+    setLojaCalendarMode(lojaCalendarMode);
+
+    const today = formatDateToYYYYMMDD(new Date());
+    const recorrencias = database.loja_entrega_recorrencia
+      .slice()
+      .sort((a, b) => `${a.cidade} ${a.dia_semana}`.localeCompare(`${b.cidade} ${b.dia_semana}`));
+    const datas = database.loja_entrega_calendario
+      .filter((entry) => entry.data >= today)
+      .sort((a, b) => `${a.cidade} ${a.data}`.localeCompare(`${b.cidade} ${b.data}`));
+
+    if (!recorrencias.length && !datas.length) {
+      list.innerHTML = '<div class="empty-state compact">Nenhuma entrega cadastrada.</div>';
+      return;
+    }
+
+    const recorrenciasByCity = recorrencias.reduce((acc, entry) => {
+      const key = normalizeCidadeKey(entry.cidade);
+      if (!acc[key]) acc[key] = { cidade: entry.cidade, entries: [] };
+      acc[key].entries.push(entry);
+      return acc;
+    }, {});
+    const datasByCity = datas.reduce((acc, entry) => {
+      const key = normalizeCidadeKey(entry.cidade);
+      if (!acc[key]) acc[key] = { cidade: entry.cidade, entries: [] };
+      acc[key].entries.push(entry);
+      return acc;
+    }, {});
+
+    const recorrenciasHtml = Object.values(recorrenciasByCity).map((group) => {
+      const ativos = group.entries.filter((entry) => entry.ativo !== false).sort((a, b) => Number(a.dia_semana) - Number(b.dia_semana));
+      const pausados = group.entries.filter((entry) => entry.ativo === false).sort((a, b) => Number(a.dia_semana) - Number(b.dia_semana));
+      return `<article class="calendar-city-card recurrence-card">
+        <header><div><strong>${escapeHTML(group.cidade)}</strong><small>${ativos.length} recorrente(s) · ${pausados.length} pausado(s)</small></div></header>
+        <div class="calendar-chip-list">
+          ${ativos.map((entry) => `<div class="calendar-date-chip recurring"><span>${getLojaWeekdayLabel(entry.dia_semana)}</span><div class="calendar-chip-actions"><button class="mini-btn" type="button" onclick="window.toggleLojaRecorrencia('${entry.id}', false)">Pausar</button><button class="mini-btn danger" type="button" onclick="window.deleteLojaRecorrencia('${entry.id}')">Remover</button></div></div>`).join('')}
+          ${pausados.map((entry) => `<div class="calendar-date-chip paused"><span>${getLojaWeekdayLabel(entry.dia_semana)}</span><div class="calendar-chip-actions"><button class="mini-btn" type="button" onclick="window.toggleLojaRecorrencia('${entry.id}', true)">Ativar</button><button class="mini-btn danger" type="button" onclick="window.deleteLojaRecorrencia('${entry.id}')">Remover</button></div></div>`).join('')}
+        </div>
+      </article>`;
+    }).join("");
+
+    const datasHtml = Object.values(datasByCity).map((group) => {
+      const ativos = group.entries.filter((entry) => entry.ativo !== false).sort((a, b) => a.data.localeCompare(b.data));
+      const pausados = group.entries.filter((entry) => entry.ativo === false).sort((a, b) => a.data.localeCompare(b.data));
+      return `<article class="calendar-city-card">
+        <header><div><strong>${escapeHTML(group.cidade)}</strong><small>${ativos.length} data(s) · ${pausados.length} pausada(s)</small></div></header>
+        <div class="calendar-chip-list">
+          ${ativos.map((entry) => `<div class="calendar-date-chip active"><span>${formatDateBR(entry.data)}</span><div class="calendar-chip-actions"><button class="mini-btn" type="button" onclick="window.toggleLojaCalendario('${entry.id}', false)">Pausar</button><button class="mini-btn danger" type="button" onclick="window.deleteLojaCalendario('${entry.id}')">Remover</button></div></div>`).join('')}
+          ${pausados.map((entry) => `<div class="calendar-date-chip paused"><span>${formatDateBR(entry.data)}</span><div class="calendar-chip-actions"><button class="mini-btn" type="button" onclick="window.toggleLojaCalendario('${entry.id}', true)">Ativar</button><button class="mini-btn danger" type="button" onclick="window.deleteLojaCalendario('${entry.id}')">Remover</button></div></div>`).join('')}
+        </div>
+      </article>`;
+    }).join("");
+
+    list.innerHTML = `
+      <div class="calendar-saved-section">
+        <h4>Recorrências por dia da semana</h4>
+        ${recorrenciasHtml ? `<div class="calendar-city-groups">${recorrenciasHtml}</div>` : '<div class="empty-state compact">Nenhuma recorrência cadastrada.</div>'}
+      </div>
+      <div class="calendar-saved-section">
+        <h4>Dias específicos do mês</h4>
+        ${datasHtml ? `<div class="calendar-city-groups">${datasHtml}</div>` : '<div class="empty-state compact">Nenhum dia específico cadastrado.</div>'}
+      </div>`;
+  };
+
+
+  const normalizeCupomCodigo = (value) => String(value || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 32);
+
+  const resetCupomForm = () => {
+    const ids = ['cupom-id', 'cupom-codigo', 'cupom-valor', 'cupom-minimo', 'cupom-inicio', 'cupom-fim', 'cupom-limite'];
+    ids.forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+    const tipo = document.getElementById('cupom-tipo');
+    if (tipo) tipo.value = 'percentual';
+    const ativo = document.getElementById('cupom-ativo');
+    if (ativo) ativo.checked = true;
+  };
+
+  const renderLojaCupons = () => {
+    const list = document.getElementById('loja-cupons-list');
+    if (!list) return;
+    const cupons = database.loja_cupons || [];
+    if (!cupons.length) {
+      list.innerHTML = '<div class="empty-state compact">Nenhum cupom cadastrado.</div>';
+      return;
+    }
+    list.innerHTML = cupons.map((cupom) => {
+      const valor = cupom.tipo === 'percentual' ? `${Number(cupom.valor || 0).toString().replace('.', ',')}%` : formatCurrency(cupom.valor || 0);
+      const validade = [cupom.inicio_em ? `de ${formatDateBR(cupom.inicio_em)}` : '', cupom.fim_em ? `até ${formatDateBR(cupom.fim_em)}` : ''].filter(Boolean).join(' ');
+      const usos = cupom.uso_limite ? `${cupom.uso_total || 0}/${cupom.uso_limite} usos` : `${cupom.uso_total || 0} uso(s)`;
+      return `<article class="coupon-admin-item ${cupom.ativo === false ? 'is-off' : ''}"><div><strong>${escapeHTML(cupom.codigo)}</strong><small>${escapeHTML(valor)}${cupom.minimo_pedido > 0 ? ` · mínimo ${formatCurrency(cupom.minimo_pedido)}` : ''}${validade ? ` · ${escapeHTML(validade)}` : ''} · ${escapeHTML(usos)}</small></div><div class="coupon-admin-buttons"><button class="mini-btn" type="button" onclick="window.editLojaCupom('${cupom.id}')">Editar</button><button class="mini-btn" type="button" onclick="window.toggleLojaCupom('${cupom.id}', ${cupom.ativo === false ? 'true' : 'false'})">${cupom.ativo === false ? 'Ativar' : 'Pausar'}</button><button class="mini-btn danger" type="button" onclick="window.deleteLojaCupom('${cupom.id}')">Remover</button></div></article>`;
+    }).join('');
+  };
+
+  window.editLojaCupom = (id) => {
+    const cupom = (database.loja_cupons || []).find((item) => item.id === id);
+    if (!cupom) return;
+    document.getElementById('cupom-id').value = cupom.id;
+    document.getElementById('cupom-codigo').value = cupom.codigo || '';
+    document.getElementById('cupom-tipo').value = cupom.tipo || 'percentual';
+    document.getElementById('cupom-valor').value = cupom.valor || '';
+    document.getElementById('cupom-minimo').value = cupom.minimo_pedido || '';
+    document.getElementById('cupom-inicio').value = cupom.inicio_em || '';
+    document.getElementById('cupom-fim').value = cupom.fim_em || '';
+    document.getElementById('cupom-limite').value = cupom.uso_limite || '';
+    document.getElementById('cupom-ativo').checked = cupom.ativo !== false;
+    document.getElementById('cupom-codigo').focus();
+  };
+
+  window.toggleLojaCupom = async (id, ativo) => { try { showLoader(); const { error } = await supabaseClient.from('loja_cupons').update({ ativo }).eq('id', id); if (error) throw error; await loadDataFromSupabase(); showSaveStatus(ativo ? 'Cupom ativado.' : 'Cupom pausado.'); } catch (error) { showSaveStatus(formatSupabaseError(error, 'Não foi possível atualizar o cupom'), false); } finally { hideLoader(); } };
+  window.deleteLojaCupom = async (id) => { if (!confirm('Remover esse cupom?')) return; try { showLoader(); const { error } = await supabaseClient.from('loja_cupons').delete().eq('id', id); if (error) throw error; await loadDataFromSupabase(); showSaveStatus('Cupom removido.'); } catch (error) { showSaveStatus(formatSupabaseError(error, 'Não foi possível remover o cupom'), false); } finally { hideLoader(); } };
+
   const renderLojaHub = () => {
     const kpis = document.getElementById("loja-kpis");
     const confirmList = document.getElementById("loja-confirmacoes-list");
     const catalogList = document.getElementById("loja-catalogo-list");
     const proximosList = document.getElementById("loja-proximos-list");
     if (!kpis || !confirmList || !catalogList || !proximosList) return;
+    renderLojaCalendario();
+    renderLojaCupons();
 
     const aguardando = database.pedidos
       .filter((p) => p.status === "Pendente")
@@ -714,7 +1024,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
 
   const applyDefaultPedidosFilters = (force = false) => {
     const statusSelect = document.getElementById("filter-modal-status");
-    if (statusSelect && (force || !statusSelect.value)) statusSelect.value = "ConfirmadoNaoConcluido";
+    if (statusSelect && (force || !statusSelect.value)) statusSelect.value = "NaoProntos";
 
     const semanaSelect = document.getElementById("filter-modal-semana");
     if (semanaSelect) {
@@ -966,6 +1276,16 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     btn.addEventListener("click", () => openTab(btn.dataset.openTab));
   });
 
+  const lojaCalendarDetails = document.getElementById("loja-calendar-details");
+  const lojaCalendarSummaryAction = document.querySelector(".calendar-summary-action");
+  if (lojaCalendarDetails && lojaCalendarSummaryAction) {
+    const updateCalendarSummaryLabel = () => {
+      lojaCalendarSummaryAction.textContent = lojaCalendarDetails.open ? "Fechar calendário" : "Abrir calendário";
+    };
+    lojaCalendarDetails.addEventListener("toggle", updateCalendarSummaryLabel);
+    updateCalendarSummaryLabel();
+  }
+
   document.getElementById("brand-home")?.addEventListener("click", () => openTab("inicio"));
   document.getElementById("brand-home")?.addEventListener("keypress", (e) => {
     if (e.key === "Enter" || e.key === " ") openTab("inicio");
@@ -1026,7 +1346,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       showSaveStatus("Vendedor salvo e ativado neste navegador.");
       closeModal("profile-modal");
     } catch (error) {
-      showSaveStatus("Erro ao salvar vendedor. Rode a MIGRAÇÃO_V12.sql se ainda não rodou. " + error.message, false);
+      showSaveStatus(formatSupabaseError(error, "Não foi possível salvar vendedor"), false);
     } finally {
       hideLoader();
     }
@@ -1373,7 +1693,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       const normalizedVendedor = vendedorFirstName.charAt(0).toUpperCase() + vendedorFirstName.slice(1).toLowerCase();
       const vendedorMatch = !vendedorFilter || normalizedVendedor === vendedorFilter || vendedorName.toLowerCase() === vendedorFilter.toLowerCase();
       const semanaMatch = !semanaFilter || (p.dataEntrega && getWeekStart(p.dataEntrega) === semanaFilter);
-      const statusMatch = !statusFilter || (statusFilter === "ConfirmadoNaoConcluido" ? ["Confirmado", "Pronto"].includes(p.status) : p.status === statusFilter);
+      const statusMatch = !statusFilter || ((statusFilter === "NaoProntos" || statusFilter === "ConfirmadoNaoConcluido") ? ["Pendente", "Confirmado"].includes(p.status) : p.status === statusFilter);
       const pagamentoStatusMatch = !pagamentoStatusFilter || (pagamentoStatusFilter === "pago" ? isPedidoPago(p) : (isPedidoAtivoFinanceiro(p) && !isPedidoPago(p)));
       const formaPagamentoMatch = !formaPagamentoFilter || p.pagamento === formaPagamentoFilter;
       const valorExibido = p.valorFinal || p.valorTotal;
@@ -1440,13 +1760,15 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     const printBtn = `<button class="action-btn info-btn" onclick="window.printPedido('${pedido.id}')">🖨️</button>`;
     const confirmarBtn = `<button class="action-btn confirm-btn" onclick="window.updatePedidoStatus('${pedido.id}', 'Confirmado')">Confirmar</button>`;
     const rejeitarBtn = `<button class="action-btn reject-btn" onclick="window.updatePedidoStatus('${pedido.id}', 'Negado')">Rejeitar</button>`;
+    const prontoBtn = `<button class="action-btn" style="background-color:var(--accent-color)" onclick="window.updatePedidoStatus('${pedido.id}', 'Pronto')">Marcar pronto</button>`;
+    const concluirBtn = `<button class="action-btn complete-btn" onclick="window.updatePedidoStatus('${pedido.id}', 'Concluído')">Concluir</button>`;
     switch (pedido.status) {
       case "Pendente":
         return `${confirmarBtn}${rejeitarBtn}${editarBtn}${pagoBtn}${pixBtn}${printBtn}${cancelarBtn}`;
       case "Confirmado":
-        return `${editarBtn}<button class="action-btn" style="background-color:var(--accent-color)" onclick="window.updatePedidoStatus('${pedido.id}', 'Pronto')">Marcar pronto</button>${pagoBtn}${pixBtn}${printBtn}${cancelarBtn}`;
+        return `${editarBtn}${prontoBtn}${pagoBtn}${pixBtn}${printBtn}${cancelarBtn}`;
       case "Pronto":
-        return `${editarBtn}<button class="action-btn complete-btn" onclick="window.updatePedidoStatus('${pedido.id}', 'Concluído')">Concluir</button>${pagoBtn}${pixBtn}${printBtn}${cancelarBtn}`;
+        return `${editarBtn}${isPedidoPago(pedido) ? concluirBtn : pagoBtn}${pixBtn}${printBtn}${cancelarBtn}`;
       case "Concluído":
         return `${editarBtn}${pixBtn}${printBtn}`;
       case "Cancelado":
@@ -1458,23 +1780,28 @@ Deseja adicionar esse frete ao Valor Final?`)) {
   };
 
   window.updatePedidoStatus = async (id, newStatus) => {
-    if (!ALL_ORDER_STATUSES.includes(newStatus)) {
-      showSaveStatus(`Status inválido: ${newStatus}`, false);
+    const pedido = database.pedidos.find((p) => p.id === id);
+    let targetStatus = newStatus;
+    if (pedido && newStatus === "Pronto" && isPedidoPago(pedido)) {
+      targetStatus = "Concluído";
+    }
+    if (!ALL_ORDER_STATUSES.includes(targetStatus)) {
+      showSaveStatus(`Status inválido: ${targetStatus}`, false);
       return;
     }
-    if (!confirm(`Tem certeza que deseja alterar o status para "${newStatus}"?`)) return;
+    const label = targetStatus === "Concluído" && newStatus === "Pronto" ? "Concluído" : targetStatus;
+    if (!confirm(`Alterar o pedido para "${label}"?`)) return;
 
     showLoader();
     try {
-      const { error } = await supabaseClient.rpc("atualizar_status_pedido_seguro", {
-        p_pedido_id: id,
-        p_novo_status: newStatus,
-      });
+      const payload = { p_pedido_id: id, p_novo_status: targetStatus };
+      if (targetStatus === "Concluído") payload.p_pago = true;
+      const { error } = await supabaseClient.rpc("atualizar_status_pedido_seguro", payload);
       if (error) throw error;
-      showSaveStatus("Status atualizado com estoque protegido.");
+      showSaveStatus(targetStatus === "Concluído" ? "Pedido concluído." : "Pedido atualizado.");
       await loadDataFromSupabase();
     } catch (error) {
-      showSaveStatus(formatSupabaseError(error, "Erro ao atualizar pedido"), false);
+      showSaveStatus(formatSupabaseError(error, "Não foi possível atualizar o pedido"), false);
     } finally {
       hideLoader();
     }
@@ -2211,7 +2538,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
             <label class="check-row"><input type="checkbox" name="permitir_encomenda" ${item.permitir_encomenda === false ? "" : "checked"}> <span>Permitir encomenda sem estoque</span></label>
             <label class="check-row"><input type="checkbox" name="destaque_loja" ${item.destaque_loja ? "checked" : ""}> <span>Destacar no topo do cardápio</span></label>
           </div>
-          <p class="edit-note">Sabores ocultos não aparecem na loja e também não podem ser enviados por pedido público depois da migração V31.</p>
+          <p class="edit-note">Sabores ocultos não aparecem na loja.</p>
         </div>
         <div class="edit-actions">
           <button type="button" class="secondary-btn" onclick="closeModal('edit-modal')">Cancelar</button>
@@ -3010,7 +3337,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     }
 
     if (!document.getElementById("filter-modal-status")?.value) {
-      document.getElementById("filter-modal-status").value = "ConfirmadoNaoConcluido";
+      document.getElementById("filter-modal-status").value = "NaoProntos";
     }
     updateFilterUX();
     openModal('filter-modal', 'Filtrar Pedidos');
@@ -3036,7 +3363,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     const forma = document.getElementById("filter-modal-forma-pagamento")?.value;
     if (statusValue) {
       const statusLabels = {
-        ConfirmadoNaoConcluido: "Confirmados não concluídos",
+        NaoProntos: "Não prontos",
         Pendente: "Aguardando confirmação",
         Confirmado: "Confirmados",
         Pronto: "Prontos",
@@ -3591,7 +3918,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       const normalizedVendedor = vendedorFirstName.charAt(0).toUpperCase() + vendedorFirstName.slice(1).toLowerCase();
       const vendedorMatch = !vendedorFilter || normalizedVendedor === vendedorFilter || vendedorName.toLowerCase() === vendedorFilter.toLowerCase();
       const semanaMatch = !semanaFilter || (p.dataEntrega && getWeekStart(p.dataEntrega) === semanaFilter);
-      const statusMatch = !statusFilter || (statusFilter === "ConfirmadoNaoConcluido" ? ["Confirmado", "Pronto"].includes(p.status) : p.status === statusFilter);
+      const statusMatch = !statusFilter || ((statusFilter === "NaoProntos" || statusFilter === "ConfirmadoNaoConcluido") ? ["Pendente", "Confirmado"].includes(p.status) : p.status === statusFilter);
       const pagamentoStatusMatch = !pagamentoStatusFilter || (pagamentoStatusFilter === "pago" ? isPedidoPago(p) : (isPedidoAtivoFinanceiro(p) && !isPedidoPago(p)));
       const formaPagamentoMatch = !formaPagamentoFilter || p.pagamento === formaPagamentoFilter;
       const valorExibido = p.valorFinal || p.valorTotal;
@@ -3731,12 +4058,24 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
   const getWeekOrders = (weekStart, statuses = ["Pendente", "Confirmado", "Pronto", "Concluído"]) => database.pedidos.filter(p => p.dataEntrega && getWeekStart(p.dataEntrega) === weekStart && statuses.includes(p.status));
 
   window.marcarPedidoPago = async (id) => {
+    const pedido = database.pedidos.find((p) => p.id === id);
     showLoader();
-    const { error } = await supabaseClient.from("pedidos").update({ pago: true }).eq("id", id);
-    hideLoader();
-    if (error) return showSaveStatus("Erro ao marcar como pago: " + error.message, false);
-    showSaveStatus("Pedido marcado como pago.");
-    await loadDataFromSupabase();
+    try {
+      if (pedido?.status === "Pronto") {
+        const { error } = await supabaseClient.from("pedidos").update({ pago: true, status: "Concluído" }).eq("id", id);
+        if (error) throw error;
+        showSaveStatus("Pedido pago e concluído.");
+      } else {
+        const { error } = await supabaseClient.from("pedidos").update({ pago: true }).eq("id", id);
+        if (error) throw error;
+        showSaveStatus("Pedido marcado como pago.");
+      }
+      await loadDataFromSupabase();
+    } catch (error) {
+      showSaveStatus(formatSupabaseError(error, "Não foi possível marcar como pago"), false);
+    } finally {
+      hideLoader();
+    }
   };
 
   window.printPedido = (id) => {
@@ -4304,7 +4643,7 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
       <div class="kpi-tile"><span>Pedidos pendentes</span><b>${pendentes.length}</b><small>Semana atual</small></div>
       <div class="kpi-tile"><span>Pizzas na semana</span><b>${quantidadeSemana}</b><small>Entre pedidos registrados</small></div>
       <div class="kpi-tile"><span>Receita já paga</span><b>${formatCurrency(faturamentoSemana)}</b><small>Pagamentos confirmados</small></div>
-      <div class="kpi-tile"><span>Alertas</span><b>${pendencias.total}</b><small>Pagamentos e estoque</small></div>`;
+      <div class="kpi-tile"><span>Pendências</span><b>${pendencias.total}</b><small>Prontos para concluir</small></div>`;
 
     pendingBox.innerHTML = `<div class="home-list">${pendentes.slice(0,6).map((p) => `<div class="home-list-item"><b>${escapeHTML(p.cliente || 'Cliente')}</b><span class="badge-inline ${isPedidoPago(p)?'success':'warning'}">${escapeHTML(p.status || 'Pendente')}</span><small>${(p.items || []).map((it) => `${it.qtd}x ${it.pizzaNome}`).join(' · ') || 'Sem itens'}<br>${formatCurrency(p.valorFinal || p.valorTotal || 0)}</small></div>`).join('') || '<p class="empty-state compact">Sem pedidos pendentes na semana.</p>'}</div>`;
 
@@ -4313,8 +4652,7 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
     sobraBox.innerHTML = `<div class="home-list">${sobras.map((x) => `<div class="home-list-item"><b>${escapeHTML(x.pizza.nome)} (${escapeHTML(x.pizza.tamanho)})</b><span class="badge-inline success">${x.sobra} disponível</span><small>Estoque: ${x.pizza.qtd} · Demanda da semana: ${computePizzaDemandForWeek(week)[x.pizza.id] || 0}</small></div>`).join('') || '<p class="empty-state compact">Sem sobras positivas nesta semana.</p>'}</div>`;
 
     alertBox.innerHTML = `<div class="home-list">
-      <div class="home-list-item"><b>Pagamentos pendentes</b><span class="badge-inline ${pendencias.pagamentos.length ? 'danger' : 'success'}">${pendencias.pagamentos.length}</span><small>${pendencias.pagamentos.slice(0,4).map((p) => `${p.cliente} · ${formatCurrency(p.valorFinal || p.valorTotal || 0)}`).join('<br>') || 'Nenhuma pendência.'}</small></div>
-      <div class="home-list-item"><b>Estoque negativo</b><span class="badge-inline ${pendencias.estoqueNegativo.length ? 'danger' : 'success'}">${pendencias.estoqueNegativo.length}</span><small>${pendencias.estoqueNegativo.slice(0,4).map((p) => `${p.nome} (${p.tamanho}) · ${p.qtd}`).join('<br>') || 'Nenhum item negativo.'}</small></div>
+      <div class="home-list-item"><b>Prontos para concluir</b><span class="badge-inline ${pendencias.total ? 'danger' : 'success'}">${pendencias.total}</span><small>${pendencias.prontosParaConcluir.slice(0,4).map((p) => `${p.cliente} · ${formatCurrency(p.valorFinal || p.valorTotal || 0)}`).join('<br>') || 'Nenhuma pendência.'}</small></div>
       <div class="home-list-item"><b>Ações rápidas</b><small><button class="home-action" data-open-tab="pedidos">Novo pedido</button> <button class="home-action" data-open-tab="cozinha">Abrir cozinha</button></small></div>
     </div>`;
     document.querySelectorAll("#inicio [data-open-tab]").forEach((btn) => btn.onclick = () => openTab(btn.dataset.openTab));
@@ -4384,15 +4722,16 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
       return;
     }
     const clientes = database.clientes.filter((c) => [c.nome, c.cidade, c.telefone].some((v) => String(v || '').toLowerCase().includes(term))).slice(0,8);
-    const pedidos = database.pedidos.filter((p) => [p.cliente, p.cidade, p.vendedor, ...(p.items || []).map((it) => it.pizzaNome)].some((v) => String(v || '').toLowerCase().includes(term))).slice(0,8);
+    const pedidos = database.pedidos.filter((p) => [p.cliente, p.telefone, p.cidade, p.vendedor, p.codigo_publico, p.id, ...(p.items || []).map((it) => it.pizzaNome)].some((v) => String(v || '').toLowerCase().includes(term))).slice(0,8);
     const pizzas = database.estoque.filter((p) => [p.nome, p.tamanho].some((v) => String(v || '').toLowerCase().includes(term))).slice(0,8);
     box.innerHTML = `<div class="search-results-groups">
       <div class="search-group"><h3>Clientes</h3>${clientes.map((c) => `<div class="search-result-item"><div><b>${escapeHTML(c.nome)}</b><small>${escapeHTML(c.cidade || 'Sem cidade')} · ${escapeHTML(c.telefone || 'Sem telefone')}</small></div><button class="home-action" data-open-tab="clientes">Abrir</button></div>`).join('') || '<p class="empty-state compact">Nenhum cliente.</p>'}</div>
-      <div class="search-group"><h3>Pedidos</h3>${pedidos.map((p) => `<div class="search-result-item"><div><b>${escapeHTML(p.cliente || 'Cliente')}</b><small>${escapeHTML((p.items || []).map((it) => `${it.qtd}x ${it.pizzaNome}`).join(' · '))}<br>${formatCurrency(p.valorFinal || p.valorTotal || 0)} · ${escapeHTML(p.status || '')}</small></div><button class="home-action" data-open-tab="pedidos">Abrir</button></div>`).join('') || '<p class="empty-state compact">Nenhum pedido.</p>'}</div>
+      <div class="search-group"><h3>Pedidos</h3>${pedidos.map((p) => `<div class="search-result-item"><div><b>${escapeHTML(p.cliente || 'Cliente')}</b><small>${escapeHTML((p.items || []).map((it) => `${it.qtd}x ${it.pizzaNome}`).join(' · '))}<br>${formatCurrency(p.valorFinal || p.valorTotal || 0)} · ${escapeHTML(p.status || '')}</small></div><button class="home-action" data-open-pedido="${p.id}">Abrir pedido</button></div>`).join('') || '<p class="empty-state compact">Nenhum pedido.</p>'}</div>
       <div class="search-group"><h3>Pizzas</h3>${pizzas.map((p) => `<div class="search-result-item"><div><b>${escapeHTML(p.nome)} (${escapeHTML(p.tamanho)})</b><small>Estoque ${p.qtd} · Preço ${formatCurrency(p.precoVenda)}</small></div><button class="home-action" data-open-tab="estoque">Abrir</button></div>`).join('') || '<p class="empty-state compact">Nenhuma pizza.</p>'}</div>
     </div>`;
     openModal('global-search-modal', 'Busca global', box.innerHTML, () => {
       document.querySelectorAll('#global-search-modal [data-open-tab]').forEach((btn) => btn.onclick = () => { closeModal('global-search-modal'); openTab(btn.dataset.openTab); });
+      document.querySelectorAll('#global-search-modal [data-open-pedido]').forEach((btn) => btn.onclick = () => { closeModal('global-search-modal'); openTab('pedidos'); window.openEditPedidoModal(btn.dataset.openPedido); });
     });
   };
   document.getElementById("global-search-btn")?.addEventListener("click", runGlobalSearch);
@@ -4852,6 +5191,194 @@ Lançar mesmo assim como encomenda/produção pendente?`);
   window.addEventListener("resize", hardFixMobileLayout);
   window.addEventListener("orientationchange", () => setTimeout(hardFixMobileLayout, 80));
   setTimeout(hardFixMobileLayout, 0);
+
+
+  document.getElementById("loja-cal-cidade")?.addEventListener("input", () => {
+    lojaCalendarSelectedDates.clear();
+    lojaCalendarSelectedWeekdays.clear();
+    renderLojaCalendario();
+  });
+  document.querySelectorAll("[data-calendar-mode]").forEach((button) => {
+    button.addEventListener("click", () => setLojaCalendarMode(button.dataset.calendarMode));
+  });
+  document.getElementById("loja-cal-prev")?.addEventListener("click", () => {
+    lojaCalendarMonth.setMonth(lojaCalendarMonth.getMonth() - 1);
+    lojaCalendarSelectedDates.clear();
+    renderLojaCalendario();
+  });
+  document.getElementById("loja-cal-next")?.addEventListener("click", () => {
+    lojaCalendarMonth.setMonth(lojaCalendarMonth.getMonth() + 1);
+    lojaCalendarSelectedDates.clear();
+    renderLojaCalendario();
+  });
+  document.getElementById("loja-cal-clear")?.addEventListener("click", () => {
+    lojaCalendarSelectedDates.clear();
+    renderLojaCalendarioGrade();
+  });
+  document.getElementById("loja-rec-clear")?.addEventListener("click", () => {
+    lojaCalendarSelectedWeekdays.clear();
+    renderLojaRecorrenciaPanel();
+  });
+  document.getElementById("loja-rec-save")?.addEventListener("click", async () => {
+    const cidade = getLojaCalendarCity();
+    if (!cidade) return showSaveStatus("Informe a cidade.", false);
+    if (!lojaCalendarSelectedWeekdays.size) return showSaveStatus("Selecione pelo menos um dia da semana.", false);
+
+    const cityKey = normalizeCidadeKey(cidade);
+    const selected = [...lojaCalendarSelectedWeekdays].sort((a, b) => a - b);
+    const existing = database.loja_entrega_recorrencia.filter((entry) => normalizeCidadeKey(entry.cidade) === cityKey && selected.includes(Number(entry.dia_semana)));
+    const existingDays = new Set(existing.map((entry) => Number(entry.dia_semana)));
+    const toInsert = selected.filter((dia_semana) => !existingDays.has(dia_semana));
+    const toReactivate = existing.filter((entry) => entry.ativo === false).map((entry) => entry.id);
+
+    if (!toInsert.length && !toReactivate.length) {
+      lojaCalendarSelectedWeekdays.clear();
+      renderLojaCalendario();
+      return showSaveStatus("Essa recorrência já estava cadastrada.");
+    }
+
+    try {
+      showLoader();
+      if (toInsert.length) {
+        const rows = toInsert.map((dia_semana) => ({ cidade, dia_semana, ativo: true }));
+        const { error } = await supabaseClient.from("loja_entrega_recorrencia").insert(rows);
+        if (error) throw error;
+      }
+      if (toReactivate.length) {
+        const { error } = await supabaseClient.from("loja_entrega_recorrencia").update({ ativo: true }).in("id", toReactivate);
+        if (error) throw error;
+      }
+      lojaCalendarSelectedWeekdays.clear();
+      await loadDataFromSupabase();
+      showSaveStatus("Recorrência salva.");
+    } catch (error) {
+      showSaveStatus(formatSupabaseError(error, "Erro ao salvar recorrência"), false);
+    } finally {
+      hideLoader();
+    }
+  });
+
+  document.getElementById("loja-calendario-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const cidade = getLojaCalendarCity();
+    if (!cidade) return showSaveStatus("Informe a cidade.", false);
+    if (!lojaCalendarSelectedDates.size) return showSaveStatus("Selecione pelo menos um dia no calendário.", false);
+
+    const cityKey = normalizeCidadeKey(cidade);
+    const selected = [...lojaCalendarSelectedDates].sort();
+    const existing = database.loja_entrega_calendario.filter((entry) => normalizeCidadeKey(entry.cidade) === cityKey && selected.includes(entry.data));
+    const existingDates = new Set(existing.map((entry) => entry.data));
+    const toInsert = selected.filter((date) => !existingDates.has(date));
+    const toReactivate = existing.filter((entry) => entry.ativo === false).map((entry) => entry.id);
+
+    if (!toInsert.length && !toReactivate.length) {
+      lojaCalendarSelectedDates.clear();
+      renderLojaCalendario();
+      return showSaveStatus("Esses dias já estavam cadastrados.");
+    }
+
+    try {
+      showLoader();
+      if (toInsert.length) {
+        const rows = toInsert.map((data) => ({
+          data,
+          cidade,
+          periodo: "A combinar",
+          hora_inicio: null,
+          hora_fim: null,
+          limite_pedidos: null,
+          observacao: null,
+          ativo: true,
+        }));
+        const { error } = await supabaseClient.from("loja_entrega_calendario").insert(rows);
+        if (error) throw error;
+      }
+      if (toReactivate.length) {
+        const { error } = await supabaseClient.from("loja_entrega_calendario").update({ ativo: true }).in("id", toReactivate);
+        if (error) throw error;
+      }
+      lojaCalendarSelectedDates.clear();
+      await loadDataFromSupabase();
+      showSaveStatus("Dias de entrega salvos.");
+    } catch (error) {
+      showSaveStatus(formatSupabaseError(error, "Erro ao salvar calendário"), false);
+    } finally {
+      hideLoader();
+    }
+  });
+
+
+  document.getElementById('loja-cupom-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const id = document.getElementById('cupom-id')?.value || '';
+    const payload = { codigo: normalizeCupomCodigo(document.getElementById('cupom-codigo')?.value), tipo: document.getElementById('cupom-tipo')?.value || 'percentual', valor: safeNumber(document.getElementById('cupom-valor')?.value, 0), minimo_pedido: safeNumber(document.getElementById('cupom-minimo')?.value, 0), inicio_em: document.getElementById('cupom-inicio')?.value || null, fim_em: document.getElementById('cupom-fim')?.value || null, uso_limite: document.getElementById('cupom-limite')?.value ? Number(document.getElementById('cupom-limite').value) : null, ativo: document.getElementById('cupom-ativo')?.checked !== false };
+    if (!payload.codigo || payload.codigo.length < 3) return showSaveStatus('Informe um código com pelo menos 3 caracteres.', false);
+    if (!payload.valor || payload.valor <= 0) return showSaveStatus('Informe o valor do desconto.', false);
+    if (payload.tipo === 'percentual' && payload.valor > 100) return showSaveStatus('Percentual máximo: 100%.', false);
+    try { showLoader(); const result = id ? await supabaseClient.from('loja_cupons').update(payload).eq('id', id) : await supabaseClient.from('loja_cupons').insert(payload); if (result.error) throw result.error; resetCupomForm(); await loadDataFromSupabase(); showSaveStatus('Cupom salvo.'); } catch (error) { showSaveStatus(formatSupabaseError(error, 'Não foi possível salvar o cupom'), false); } finally { hideLoader(); }
+  });
+  document.getElementById('cupom-limpar')?.addEventListener('click', resetCupomForm);
+  document.getElementById('cupom-codigo')?.addEventListener('input', (event) => { event.target.value = normalizeCupomCodigo(event.target.value); });
+
+  window.deleteLojaCalendario = async (id) => {
+    if (!confirm("Remover esse dia de entrega?")) return;
+    try {
+      showLoader();
+      const { error } = await supabaseClient.from("loja_entrega_calendario").delete().eq("id", id);
+      if (error) throw error;
+      await loadDataFromSupabase();
+      showSaveStatus("Dia removido.");
+    } catch (error) {
+      showSaveStatus(formatSupabaseError(error, "Erro ao remover calendário"), false);
+    } finally {
+      hideLoader();
+    }
+  };
+
+  window.toggleLojaCalendario = async (id, ativo) => {
+    try {
+      showLoader();
+      const { error } = await supabaseClient.from("loja_entrega_calendario").update({ ativo }).eq("id", id);
+      if (error) throw error;
+      await loadDataFromSupabase();
+      showSaveStatus(ativo ? "Dia ativado." : "Dia pausado.");
+    } catch (error) {
+      showSaveStatus(formatSupabaseError(error, "Erro ao atualizar calendário"), false);
+    } finally {
+      hideLoader();
+    }
+  };
+
+
+  window.deleteLojaRecorrencia = async (id) => {
+    if (!confirm("Remover essa recorrência?")) return;
+    try {
+      showLoader();
+      const { error } = await supabaseClient.from("loja_entrega_recorrencia").delete().eq("id", id);
+      if (error) throw error;
+      await loadDataFromSupabase();
+      showSaveStatus("Recorrência removida.");
+    } catch (error) {
+      showSaveStatus(formatSupabaseError(error, "Erro ao remover recorrência"), false);
+    } finally {
+      hideLoader();
+    }
+  };
+
+  window.toggleLojaRecorrencia = async (id, ativo) => {
+    try {
+      showLoader();
+      const { error } = await supabaseClient.from("loja_entrega_recorrencia").update({ ativo }).eq("id", id);
+      if (error) throw error;
+      await loadDataFromSupabase();
+      showSaveStatus(ativo ? "Recorrência ativada." : "Recorrência pausada.");
+    } catch (error) {
+      showSaveStatus(formatSupabaseError(error, "Erro ao atualizar recorrência"), false);
+    } finally {
+      hideLoader();
+    }
+  };
+
 
 loadDataFromSupabase();
 });
