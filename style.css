@@ -4742,3 +4742,114 @@ button {
   #mobile-app .m-actions .m-mini-btn.green{background:#16a34a;color:#fff;border:0;}
   #mobile-app .m-actions .m-mini-btn.danger{background:#dc2626;color:#fff;border:0;}
 }
+
+
+/* V43 - Calendário de entregas da loja */
+.section-heading-row{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem}.loja-calendar-card{margin-bottom:1.2rem}.loja-calendar-form{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:.8rem;align-items:end}.loja-calendar-form label{display:flex;flex-direction:column;gap:.35rem;font-weight:700;color:var(--text-color)}.loja-calendar-form input,.loja-calendar-form select{width:100%;padding:.7rem;border:1px solid var(--border-color);border-radius:10px}.loja-calendar-note{grid-column:span 2}.loja-calendar-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:.85rem;margin-top:1rem}.calendar-day-admin{border:1px solid var(--border-color);border-radius:14px;background:#fff;padding:1rem}.calendar-day-admin header{display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem}.calendar-day-admin header small{color:var(--text-light-color)}.calendar-city-list{display:flex;flex-direction:column;gap:.65rem}.calendar-city-row{display:flex;justify-content:space-between;gap:.8rem;align-items:flex-start;border:1px solid #e5e7eb;border-radius:12px;padding:.75rem;background:#fafafa}.calendar-city-row.is-off{opacity:.62;background:#f3f4f6}.calendar-city-row small{display:block;color:var(--text-light-color);margin-top:.2rem}.calendar-city-actions{display:flex;gap:.4rem;flex-wrap:wrap;justify-content:flex-end}.empty-state.compact{padding:.8rem;text-align:center}
+@media(max-width:980px){.loja-calendar-form{grid-template-columns:repeat(2,minmax(0,1fr))}.loja-calendar-note{grid-column:span 2}}@media(max-width:560px){.loja-calendar-form{grid-template-columns:1fr}.loja-calendar-note{grid-column:span 1}.calendar-city-row{flex-direction:column}.calendar-city-actions{justify-content:flex-start;width:100%}}
+
+
+/* V44 - calendário fixo de entregas em massa */
+.bulk-calendar-form{display:grid;gap:14px}.bulk-calendar-actions{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center}.bulk-calendar-actions strong{text-align:center;font-size:1.05rem}.bulk-calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;padding:12px;border:1px solid #e5e7eb;border-radius:16px;background:#f8fafc}.bulk-calendar-weekday{text-align:center;font-size:.76rem;font-weight:800;color:var(--text-light-color);text-transform:uppercase;letter-spacing:.04em}.bulk-calendar-empty{min-height:58px}.bulk-calendar-day{min-height:68px;border:1px solid #dbe3ef;border-radius:14px;background:#fff;color:var(--text-color);display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;padding:10px;text-align:left;transition:.15s ease}.bulk-calendar-day:not(:disabled):hover{border-color:var(--primary-color);box-shadow:0 8px 18px rgba(15,23,42,.08);transform:translateY(-1px)}.bulk-calendar-day strong{font-size:1rem}.bulk-calendar-day span{font-size:.72rem;color:var(--text-light-color)}.bulk-calendar-day.is-selected{border-color:#16a34a;background:#ecfdf3}.bulk-calendar-day.is-selected span{color:#15803d;font-weight:800}.bulk-calendar-day.is-registered{background:#e8f2ff;border-color:#93c5fd}.bulk-calendar-day.is-registered span{color:#1d4ed8;font-weight:800}.bulk-calendar-day.is-paused{background:#fff7ed;border-color:#fdba74}.bulk-calendar-day.is-paused span{color:#c2410c;font-weight:800}.bulk-calendar-day.is-past{opacity:.45}.bulk-calendar-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.button-row.compact{display:flex;gap:10px;flex-wrap:wrap}.ghost-btn{border:1px solid #dbe3ef;background:#fff;border-radius:12px;padding:.75rem 1rem;font-weight:800;color:var(--text-color)}
+@media(max-width:720px){.bulk-calendar-actions{grid-template-columns:1fr}.bulk-calendar-actions strong{order:-1}.bulk-calendar-grid{gap:5px;padding:8px}.bulk-calendar-day{min-height:56px;border-radius:10px;padding:7px}.bulk-calendar-day span{display:none}.bulk-calendar-footer{align-items:stretch}.button-row.compact,.button-row.compact button{width:100%}}
+
+
+/* V45 - calendário de entregas com UX melhor */
+.loja-calendar-card{padding:1.25rem}
+.bulk-calendar-layout{display:flex;flex-direction:column;gap:1rem}
+.bulk-calendar-toolbar{display:flex;align-items:end;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+.bulk-city-field{display:flex;flex-direction:column;gap:.4rem;font-weight:700;min-width:280px;max-width:360px;flex:1}
+.bulk-city-field input{width:100%;padding:.85rem 1rem;border:1px solid var(--border-color);border-radius:12px;background:#fff}
+.bulk-calendar-actions{display:flex;align-items:center;justify-content:flex-end;gap:.75rem;flex-wrap:wrap;min-width:420px;flex:1}
+.bulk-calendar-actions strong{font-size:1.15rem;min-width:180px;text-align:center;text-transform:capitalize}
+.bulk-calendar-body{display:grid;grid-template-columns:minmax(0,1.8fr) minmax(300px,.9fr);gap:1rem;align-items:start}
+.bulk-calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px;padding:14px;border:1px solid #e5e7eb;border-radius:18px;background:#f8fafc;min-width:0}
+.bulk-calendar-weekday{padding:.2rem 0;text-align:center;font-size:.78rem;font-weight:800;color:var(--text-light-color);text-transform:uppercase;letter-spacing:.04em}
+.bulk-calendar-empty{min-height:84px}
+.bulk-calendar-day{min-height:84px;border:1px solid #dbe3ef;border-radius:16px;background:#fff;color:var(--text-color);display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;padding:12px;text-align:left;transition:.15s ease;overflow:hidden}
+.bulk-calendar-day strong{font-size:1.08rem;line-height:1}
+.bulk-calendar-day span{font-size:.76rem;color:var(--text-light-color);font-weight:700}
+.bulk-calendar-sidebar{position:sticky;top:90px}
+.calendar-selection-card{border:1px solid #e5e7eb;border-radius:18px;background:#fff;padding:1rem;display:flex;flex-direction:column;gap:.9rem}
+.calendar-selection-card h4{margin:0;font-size:1.05rem}
+.selected-days-list{display:flex;flex-wrap:wrap;gap:.55rem;min-height:54px;align-content:flex-start}
+.selected-day-chip{display:inline-flex;align-items:center;gap:.45rem;padding:.55rem .8rem;border-radius:999px;border:1px solid #bbf7d0;background:#f0fdf4;color:#166534;font-weight:800}
+.selected-day-chip span{font-size:1rem;line-height:1}
+.sticky-actions{display:flex;flex-direction:column}
+.sticky-actions .home-action,.sticky-actions .ghost-btn{width:100%}
+.loja-calendar-list{margin-top:.25rem}
+.calendar-city-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1rem}
+.calendar-city-card{border:1px solid var(--border-color);border-radius:16px;background:#fff;padding:1rem}
+.calendar-city-card header{display:flex;justify-content:space-between;align-items:center;margin-bottom:.85rem}
+.calendar-city-card header small{display:block;color:var(--text-light-color);margin-top:.2rem}
+.calendar-chip-list{display:flex;flex-direction:column;gap:.65rem;max-height:340px;overflow:auto;padding-right:.2rem}
+.calendar-date-chip{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.7rem .8rem;border:1px solid #e5e7eb;border-radius:12px;background:#f9fafb}
+.calendar-date-chip.active{border-color:#bfdbfe;background:#eff6ff}
+.calendar-date-chip.paused{border-color:#fed7aa;background:#fff7ed}
+.calendar-date-chip span{font-weight:800}
+.calendar-chip-actions{display:flex;gap:.45rem;flex-wrap:wrap;justify-content:flex-end}
+.mini-btn{border:none;border-radius:999px;padding:.38rem .7rem;background:#2563eb;color:#fff;font-size:.78rem;font-weight:800}
+.mini-btn.danger{background:#dc2626}
+@media(max-width:1100px){.bulk-calendar-body{grid-template-columns:1fr}.bulk-calendar-sidebar{position:static}.bulk-calendar-actions{min-width:0;justify-content:flex-start}.bulk-calendar-actions strong{min-width:0;text-align:left}}
+@media(max-width:720px){.loja-calendar-card{padding:1rem}.bulk-calendar-toolbar{align-items:stretch}.bulk-city-field{max-width:none;min-width:0}.bulk-calendar-actions{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}.bulk-calendar-actions strong{grid-column:1 / -1;text-align:center;order:-1}.bulk-calendar-grid{gap:6px;padding:10px}.bulk-calendar-empty{min-height:56px}.bulk-calendar-day{min-height:60px;padding:8px;border-radius:12px}.bulk-calendar-day span{display:none}.selected-day-chip{width:100%;justify-content:space-between}.calendar-city-groups{grid-template-columns:1fr}.calendar-date-chip{flex-direction:column;align-items:flex-start}}
+
+
+/* V46 - calendário retrátil e seleção corrigida */
+.loja-calendar-card-collapsible{padding:0;overflow:hidden}
+.loja-calendar-details{display:block}
+.loja-calendar-summary{display:flex;align-items:center;justify-content:space-between;gap:1rem;cursor:pointer;padding:1.15rem 1.25rem;list-style:none;user-select:none}
+.loja-calendar-summary::-webkit-details-marker{display:none}
+.loja-calendar-summary h3{margin:0 0 .25rem 0}
+.loja-calendar-summary p{margin:0}
+.loja-calendar-summary::before{content:'▸';font-size:1.1rem;font-weight:900;color:var(--accent-color);transition:transform .15s ease}
+.loja-calendar-details[open] .loja-calendar-summary::before{transform:rotate(90deg)}
+.calendar-summary-action{margin-left:auto;border:1px solid #dbe3ef;background:#fff;border-radius:999px;padding:.6rem .9rem;font-weight:800;color:var(--text-color);white-space:nowrap}
+.loja-calendar-panel{padding:0 1.25rem 1.25rem;border-top:1px solid #eef2f7}
+.bulk-calendar-layout{margin-top:1rem}
+.bulk-calendar-toolbar{display:grid!important;grid-template-columns:minmax(260px,360px) 1fr;align-items:end!important;gap:1rem!important}
+.bulk-city-field{min-width:0!important;max-width:none!important;width:100%}
+.bulk-month-nav{display:grid;grid-template-columns:auto minmax(180px,240px) auto;gap:.8rem;align-items:center;justify-content:end;width:100%}
+.bulk-month-nav strong{font-size:1.15rem;text-align:center;text-transform:capitalize;white-space:nowrap}
+.bulk-calendar-actions{display:contents!important}
+.bulk-calendar-body{margin-top:1rem;display:grid!important;grid-template-columns:minmax(520px,1fr) minmax(290px,360px)!important;gap:1rem!important;align-items:start!important}
+.bulk-calendar-grid{width:100%;max-width:none;margin:0;grid-template-columns:repeat(7,minmax(72px,1fr))!important}
+.bulk-calendar-day{cursor:pointer}
+.bulk-calendar-day:disabled{cursor:not-allowed}
+.bulk-calendar-day.is-selected{outline:3px solid rgba(22,163,74,.22)}
+.selected-days-list .empty-state{width:100%}
+@media(max-width:1100px){.bulk-calendar-toolbar{grid-template-columns:1fr!important}.bulk-month-nav{justify-content:stretch;grid-template-columns:1fr auto 1fr}.bulk-calendar-body{grid-template-columns:1fr!important}.bulk-calendar-grid{grid-template-columns:repeat(7,minmax(0,1fr))!important}.loja-calendar-summary{align-items:flex-start}.calendar-summary-action{margin-left:0}}
+@media(max-width:720px){.loja-calendar-summary{padding:1rem;display:grid;grid-template-columns:auto 1fr;align-items:start}.calendar-summary-action{grid-column:1 / -1;width:100%;text-align:center}.loja-calendar-panel{padding:0 1rem 1rem}.bulk-month-nav{grid-template-columns:1fr 1fr}.bulk-month-nav strong{grid-column:1 / -1;grid-row:1;text-align:center}.bulk-calendar-grid{gap:5px!important;padding:8px!important}.bulk-calendar-day{min-height:54px!important}.bulk-calendar-empty{min-height:54px!important}}
+
+
+/* V47 - calendário por data ou recorrência */
+.calendar-manager{display:flex;flex-direction:column;gap:1rem;padding-top:1rem}
+.calendar-manager-head{display:grid;grid-template-columns:minmax(260px,380px) 1fr;gap:1rem;align-items:end}
+.calendar-mode-tabs{display:flex;gap:.55rem;justify-content:flex-end;flex-wrap:wrap}
+.calendar-mode-tabs button{border:1px solid #dbe3ef;background:#fff;border-radius:999px;padding:.72rem 1rem;font-weight:900;color:var(--text-color);cursor:pointer}
+.calendar-mode-tabs button.is-active{background:var(--accent-color);border-color:var(--accent-color);color:#fff}
+.bulk-calendar-layout[hidden],.recurrence-panel[hidden]{display:none!important}
+.bulk-month-nav{display:grid;grid-template-columns:auto minmax(180px,240px) auto;gap:.8rem;align-items:center;justify-content:center;width:100%}
+.bulk-month-nav strong{text-align:center;text-transform:capitalize;white-space:nowrap;font-size:1.15rem}
+.bulk-calendar-day.is-recurring{background:#f5f3ff;border-color:#c4b5fd}
+.bulk-calendar-day.is-recurring span{color:#6d28d9;font-weight:900}
+.recurrence-panel{border:1px solid #e5e7eb;border-radius:18px;background:#fff;padding:1rem;display:grid;gap:1rem}
+.recurrence-copy h4{margin:0 0 .25rem 0}.recurrence-copy p{margin:0}
+.recurrence-weekdays{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:.7rem}
+.weekday-toggle{min-height:88px;border:1px solid #dbe3ef;border-radius:16px;background:#fff;display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;text-align:left;padding:.85rem;cursor:pointer;transition:.15s ease;color:var(--text-color)}
+.weekday-toggle strong{font-size:1.08rem}.weekday-toggle span{font-size:.78rem;color:var(--text-light-color);font-weight:800}
+.weekday-toggle:hover{border-color:var(--accent-color);box-shadow:0 8px 20px rgba(15,23,42,.08);transform:translateY(-1px)}
+.weekday-toggle.is-selected{background:#ecfdf3;border-color:#86efac;outline:3px solid rgba(22,163,74,.16)}
+.weekday-toggle.is-registered{background:#f5f3ff;border-color:#c4b5fd}.weekday-toggle.is-registered span{color:#6d28d9}
+.weekday-toggle.is-paused{background:#fff7ed;border-color:#fdba74}.weekday-toggle.is-paused span{color:#c2410c}
+.recurrence-footer{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+.calendar-saved-section{margin-top:1rem}.calendar-saved-section>h4{margin:0 0 .75rem 0}
+.calendar-date-chip.recurring{border-color:#c4b5fd;background:#f5f3ff}
+.calendar-date-chip.recurring span{color:#6d28d9}
+@media(max-width:1100px){.calendar-manager-head{grid-template-columns:1fr}.calendar-mode-tabs{justify-content:flex-start}.bulk-month-nav{grid-template-columns:1fr auto 1fr}}
+@media(max-width:720px){.calendar-mode-tabs{display:grid;grid-template-columns:1fr 1fr}.bulk-month-nav{grid-template-columns:1fr 1fr}.bulk-month-nav strong{grid-column:1/-1;grid-row:1}.recurrence-weekdays{grid-template-columns:repeat(2,minmax(0,1fr))}.recurrence-footer{align-items:stretch}.recurrence-footer .button-row,.recurrence-footer .button-row button{width:100%}}
+
+.loja-coupons-card{margin-bottom:1.2rem}.coupon-admin-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.85rem;align-items:end}.coupon-admin-form label{display:flex;flex-direction:column;gap:.35rem;font-weight:800}.coupon-admin-form input,.coupon-admin-form select{padding:.75rem;border:1px solid var(--border-color);border-radius:12px;background:#fff}.coupon-toggle{align-self:center;flex-direction:row!important;gap:.5rem}.coupon-admin-actions{display:flex;gap:.6rem;flex-wrap:wrap}.coupons-admin-list{display:grid;gap:.75rem;margin-top:1rem}.coupon-admin-item{display:flex;align-items:center;justify-content:space-between;gap:1rem;border:1px solid #e5e7eb;border-radius:14px;background:#fff;padding:.9rem 1rem}.coupon-admin-item.is-off{opacity:.65;background:#f8fafc}.coupon-admin-item small{display:block;color:var(--text-light-color);margin-top:.25rem}.coupon-admin-buttons{display:flex;gap:.45rem;flex-wrap:wrap;justify-content:flex-end}@media(max-width:700px){.coupon-admin-item{flex-direction:column;align-items:flex-start}.coupon-admin-buttons{justify-content:flex-start;width:100%}.coupon-admin-actions,.coupon-admin-actions button{width:100%}}
+
+
+/* V49 - pendências de pedidos prontos */
+.notification-item.ready-to-finish{display:flex;align-items:center;justify-content:space-between;gap:1rem}.notification-actions{display:flex;gap:.5rem;flex-wrap:wrap;justify-content:flex-end}@media(max-width:720px){.notification-item.ready-to-finish{align-items:flex-start;flex-direction:column}.notification-actions{justify-content:flex-start}}
