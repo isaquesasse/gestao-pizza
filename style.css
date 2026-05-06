@@ -4853,3 +4853,7 @@ button {
 
 /* V49 - pendências de pedidos prontos */
 .notification-item.ready-to-finish{display:flex;align-items:center;justify-content:space-between;gap:1rem}.notification-actions{display:flex;gap:.5rem;flex-wrap:wrap;justify-content:flex-end}@media(max-width:720px){.notification-item.ready-to-finish{align-items:flex-start;flex-direction:column}.notification-actions{justify-content:flex-start}}
+
+
+/* V51 - filtros de pedidos */
+.empty-row{text-align:center!important;padding:1.25rem!important;color:var(--text-light-color);background:#f8fafc}.inline-reset-btn{margin-left:.75rem;border:1px solid var(--border-color);border-radius:999px;background:#fff;color:var(--primary-color);font-weight:800;padding:.45rem .8rem;cursor:pointer}.inline-reset-btn:hover{border-color:var(--primary-color);background:#eef4ff}
