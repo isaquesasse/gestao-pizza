@@ -1,5 +1,5 @@
 document.addEventListener("DOMContentLoaded", () => {
-  window.SASSES_VERSION = "v51-filtro-pedidos-corrigido";
+  window.SASSES_VERSION = "v52-dashboard-producao-corrigido";
   console.log("Sasse's Pizza", window.SASSES_VERSION);
   const SUPABASE_URL = "https://iprnfzevdfmnraexthpy.supabase.co";
   const SUPABASE_ANON_KEY =
@@ -2220,40 +2220,52 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     const tbody = document.getElementById("tabela-demanda-producao")?.querySelector("tbody");
     if (!tbody) return;
 
-    const sizeFilter = document.getElementById("filter-demanda-tamanho").value;
+    const sizeFilter = document.getElementById("filter-demanda-tamanho")?.value || "";
     const weekFilterSelect = document.getElementById("filter-demanda-semana");
-    const selectedWeek = weekFilterSelect.value || getWeekStart();
+    const selectedWeek = weekFilterSelect?.value || getWeekStart();
 
-    if (!weekFilterSelect.value && weekFilterSelect.options.length > 1) {
+    if (weekFilterSelect && !weekFilterSelect.value && weekFilterSelect.options.length > 1) {
       weekFilterSelect.value = selectedWeek;
     }
 
+    // Dashboard de produção:
+    // considera pedidos ativos da semana que ainda podem demandar estoque/produção.
+    // Concluído, Cancelado e Negado não entram.
+    const productionStatuses = new Set(["Pendente", "Confirmado", "Pronto"]);
     const demandMap = new Map();
+
     database.pedidos
-      .filter((p) => ["Pendente", "Confirmado"].includes(p.status) && getWeekStart(p.dataEntrega) === selectedWeek)
+      .filter((p) => {
+        if (!p?.dataEntrega) return false;
+        if (!productionStatuses.has(p.status || "Pendente")) return false;
+        return getWeekStart(p.dataEntrega) === selectedWeek;
+      })
       .forEach((p) => {
-        p.items.forEach((item) => {
-          if (!item.isCustom && item.pizzaId) {
-            const currentDemand = demandMap.get(item.pizzaId) || 0;
-            demandMap.set(item.pizzaId, currentDemand + item.qtd);
-          }
+        (p.items || []).forEach((item) => {
+          if (item.isCustom || !item.pizzaId) return;
+          const qtd = Number(item.qtd || 0);
+          if (!Number.isFinite(qtd) || qtd <= 0) return;
+          demandMap.set(item.pizzaId, (demandMap.get(item.pizzaId) || 0) + qtd);
         });
       });
 
     let productionData = database.estoque
       .filter((pizza) => !sizeFilter || pizza.tamanho === sizeFilter)
       .map((pizza) => {
-        const quantidadePedidos = demandMap.get(pizza.id) || 0;
-        const estoqueAtual = pizza.qtd;
+        const quantidadePedidos = Number(demandMap.get(pizza.id) || 0);
+        const estoqueAtual = Number(pizza.qtd || 0);
+        const quantidadeProduzir = Math.max(0, quantidadePedidos - estoqueAtual);
         const sobraProjetada = estoqueAtual - quantidadePedidos;
         return {
           sabor: `${pizza.nome} (${pizza.tamanho})`,
-          quantidade: quantidadePedidos,
-          estoqueAtual: estoqueAtual,
-          sobraProjetada: sobraProjetada,
+          pedidosSemana: quantidadePedidos,
+          quantidade: quantidadeProduzir,
+          estoqueAtual,
+          sobraProjetada,
         };
       })
-      .filter((data) => data.quantidade > 0 || data.sobraProjetada > 0);
+      // Mostra itens com pedido na semana ou estoque disponível. Assim a visão de sobra continua útil.
+      .filter((data) => data.pedidosSemana > 0 || data.estoqueAtual > 0 || data.quantidade > 0);
 
     const { column, direction } = sortState.demanda;
     productionData.sort((a, b) => {
@@ -2266,16 +2278,17 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
 
     tbody.innerHTML = "";
     if (productionData.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;">Nenhuma pizza com pedidos ou sobras para a semana selecionada.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;">Nenhuma pizza encontrada para a semana selecionada.</td></tr>';
       return;
     }
 
     productionData.forEach((data) => {
       const row = tbody.insertRow();
       const surplusClass = data.sobraProjetada < 0 ? "low-stock" : "";
+      const produzirClass = data.quantidade > 0 ? "low-stock" : "";
       row.innerHTML = `
-                <td data-label="Sabor da Pizza">${data.sabor}</td>
-                <td data-label="Pedidos (Pendentes)">${data.quantidade}x</td>
+                <td data-label="Sabor da Pizza">${data.sabor}<br><small>Pedidos da semana: ${data.pedidosSemana}x</small></td>
+                <td data-label="Quantidade a Produzir" class="${produzirClass}"><b>${data.quantidade}x</b></td>
                 <td data-label="Estoque Atual">${data.estoqueAtual}</td>
                 <td data-label="Sobra Projetada" class="${surplusClass}"><b>${data.sobraProjetada}</b></td>
             `;
