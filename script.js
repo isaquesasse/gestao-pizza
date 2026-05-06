@@ -1,5 +1,5 @@
 document.addEventListener("DOMContentLoaded", () => {
-  window.SASSES_VERSION = "v48-textos-cupons";
+  window.SASSES_VERSION = "v51-filtro-pedidos-corrigido";
   console.log("Sasse's Pizza", window.SASSES_VERSION);
   const SUPABASE_URL = "https://iprnfzevdfmnraexthpy.supabase.co";
   const SUPABASE_ANON_KEY =
@@ -497,6 +497,8 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       database.estoque = results[1].data || [];
       database.receitas = results[2].data || [];
       database.pedidos = results[3].data || [];
+      window.__sassesDebug = window.__sassesDebug || {};
+      window.__sassesDebug.pedidos = database.pedidos;
       database.clientes = results[4].data || [];
       database.massas = results[5].data || [];
       database.massas_semanais = results[6].data || [];
@@ -1030,10 +1032,12 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     if (semanaSelect) {
       const previous = semanaSelect.value;
       if (semanaSelect.options.length <= 1) {
-        populateWeekSelector(semanaSelect, { setCurrentDefault: true, keepPlaceholder: true });
+        populateWeekSelector(semanaSelect, { setCurrentDefault: false, keepPlaceholder: true });
       }
+      // Padrão: todas as semanas. O filtro principal já é "Não prontos".
+      // Assim nenhum pedido some por estar em outra semana ou com data ajustada.
       if (!force && previous) semanaSelect.value = previous;
-      if (force || !semanaSelect.value) semanaSelect.value = getWeekStart();
+      if (force) semanaSelect.value = "";
     }
     if (typeof updateFilterUX === "function") updateFilterUX();
   };
@@ -1693,7 +1697,11 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       const normalizedVendedor = vendedorFirstName.charAt(0).toUpperCase() + vendedorFirstName.slice(1).toLowerCase();
       const vendedorMatch = !vendedorFilter || normalizedVendedor === vendedorFilter || vendedorName.toLowerCase() === vendedorFilter.toLowerCase();
       const semanaMatch = !semanaFilter || (p.dataEntrega && getWeekStart(p.dataEntrega) === semanaFilter);
-      const statusMatch = !statusFilter || ((statusFilter === "NaoProntos" || statusFilter === "ConfirmadoNaoConcluido") ? ["Pendente", "Confirmado"].includes(p.status) : p.status === statusFilter);
+      const pedidoStatus = p.status || "Pendente";
+      const statusMatch = !statusFilter
+        || (statusFilter === "NaoProntos" ? ["Pendente", "Confirmado"].includes(pedidoStatus) : false)
+        || (statusFilter === "ConfirmadoNaoConcluido" ? ["Confirmado", "Pronto"].includes(pedidoStatus) : false)
+        || pedidoStatus === statusFilter;
       const pagamentoStatusMatch = !pagamentoStatusFilter || (pagamentoStatusFilter === "pago" ? isPedidoPago(p) : (isPedidoAtivoFinanceiro(p) && !isPedidoPago(p)));
       const formaPagamentoMatch = !formaPagamentoFilter || p.pagamento === formaPagamentoFilter;
       const valorExibido = p.valorFinal || p.valorTotal;
@@ -1713,6 +1721,14 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     if (direction === "desc") filteredData.reverse();
 
     tbody.innerHTML = "";
+    if (!filteredData.length) {
+      tbody.innerHTML = `<tr><td colspan="7" class="empty-row">
+        Nenhum pedido encontrado com esses filtros.
+        <button type="button" class="inline-reset-btn" onclick="window.resetPedidoFilters?.()">Limpar filtros</button>
+      </td></tr>`;
+      updateSortHeaders("tabela-pedidos", column, direction);
+      return;
+    }
     filteredData.forEach((p) => {
       const row = tbody.insertRow();
       const itemsHtml = p.items.map((i) => `<li class="${i.isCustom ? "item-pedido-outro" : ""}">${i.qtd}x ${i.pizzaNome}</li>`).join("");
@@ -3395,8 +3411,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     document.getElementById("filter-pedidos-form").reset();
     document.getElementById("filter-modal-pagamento-status").value = "";
     document.getElementById("filter-modal-forma-pagamento").value = "";
-    applyDefaultPedidosFilters(true);
-    renderPedidos();
+    window.resetPedidoFilters?.();
   };
 
   document.getElementById("btn-clear-filters")?.addEventListener("click", clearPedidoFilters);
@@ -3918,7 +3933,11 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       const normalizedVendedor = vendedorFirstName.charAt(0).toUpperCase() + vendedorFirstName.slice(1).toLowerCase();
       const vendedorMatch = !vendedorFilter || normalizedVendedor === vendedorFilter || vendedorName.toLowerCase() === vendedorFilter.toLowerCase();
       const semanaMatch = !semanaFilter || (p.dataEntrega && getWeekStart(p.dataEntrega) === semanaFilter);
-      const statusMatch = !statusFilter || ((statusFilter === "NaoProntos" || statusFilter === "ConfirmadoNaoConcluido") ? ["Pendente", "Confirmado"].includes(p.status) : p.status === statusFilter);
+      const pedidoStatus = p.status || "Pendente";
+      const statusMatch = !statusFilter
+        || (statusFilter === "NaoProntos" ? ["Pendente", "Confirmado"].includes(pedidoStatus) : false)
+        || (statusFilter === "ConfirmadoNaoConcluido" ? ["Confirmado", "Pronto"].includes(pedidoStatus) : false)
+        || pedidoStatus === statusFilter;
       const pagamentoStatusMatch = !pagamentoStatusFilter || (pagamentoStatusFilter === "pago" ? isPedidoPago(p) : (isPedidoAtivoFinanceiro(p) && !isPedidoPago(p)));
       const formaPagamentoMatch = !formaPagamentoFilter || p.pagamento === formaPagamentoFilter;
       const valorExibido = p.valorFinal || p.valorTotal;
