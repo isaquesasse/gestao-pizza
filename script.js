@@ -1,5 +1,5 @@
 document.addEventListener("DOMContentLoaded", () => {
-  window.SASSES_VERSION = "v52-dashboard-producao-corrigido";
+  window.SASSES_VERSION = "v55-gestao-sobras-descontos-modal";
   console.log("Sasse's Pizza", window.SASSES_VERSION);
   const SUPABASE_URL = "https://iprnfzevdfmnraexthpy.supabase.co";
   const SUPABASE_ANON_KEY =
@@ -12,8 +12,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const VALOR_POR_KM = 1.00;
   const ADMIN_PASSWORD = "sasse";
   const SELLER_PROFILE_KEY = "sassesCurrentSellerProfileId";
+  const ADMIN_SESSION_KEY = "sassesAdminSessionActive";
 
-  if (localStorage.getItem("isAdminLoggedIn") === "true") {
+  // Corrige sessões antigas: antes a visão ADM ficava salva no localStorage e acabava aparecendo para qualquer vendedor no mesmo navegador.
+  sessionStorage.removeItem(ADMIN_SESSION_KEY);
+  if (sessionStorage.getItem(ADMIN_SESSION_KEY) === "true") {
     document.body.classList.add("admin-mode");
     const adminBtn = document.getElementById("btn-admin-view");
     if (adminBtn) adminBtn.textContent = "Sair da Visão ADM";
@@ -32,6 +35,7 @@ document.addEventListener("DOMContentLoaded", () => {
     loja_entrega_calendario: [],
     loja_entrega_recorrencia: [],
     loja_cupons: [],
+    loja_config: {},
   };
 
   const STOCK_ACTIVE_STATUSES = ["Pendente", "Confirmado", "Pronto", "Concluído"];
@@ -68,6 +72,61 @@ document.addEventListener("DOMContentLoaded", () => {
     { value: 5, short: "Sex", label: "Sexta" },
     { value: 6, short: "Sáb", label: "Sábado" },
   ];
+
+  const DEFAULT_LOJA_CONFIG = {
+    id: true,
+    loja_nome: "Sasse's Pizza",
+    loja_subtitulo: "Pizza congelada artesanal",
+    loja_aberta: true,
+    mensagem_fechada: "Estamos fechados agora. Volte mais tarde.",
+    horario_atendimento: "",
+    pedido_minimo: 0,
+    aceita_retirada: true,
+    aceita_entrega: true,
+    aceita_disponiveis: true,
+    aceita_encomenda: true,
+    taxa_por_km: 1,
+    entrega_gratis_km: 3,
+    frete_minimo: 0,
+    cidades_atendidas: [],
+    cidades_bloqueadas: [],
+    limite_itens_pedido: 30,
+    limite_por_pizza: 20,
+    whatsapp_number: "5547936186148",
+    pix_ativo: true,
+    dinheiro_ativo: true,
+    cartao_ativo: true,
+    combinar_ativo: true,
+    pix_key: "carlos.sasse@gmail.com",
+    pix_name: "SASSES PIZZA",
+    pix_city: "MASSARANDUBA",
+    texto_checkout: "Confira os dados antes de enviar.",
+    texto_retirada: "Você busca no ponto de retirada.",
+    texto_entrega: "Usar endereço de entrega.",
+    texto_whatsapp_pedido: "Quero receber os avisos desse pedido por aqui.",
+  };
+
+  const normalizeConfigArray = (value) => {
+    if (Array.isArray(value)) return value.map((v) => String(v || '').trim()).filter(Boolean);
+    return String(value || '')
+      .split(/[\n,;]/)
+      .map((v) => v.trim())
+      .filter(Boolean);
+  };
+
+  const getLojaConfig = () => ({ ...DEFAULT_LOJA_CONFIG, ...(database.loja_config || {}) });
+
+  const setInputValue = (id, value) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.type === 'checkbox') el.checked = Boolean(value);
+    else if (Array.isArray(value)) el.value = value.join('\n');
+    else el.value = value ?? '';
+  };
+
+  const getInputValue = (id, fallback = '') => document.getElementById(id)?.value ?? fallback;
+  const getCheckboxValue = (id) => Boolean(document.getElementById(id)?.checked);
+
 
   const showLoader = () => (LOADER.style.display = "flex");
   const hideLoader = () => (LOADER.style.display = "none");
@@ -135,6 +194,34 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const getPedidoDiscountPercent = () => parsePercent(document.getElementById("pedido-desconto")?.value);
   const getQuickDiscountPercent = () => parsePercent(document.getElementById("quick-desconto")?.value);
+
+  const getPedidoBaseValue = (pedido) => {
+    const subtotal = safeNumber(pedido?.subtotal_produtos, NaN);
+    if (Number.isFinite(subtotal) && subtotal > 0) return subtotal;
+    const total = safeNumber(pedido?.valorTotal, NaN);
+    if (Number.isFinite(total) && total > 0) return total;
+    return (pedido?.items || []).reduce((acc, item) => acc + safeNumber(item.preco) * Number(item.qtd || 0), 0);
+  };
+
+  const getPedidoFinalValue = (pedido) => {
+    const final = safeNumber(pedido?.valorFinal, NaN);
+    if (Number.isFinite(final) && final > 0) return final;
+    return getPedidoBaseValue(pedido);
+  };
+
+  const getPedidoDiscountInfo = (pedido) => {
+    const base = getPedidoBaseValue(pedido);
+    const final = getPedidoFinalValue(pedido);
+    const amount = Math.max(0, base - final);
+    const percent = base > 0 && amount > 0.009 ? Math.round((amount / base) * 100) : 0;
+    return { base, final, amount, percent };
+  };
+
+  const renderPedidoDiscountBadge = (pedido) => {
+    const info = getPedidoDiscountInfo(pedido);
+    if (!info.percent) return "";
+    return `<span class="discount-badge">-${info.percent}%</span>`;
+  };
 
   const getPrecoPorPagamento = (preco, pagamento) => {
     const valor = Number(preco || 0);
@@ -223,7 +310,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const applySellerAccess = () => {
     const seller = getCurrentSeller();
-    const manualAdmin = localStorage.getItem("isAdminLoggedIn") === "true";
+    const manualAdmin = sessionStorage.getItem(ADMIN_SESSION_KEY) === "true";
     const profileAdmin = isSellerAdmin(seller);
     document.body.classList.toggle("vendor-mode", !!seller);
     document.body.classList.toggle("admin-mode", manualAdmin || profileAdmin);
@@ -255,7 +342,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (id) {
       localStorage.setItem(SELLER_PROFILE_KEY, id);
       const seller = database.vendedores.find((v) => v.id === id);
-      if (!isSellerAdmin(seller)) localStorage.removeItem("isAdminLoggedIn");
+      if (!isSellerAdmin(seller)) sessionStorage.removeItem(ADMIN_SESSION_KEY);
     } else {
       localStorage.removeItem(SELLER_PROFILE_KEY);
     }
@@ -301,21 +388,29 @@ document.addEventListener("DOMContentLoaded", () => {
 
   window.openNotificationsModal = () => {
     const { prontosParaConcluir, total } = getSystemAlerts();
-    let contentHTML = `<div class="notification-list">`;
+    let contentHTML = "";
     if (total === 0) {
-      contentHTML += `<p class="empty-state">Nenhum pedido pronto aguardando conclusão.</p>`;
+      contentHTML = `<p class="empty-state">Nenhum pedido pronto aguardando conclusão.</p>`;
     } else {
-      contentHTML += `<h3>Prontos para concluir</h3>`;
-      prontosParaConcluir.slice(0, 40).forEach((p) => {
-        const valor = formatCurrency(p.valorFinal || p.valorTotal);
+      const rows = prontosParaConcluir.slice(0, 60).map((p) => {
+        const info = getPedidoDiscountInfo(p);
+        const itens = (p.items || []).slice(0, 4).map((item) => `${item.qtd}x ${item.pizzaNome}`).join("<br>") || "Sem itens";
+        const more = (p.items || []).length > 4 ? `<br><small>+${(p.items || []).length - 4} item(ns)</small>` : "";
         const data = p.dataEntrega ? new Date(p.dataEntrega + "T00:00:00").toLocaleDateString("pt-BR") : "sem data";
         const action = isPedidoPago(p)
           ? `<button class="action-btn complete-btn" onclick="window.updatePedidoStatus('${p.id}', 'Concluído')">Concluir</button>`
           : `<button class="action-btn paid-btn complete-btn" onclick="window.marcarPedidoPago('${p.id}')">Pago</button>`;
-        contentHTML += `<div class="notification-item ready-to-finish"><div><b>${escapeHTML(p.cliente || "Cliente")}</b><span>${valor} • ${data}</span></div><div class="notification-actions">${action}<button class="action-btn edit-btn" onclick="window.openEditPedidoModal('${p.id}')">Abrir</button></div></div>`;
-      });
+        const valorHtml = `<b>${formatCurrency(info.final)}</b>${renderPedidoDiscountBadge(p)}${info.amount > 0 ? `<small>Original: ${formatCurrency(info.base)}</small>` : ""}`;
+        return `<tr>
+          <td data-label="Cliente"><b>${escapeHTML(p.cliente || "Cliente")}</b><br><small>${escapeHTML(p.telefone || "")}</small></td>
+          <td data-label="Data">${escapeHTML(data)}<br><small>${escapeHTML(p.cidade || "-")}</small></td>
+          <td data-label="Itens">${itens}${more}</td>
+          <td data-label="Valor" class="pending-value-cell">${valorHtml}</td>
+          <td data-label="Ações"><div class="pending-actions">${action}<button class="action-btn edit-btn" onclick="window.openEditPedidoModal('${p.id}')">Editar</button></div></td>
+        </tr>`;
+      }).join("");
+      contentHTML = `<div class="pending-orders-modal table-container"><table class="pending-orders-table"><thead><tr><th>Cliente</th><th>Data</th><th>Itens</th><th>Valor</th><th>Ações</th></tr></thead><tbody>${rows}</tbody></table></div>`;
     }
-    contentHTML += `</div>`;
     openModal("notifications-modal", "Prontos para concluir", contentHTML);
   };
 
@@ -530,6 +625,16 @@ Deseja adicionar esse frete ao Valor Final?`)) {
           .order("dia_semana", { ascending: true });
         database.loja_entrega_recorrencia = recorrenciaRes.data || [];
       } catch (e) { database.loja_entrega_recorrencia = []; }
+
+      try {
+        const configRes = await supabaseClient
+          .from("loja_delivery_config")
+          .select("*")
+          .eq("id", true)
+          .maybeSingle();
+        database.loja_config = { ...DEFAULT_LOJA_CONFIG, ...(configRes.data || {}) };
+      } catch (e) { database.loja_config = { ...DEFAULT_LOJA_CONFIG }; }
+
 
       await syncClientsFromOrders();
       renderAll();
@@ -966,12 +1071,80 @@ Deseja adicionar esse frete ao Valor Final?`)) {
   window.toggleLojaCupom = async (id, ativo) => { try { showLoader(); const { error } = await supabaseClient.from('loja_cupons').update({ ativo }).eq('id', id); if (error) throw error; await loadDataFromSupabase(); showSaveStatus(ativo ? 'Cupom ativado.' : 'Cupom pausado.'); } catch (error) { showSaveStatus(formatSupabaseError(error, 'Não foi possível atualizar o cupom'), false); } finally { hideLoader(); } };
   window.deleteLojaCupom = async (id) => { if (!confirm('Remover esse cupom?')) return; try { showLoader(); const { error } = await supabaseClient.from('loja_cupons').delete().eq('id', id); if (error) throw error; await loadDataFromSupabase(); showSaveStatus('Cupom removido.'); } catch (error) { showSaveStatus(formatSupabaseError(error, 'Não foi possível remover o cupom'), false); } finally { hideLoader(); } };
 
+  const renderLojaConfig = () => {
+    const form = document.getElementById('loja-config-form');
+    if (!form || form.dataset.dirty === 'true') return;
+    const cfg = getLojaConfig();
+    setInputValue('cfg-loja-aberta', cfg.loja_aberta !== false);
+    setInputValue('cfg-aceita-retirada', cfg.aceita_retirada !== false);
+    setInputValue('cfg-aceita-entrega', cfg.aceita_entrega !== false);
+    setInputValue('cfg-aceita-disponiveis', cfg.aceita_disponiveis !== false);
+    setInputValue('cfg-aceita-encomenda', cfg.aceita_encomenda !== false);
+    setInputValue('cfg-pedido-minimo', Number(cfg.pedido_minimo || 0));
+    setInputValue('cfg-horario', cfg.horario_atendimento || '');
+    setInputValue('cfg-mensagem-fechada', cfg.mensagem_fechada || '');
+    setInputValue('cfg-taxa-km', Number(cfg.taxa_por_km || 1));
+    setInputValue('cfg-gratis-km', Number(cfg.entrega_gratis_km ?? 3));
+    setInputValue('cfg-frete-minimo', Number(cfg.frete_minimo || 0));
+    setInputValue('cfg-limite-itens', Number(cfg.limite_itens_pedido || 30));
+    setInputValue('cfg-limite-por-pizza', Number(cfg.limite_por_pizza || 20));
+    setInputValue('cfg-cidades-atendidas', normalizeConfigArray(cfg.cidades_atendidas));
+    setInputValue('cfg-cidades-bloqueadas', normalizeConfigArray(cfg.cidades_bloqueadas));
+    setInputValue('cfg-whatsapp', cfg.whatsapp_number || '');
+    setInputValue('cfg-pix-ativo', cfg.pix_ativo !== false);
+    setInputValue('cfg-dinheiro-ativo', cfg.dinheiro_ativo !== false);
+    setInputValue('cfg-cartao-ativo', cfg.cartao_ativo !== false);
+    setInputValue('cfg-combinar-ativo', cfg.combinar_ativo !== false);
+    setInputValue('cfg-pix-key', cfg.pix_key || '');
+    setInputValue('cfg-pix-name', cfg.pix_name || '');
+    setInputValue('cfg-pix-city', cfg.pix_city || '');
+    setInputValue('cfg-texto-checkout', cfg.texto_checkout || '');
+    setInputValue('cfg-texto-retirada', cfg.texto_retirada || '');
+    setInputValue('cfg-texto-entrega', cfg.texto_entrega || '');
+    setInputValue('cfg-texto-whatsapp', cfg.texto_whatsapp_pedido || '');
+  };
+
+  const getLojaConfigFormPayload = () => ({
+    id: true,
+    loja_nome: "Sasse's Pizza",
+    loja_subtitulo: "Pizza congelada artesanal",
+    loja_aberta: getCheckboxValue('cfg-loja-aberta'),
+    aceita_retirada: getCheckboxValue('cfg-aceita-retirada'),
+    aceita_entrega: getCheckboxValue('cfg-aceita-entrega'),
+    aceita_disponiveis: getCheckboxValue('cfg-aceita-disponiveis'),
+    aceita_encomenda: getCheckboxValue('cfg-aceita-encomenda'),
+    pedido_minimo: getNumberValue(getInputValue('cfg-pedido-minimo'), 0),
+    horario_atendimento: getInputValue('cfg-horario').trim(),
+    mensagem_fechada: getInputValue('cfg-mensagem-fechada').trim(),
+    taxa_por_km: getNumberValue(getInputValue('cfg-taxa-km'), 1),
+    entrega_gratis_km: getNumberValue(getInputValue('cfg-gratis-km'), 3),
+    frete_minimo: getNumberValue(getInputValue('cfg-frete-minimo'), 0),
+    limite_itens_pedido: Math.max(1, parseInt(getInputValue('cfg-limite-itens'), 10) || 30),
+    limite_por_pizza: Math.max(1, parseInt(getInputValue('cfg-limite-por-pizza'), 10) || 20),
+    cidades_atendidas: normalizeConfigArray(getInputValue('cfg-cidades-atendidas')),
+    cidades_bloqueadas: normalizeConfigArray(getInputValue('cfg-cidades-bloqueadas')),
+    whatsapp_number: getInputValue('cfg-whatsapp').replace(/\D/g, ''),
+    pix_ativo: getCheckboxValue('cfg-pix-ativo'),
+    dinheiro_ativo: getCheckboxValue('cfg-dinheiro-ativo'),
+    cartao_ativo: getCheckboxValue('cfg-cartao-ativo'),
+    combinar_ativo: getCheckboxValue('cfg-combinar-ativo'),
+    pix_key: getInputValue('cfg-pix-key').trim(),
+    pix_name: getInputValue('cfg-pix-name').trim(),
+    pix_city: getInputValue('cfg-pix-city').trim(),
+    texto_checkout: getInputValue('cfg-texto-checkout').trim(),
+    texto_retirada: getInputValue('cfg-texto-retirada').trim(),
+    texto_entrega: getInputValue('cfg-texto-entrega').trim(),
+    texto_whatsapp_pedido: getInputValue('cfg-texto-whatsapp').trim(),
+    updated_at: new Date().toISOString(),
+  });
+
   const renderLojaHub = () => {
     const kpis = document.getElementById("loja-kpis");
     const confirmList = document.getElementById("loja-confirmacoes-list");
     const catalogList = document.getElementById("loja-catalogo-list");
     const proximosList = document.getElementById("loja-proximos-list");
     if (!kpis || !confirmList || !catalogList || !proximosList) return;
+    renderLojaConfig();
     renderLojaCalendario();
     renderLojaCupons();
 
@@ -1043,6 +1216,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
   };
 
   const renderAll = () => {
+    applySellerProfileToForms(false);
     populateSelects();
     populateWeekSelector(undefined, { futureOnly: true, futureWeeks: 24, setCurrentDefault: true });
     populateWeekSelector(document.getElementById("filter-demanda-semana"), { setCurrentDefault: true });
@@ -1372,7 +1546,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     const btn = document.getElementById("btn-admin-view");
 
     if (body.classList.contains("admin-mode")) {
-      localStorage.removeItem("isAdminLoggedIn");
+      sessionStorage.removeItem(ADMIN_SESSION_KEY);
       if (!isSellerAdmin(getCurrentSeller())) body.classList.remove("admin-mode");
       if (btn) btn.textContent = body.classList.contains("admin-mode") ? "Sair da Visão ADM" : "Entrar na Visão ADM";
       const activeTabIsAdminOnly = document.querySelector(".tab-link.active.admin-only");
@@ -1391,7 +1565,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     const errorEl = document.getElementById("auth-error");
 
     if (password === ADMIN_PASSWORD) {
-      localStorage.setItem("isAdminLoggedIn", "true");
+      sessionStorage.setItem(ADMIN_SESSION_KEY, "true");
       document.body.classList.add("admin-mode");
       const adminBtn = document.getElementById("btn-admin-view");
       if (adminBtn) adminBtn.textContent = "Sair da Visão ADM";
@@ -1704,7 +1878,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
         || pedidoStatus === statusFilter;
       const pagamentoStatusMatch = !pagamentoStatusFilter || (pagamentoStatusFilter === "pago" ? isPedidoPago(p) : (isPedidoAtivoFinanceiro(p) && !isPedidoPago(p)));
       const formaPagamentoMatch = !formaPagamentoFilter || p.pagamento === formaPagamentoFilter;
-      const valorExibido = p.valorFinal || p.valorTotal;
+      const valorExibido = getPedidoFinalValue(p);
       const valorMatch = valorExibido >= valorMin && valorExibido <= valorMax;
 
       return searchMatch && clienteMatch && cidadeMatch && vendedorMatch && semanaMatch && statusMatch && pagamentoStatusMatch && formaPagamentoMatch && valorMatch;
@@ -1733,7 +1907,8 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       const row = tbody.insertRow();
       const itemsHtml = p.items.map((i) => `<li class="${i.isCustom ? "item-pedido-outro" : ""}">${i.qtd}x ${i.pizzaNome}</li>`).join("");
       const statusClass = normalizeStatusClass(p.status);
-      const valorExibido = p.valorFinal || p.valorTotal;
+      const valorExibido = getPedidoFinalValue(p);
+      const descontoInfo = getPedidoDiscountInfo(p);
       const pago = isPedidoPago(p);
       const pagamentoTag = !isPedidoAtivoFinanceiro(p) ? '<span class="payment-tag muted">Sem cobrança</span>' : (pago ? '<span class="payment-tag paid">Pago</span>' : '<span class="payment-tag unpaid">Pagamento pendente</span>');
       const pedidoMeta = getPedidoStatusMeta(p);
@@ -1747,7 +1922,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
                 <td data-label="Data/horário"><b>${formatPedidoAgenda(p)}</b><br><small>${p.tipo_pedido === "encomenda" ? "Por encomenda" : "Disponível agora"}</small></td>
                 <td data-label="Itens"><ul style="padding-left:15px;margin:0">${itemsHtml}</ul></td>
                 <td data-label="Entrega/Retirada">${metodoTag}<br><small>Cid.: ${escapeHTML(p.cidade || "-")}<br>${escapeHTML(p.endereco || "-")}</small>${freteInfo}</td>
-                <td data-label="Valores"><b>${formatCurrency(valorExibido)}</b><br><small class="admin-only">Produtos: ${formatCurrency(p.subtotal_produtos || p.valorTotal)}</small><br>${pagamentoTag}</td>
+                <td data-label="Valores"><b>${formatCurrency(valorExibido)}</b>${renderPedidoDiscountBadge(p)}<br><small class="admin-only">Produtos: ${formatCurrency(descontoInfo.base)}</small>${descontoInfo.amount > 0 ? `<br><small class="discount-detail">Desconto: ${formatCurrency(descontoInfo.amount)}</small>` : ""}<br>${pagamentoTag}</td>
                 <td data-label="Situação">
                   <div class="status-stack">
                     <div class="status-row"><span class="status-key">${pedidoMeta.title}</span><span class="status-chip ${pedidoMeta.tone}">${pedidoMeta.label}</span></div>
@@ -1970,7 +2145,9 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       return;
     }
     const clienteNome = document.getElementById("pedido-cliente").value;
-    const vendedor = document.getElementById("pedido-vendedor").value;
+    const pedidoVendedorInput = document.getElementById("pedido-vendedor");
+    const vendedor = (pedidoVendedorInput?.value || getCurrentSeller()?.nome || "").trim();
+    if (pedidoVendedorInput && !pedidoVendedorInput.value && vendedor) pedidoVendedorInput.value = vendedor;
     const cidade = document.getElementById("pedido-cidade").value;
     const endereco = document.getElementById("pedido-endereco")?.value || "";
     const pagamento = document.getElementById("pedido-pagamento").value;
@@ -2026,7 +2203,8 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       endereco,
       pagamento,
       dataEntrega,
-      status: "Pendente",
+      status: "Confirmado",
+      origem_pedido: "gestao",
       items: itensComPrecoFinal,
       valorTotal: valorCalculado,
       valorFinal: valorFinal,
@@ -2066,7 +2244,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       return;
     }
 
-    showSaveStatus(pedidoSalvo?.estoque_baixado ? "Pedido registrado e estoque reservado." : "Pedido registrado como encomenda/produção pendente.");
+    showSaveStatus(pedidoSalvo?.estoque_baixado ? "Pedido registrado e já confirmado." : "Pedido registrado e confirmado para produção.");
     resetFormPedido();
     await loadDataFromSupabase();
     hideLoader();
@@ -2866,7 +3044,9 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       return `<option value="${escapeAttr(p.id)}">${escapeHTML(label)} · Estoque ${p.qtd || 0} · Sobra ${sobra}</option>`;
     }).join("");
     const dataEntrega = pedido.dataEntrega ? formatDateToYYYYMMDD(pedido.dataEntrega) : getWeekStart();
-    const valorAtual = safeNumber(pedido.valorFinal || pedido.valorTotal);
+    const descontoAtual = getPedidoDiscountInfo(pedido);
+    const valorAtual = descontoAtual.final;
+    const descontoAtualTexto = descontoAtual.percent ? `${descontoAtual.percent}%` : "";
 
     const formHTML = `
       <form id="edit-pedido-form" class="edit-form edit-order-form">
@@ -2920,7 +3100,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
               </select>
             </label>
             <label>Desconto rápido
-              <input type="text" id="edit-pedido-desconto" inputmode="decimal" placeholder="0%">
+              <input type="text" id="edit-pedido-desconto" inputmode="decimal" placeholder="0%" value="${escapeAttr(descontoAtualTexto)}">
             </label>
           </div>
           <label class="toggle-line">
@@ -2947,7 +3127,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
         </div>
 
         <div class="edit-section">
-          <div class="edit-section-title"><span>Valores e observações</span><small>Total final pode ser ajustado manualmente</small></div>
+          <div class="edit-section-title"><span>Valores e observações</span><small>O total final já considera desconto, quando houver</small></div>
           <div class="edit-grid two">
             <label>Total calculado
               <input type="text" id="total-calculado-edit-pedido" value="R$ 0,00" readonly>
@@ -2955,6 +3135,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
             <label>Valor final
               <input type="number" id="valor-final-edit-pedido" step="0.01" value="${valorAtual.toFixed(2)}">
             </label>
+            <div class="edit-discount-summary" id="edit-pedido-desconto-resumo"></div>
           </div>
           <label>Observações
             <textarea name="observacoes" rows="3" placeholder="Ex.: sem cebola, retirar na loja, combinar entrega...">${escapeHTML(pedido.observacoes || "")}</textarea>
@@ -3084,6 +3265,11 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     const total = applyDiscount(totalBruto, desconto);
     const totalEl = document.getElementById("total-calculado-edit-pedido");
     if (totalEl) totalEl.value = formatCurrency(total);
+    const resumo = document.getElementById("edit-pedido-desconto-resumo");
+    if (resumo) {
+      const economia = Math.max(0, totalBruto - total);
+      resumo.innerHTML = desconto > 0 ? `<span class="discount-badge">-${Math.round(desconto)}%</span><small>Desconto: ${formatCurrency(economia)} · Original: ${formatCurrency(totalBruto)}</small>` : `<small>Sem desconto aplicado.</small>`;
+    }
     const valorFinalInput = document.getElementById("valor-final-edit-pedido");
     if (valorFinalInput && (!valorFinalInput.dataset.userEdited || document.activeElement !== valorFinalInput)) {
       valorFinalInput.value = total.toFixed(2);
@@ -3195,11 +3381,12 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
 
   const computePizzaDemandForWeek = (weekStart) => {
     const demand = {};
+    const demandStatuses = ["Pendente", "Confirmado", "Pronto"];
     database.pedidos
       .filter(p => {
         if (!p.dataEntrega) return false;
         const ws = getWeekStart(p.dataEntrega);
-        return ws === weekStart && orderHoldsStock(p.status) && p.estoque_baixado === false;
+        return ws === weekStart && demandStatuses.includes(p.status || "Pendente");
       })
       .forEach(p => {
         (p.items || []).forEach(item => {
@@ -3953,7 +4140,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
         || pedidoStatus === statusFilter;
       const pagamentoStatusMatch = !pagamentoStatusFilter || (pagamentoStatusFilter === "pago" ? isPedidoPago(p) : (isPedidoAtivoFinanceiro(p) && !isPedidoPago(p)));
       const formaPagamentoMatch = !formaPagamentoFilter || p.pagamento === formaPagamentoFilter;
-      const valorExibido = p.valorFinal || p.valorTotal;
+      const valorExibido = getPedidoFinalValue(p);
       const valorMatch = valorExibido >= valorMin && valorExibido <= valorMax;
       return searchMatch && clienteMatch && cidadeMatch && vendedorMatch && semanaMatch && statusMatch && pagamentoStatusMatch && formaPagamentoMatch && valorMatch;
     });
@@ -4252,7 +4439,9 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     if (!items.length) return alert("Escolha pelo menos uma pizza.");
     const clienteNome = document.getElementById("quick-cliente").value.trim();
     const cidade = document.getElementById("quick-cidade").value.trim();
-    const vendedor = document.getElementById("quick-vendedor").value.trim();
+    const quickVendedorInput = document.getElementById("quick-vendedor");
+    const vendedor = (quickVendedorInput?.value || getCurrentSeller()?.nome || "").trim();
+    if (quickVendedorInput && !quickVendedorInput.value && vendedor) quickVendedorInput.value = vendedor;
     const dataEntrega = document.getElementById("quick-semana").value || getWeekStart();
     if (!clienteNome || !cidade || !vendedor) return alert("Preencha cliente, cidade e vendedor.");
     showLoader();
@@ -4272,7 +4461,8 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       vendedor,
       pagamento: document.getElementById("quick-pagamento").value,
       dataEntrega,
-      status: "Pendente",
+      status: "Confirmado",
+      origem_pedido: "gestao",
       items,
       valorTotal: totals.base,
       valorFinal: totals.final,
@@ -4281,7 +4471,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     const { data: pedidoSalvo, error } = await supabaseClient.rpc("criar_pedido_com_reserva", { p_pedido: quickPedidoData });
     hideLoader();
     if(error) return showSaveStatus(formatSupabaseError(error, "Erro ao registrar venda rápida"), false);
-    showSaveStatus(pedidoSalvo?.estoque_baixado ? "Pedido rápido registrado e estoque reservado." : "Pedido rápido registrado como encomenda/produção pendente.");
+    showSaveStatus(pedidoSalvo?.estoque_baixado ? "Pedido rápido registrado e confirmado." : "Pedido rápido confirmado para produção.");
     quickSaleItems = {};
     document.getElementById("quick-pix-box")?.classList.add("hidden");
     await loadDataFromSupabase();
@@ -5012,6 +5202,7 @@ Lançar mesmo assim como encomenda/produção pendente?`);
   };
 
   const saveMobilePedido = async (pedidoData) => {
+    pedidoData.vendedor = (pedidoData.vendedor || getCurrentSeller()?.nome || "").trim();
     if (!pedidoData.cliente || !pedidoData.cidade || !pedidoData.vendedor) {
       alert("Preencha cliente, cidade e vendedor.");
       return false;
@@ -5025,11 +5216,11 @@ Lançar mesmo assim como encomenda/produção pendente?`);
         if (r.error) throw r.error;
         clienteId = r.data.id;
       }
-      const newPedido = { ...pedidoData, clienteId, status: "Pendente", pago: false };
+      const newPedido = { ...pedidoData, clienteId, status: "Confirmado", origem_pedido: "gestao", pago: false };
       const r = await supabaseClient.rpc("criar_pedido_com_reserva", { p_pedido: newPedido });
       if (r.error) throw r.error;
       mobileOrderItems = [];
-      showSaveStatus(r.data?.estoque_baixado ? "Pedido registrado pelo celular e estoque reservado." : "Pedido registrado pelo celular como encomenda/produção pendente.");
+      showSaveStatus(r.data?.estoque_baixado ? "Pedido registrado pelo celular e confirmado." : "Pedido do celular confirmado para produção.");
       await loadDataFromSupabase();
       if ((pedidoData.pagamento || "").toLowerCase() === "pix") {
         openMobilePixModal(pedidoData.valorFinal || pedidoData.valorTotal, pedidoData.cliente);
@@ -5150,14 +5341,15 @@ Lançar mesmo assim como encomenda/produção pendente?`);
   };
 
   const renderMobileMais = () => {
-    const sobras = database.estoque.filter((p) => Number(p.qtd || 0) > 0).slice(0, 12);
-    renderMobileShell(`<section class="m-section"><div class="m-card"><h2>Mais</h2><div class="m-actions single"><button class="m-btn secondary" id="m-open-profile">Perfil do vendedor</button><button class="m-btn secondary" data-mobile-page-go="venda">Venda rápida</button><button class="m-btn secondary" id="m-open-desktop-agenda">Agenda completa</button><button class="m-btn secondary" id="m-open-desktop-estoque">Sabores e estoque</button><button class="m-btn secondary" id="m-open-desktop-pedidos">Pedidos completos</button><button class="m-btn secondary" id="m-copy-sobras">Copiar disponíveis</button></div></div><div class="m-card"><h3>Disponíveis</h3><div class="m-list">${sobras.map((p) => `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(p.nome)} (${escapeHTML(p.tamanho)})</b><span class="m-badge ok">${p.qtd}</span></div></div>`).join("") || `<p class="m-muted">Sem pizzas disponíveis.</p>`}</div></div></section>`);
+    const week = getWeekStart();
+    const sobras = getPizzaWeekStats(week).filter((p) => Number(p.sobraProj || 0) > 0).sort((a, b) => b.sobraProj - a.sobraProj || String(a.nome).localeCompare(String(b.nome))).slice(0, 12);
+    renderMobileShell(`<section class="m-section"><div class="m-card"><h2>Mais</h2><div class="m-actions single"><button class="m-btn secondary" id="m-open-profile">Perfil do vendedor</button><button class="m-btn secondary" data-mobile-page-go="venda">Venda rápida</button><button class="m-btn secondary" id="m-open-desktop-agenda">Agenda completa</button><button class="m-btn secondary" id="m-open-desktop-estoque">Sabores e estoque</button><button class="m-btn secondary" id="m-open-desktop-pedidos">Pedidos completos</button><button class="m-btn secondary" id="m-copy-sobras">Copiar disponíveis</button></div></div><div class="m-card"><h3>Disponíveis para retirada</h3><div class="m-list">${sobras.map((p) => `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(p.nome)} (${escapeHTML(p.tamanho)})</b><span class="m-badge ok">${p.sobraProj}</span></div><div class="m-line">Estoque: ${p.estoqueAtual} · pedidos: ${p.pedidosSemana}</div></div>`).join("") || `<p class="m-muted">Sem sobras positivas nesta semana.</p>`}</div></div></section>`);
     document.getElementById("m-open-profile")?.addEventListener("click", openSellerProfileModal);
     document.getElementById("m-open-desktop-pedidos")?.addEventListener("click", () => { document.body.classList.add('force-desktop-mobile'); openTab('pedidos'); });
     document.getElementById("m-open-desktop-agenda")?.addEventListener("click", () => { document.body.classList.add('force-desktop-mobile'); openTab('logistica'); });
     document.getElementById("m-open-desktop-estoque")?.addEventListener("click", () => { document.body.classList.add('force-desktop-mobile'); openTab('estoque'); });
     document.getElementById("m-copy-sobras")?.addEventListener("click", async () => {
-      const msg = sobras.map((p) => `🍕 ${p.nome} (${p.tamanho}) — ${p.qtd} un.`).join("\n");
+      const msg = sobras.map((p) => `🍕 ${p.nome} (${p.tamanho}) — ${p.sobraProj} un.`).join("\n");
       await navigator.clipboard.writeText(msg || "Sem disponíveis no momento.");
       showSaveStatus("Lista copiada!");
     });
@@ -5414,3 +5606,45 @@ Lançar mesmo assim como encomenda/produção pendente?`);
 
 loadDataFromSupabase();
 });
+
+
+  document.getElementById('loja-config-form')?.addEventListener('input', () => {
+    const form = document.getElementById('loja-config-form');
+    if (form) form.dataset.dirty = 'true';
+  });
+
+  document.getElementById('loja-config-reload')?.addEventListener('click', () => {
+    const form = document.getElementById('loja-config-form');
+    if (form) form.dataset.dirty = 'false';
+    renderLojaConfig();
+    showSaveStatus('Configurações recarregadas.');
+  });
+
+  document.getElementById('loja-config-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const payload = getLojaConfigFormPayload();
+    if (!payload.aceita_retirada && !payload.aceita_entrega) {
+      showSaveStatus('Ative retirada, entrega ou os dois.', false);
+      return;
+    }
+    if (!payload.pix_ativo && !payload.dinheiro_ativo && !payload.cartao_ativo && !payload.combinar_ativo) {
+      showSaveStatus('Ative pelo menos uma forma de pagamento.', false);
+      return;
+    }
+    try {
+      showLoader();
+      const { error } = await supabaseClient
+        .from('loja_delivery_config')
+        .upsert(payload, { onConflict: 'id' });
+      if (error) throw error;
+      database.loja_config = { ...DEFAULT_LOJA_CONFIG, ...payload };
+      const form = document.getElementById('loja-config-form');
+      if (form) form.dataset.dirty = 'false';
+      showSaveStatus('Configurações da loja salvas.');
+      renderLojaConfig();
+    } catch (error) {
+      showSaveStatus(formatSupabaseError(error, 'Não foi possível salvar as configurações'), false);
+    } finally {
+      hideLoader();
+    }
+  });
