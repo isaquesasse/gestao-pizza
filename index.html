@@ -112,6 +112,71 @@
                 </div>
             </section>
             <section id="loja-kpis" class="home-kpis"></section>
+            <section class="card loja-settings-card">
+                <details id="loja-settings-details" class="loja-settings-details">
+                    <summary class="loja-settings-summary">
+                        <div>
+                            <h3>Configurações da loja</h3>
+                            <p class="small-muted">Controle o que aparece no site, pagamentos, entrega, retirada e textos do checkout.</p>
+                        </div>
+                        <span class="settings-summary-action">Abrir configurações</span>
+                    </summary>
+                    <form id="loja-config-form" class="loja-settings-form">
+                        <div class="settings-block">
+                            <h4>Funcionamento</h4>
+                            <div class="settings-grid">
+                                <label class="toggle-line"><input type="checkbox" id="cfg-loja-aberta"> Loja aberta para pedidos</label>
+                                <label class="toggle-line"><input type="checkbox" id="cfg-aceita-retirada"> Aceitar retirada</label>
+                                <label class="toggle-line"><input type="checkbox" id="cfg-aceita-entrega"> Aceitar entrega</label>
+                                <label class="toggle-line"><input type="checkbox" id="cfg-aceita-disponiveis"> Comprar do estoque</label>
+                                <label class="toggle-line"><input type="checkbox" id="cfg-aceita-encomenda"> Encomenda</label>
+                                <label>Pedido mínimo em R$<input type="number" id="cfg-pedido-minimo" min="0" step="0.01" placeholder="0,00"></label>
+                                <label>Horário exibido no site<input type="text" id="cfg-horario" placeholder="Ex.: seg a sex, 8h às 18h"></label>
+                                <label class="settings-wide">Mensagem de loja fechada<textarea id="cfg-mensagem-fechada" rows="2" maxlength="220" placeholder="Ex.: Estamos fechados agora. Volte mais tarde."></textarea></label>
+                            </div>
+                        </div>
+                        <div class="settings-block">
+                            <h4>Entrega</h4>
+                            <div class="settings-grid">
+                                <label>Valor por km<input type="number" id="cfg-taxa-km" min="0" step="0.01"></label>
+                                <label>Entrega grátis até km<input type="number" id="cfg-gratis-km" min="0" step="0.1"></label>
+                                <label>Frete mínimo<input type="number" id="cfg-frete-minimo" min="0" step="0.01"></label>
+                                <label>Máximo de pizzas por pedido<input type="number" id="cfg-limite-itens" min="1" step="1"></label>
+                                <label>Máximo por sabor/tamanho<input type="number" id="cfg-limite-por-pizza" min="1" step="1"></label>
+                                <label class="settings-wide">Cidades atendidas na entrega<textarea id="cfg-cidades-atendidas" rows="2" placeholder="Uma por linha. Deixe vazio para liberar todas com agenda."></textarea></label>
+                                <label class="settings-wide">Cidades bloqueadas<textarea id="cfg-cidades-bloqueadas" rows="2" placeholder="Uma por linha. Ex.: Blumenau"></textarea></label>
+                            </div>
+                        </div>
+                        <div class="settings-block">
+                            <h4>Pagamento e contato</h4>
+                            <div class="settings-grid">
+                                <label class="toggle-line"><input type="checkbox" id="cfg-pix-ativo"> Pix</label>
+                                <label class="toggle-line"><input type="checkbox" id="cfg-dinheiro-ativo"> Dinheiro</label>
+                                <label class="toggle-line"><input type="checkbox" id="cfg-cartao-ativo"> Cartão</label>
+                                <label class="toggle-line"><input type="checkbox" id="cfg-combinar-ativo"> A combinar</label>
+                                <label>WhatsApp da loja<input type="text" id="cfg-whatsapp" inputmode="numeric" placeholder="5547936186148"></label>
+                                <label>Chave Pix<input type="text" id="cfg-pix-key" placeholder="chave pix"></label>
+                                <label>Nome do Pix<input type="text" id="cfg-pix-name" placeholder="SASSES PIZZA"></label>
+                                <label>Cidade do Pix<input type="text" id="cfg-pix-city" placeholder="MASSARANDUBA"></label>
+                            </div>
+                        </div>
+                        <div class="settings-block">
+                            <h4>Textos do site</h4>
+                            <div class="settings-grid">
+                                <label class="settings-wide">Aviso no checkout<textarea id="cfg-texto-checkout" rows="2" maxlength="220" placeholder="Ex.: Confira os dados antes de enviar."></textarea></label>
+                                <label class="settings-wide">Texto de retirada<textarea id="cfg-texto-retirada" rows="2" maxlength="160" placeholder="Ex.: Você busca no ponto de retirada."></textarea></label>
+                                <label class="settings-wide">Texto de entrega<textarea id="cfg-texto-entrega" rows="2" maxlength="160" placeholder="Ex.: Usar endereço de entrega."></textarea></label>
+                                <label class="settings-wide">Mensagem pronta do WhatsApp<textarea id="cfg-texto-whatsapp" rows="2" maxlength="220" placeholder="Ex.: Quero receber os avisos desse pedido por aqui."></textarea></label>
+                            </div>
+                        </div>
+                        <div class="settings-actions">
+                            <button type="submit" class="home-action">Salvar configurações</button>
+                            <button type="button" id="loja-config-reload" class="ghost-btn">Recarregar</button>
+                        </div>
+                    </form>
+                </details>
+            </section>
+
                         <section class="card loja-calendar-card loja-calendar-card-collapsible">
                 <details id="loja-calendar-details" class="loja-calendar-details">
                     <summary class="loja-calendar-summary">
