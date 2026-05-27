@@ -1,5 +1,5 @@
 document.addEventListener("DOMContentLoaded", () => {
-  window.SASSES_VERSION = "v55-gestao-sobras-descontos-modal";
+  window.SASSES_VERSION = "v56-producao-estoque-logica";
   console.log("Sasse's Pizza", window.SASSES_VERSION);
   const SUPABASE_URL = "https://iprnfzevdfmnraexthpy.supabase.co";
   const SUPABASE_ANON_KEY =
@@ -42,6 +42,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const STOCK_RELEASED_STATUSES = ["Cancelado", "Negado"];
   const ALL_ORDER_STATUSES = [...STOCK_ACTIVE_STATUSES, ...STOCK_RELEASED_STATUSES];
   const orderHoldsStock = (status) => STOCK_ACTIVE_STATUSES.includes(status || "Pendente");
+
+  // Estoque no banco já é o estoque livre depois das reservas.
+  // Por isso a produção e as sobras só descontam pedidos que ainda NÃO tiveram estoque baixado.
+  const ORDER_STATUSES_HOLDING_AVAILABILITY = ["Pendente", "Confirmado", "Pronto"];
+  const ORDER_STATUSES_REQUIRING_PRODUCTION = ["Pendente", "Confirmado"];
+  const pedidoHasReservedStock = (pedido) => pedido?.estoque_baixado === true || pedido?.estoqueBaixado === true;
 
   let sortState = {
     pedidos: { column: "dataEntrega", direction: "desc" },
@@ -2406,26 +2412,14 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       weekFilterSelect.value = selectedWeek;
     }
 
-    // Dashboard de produção:
-    // considera pedidos ativos da semana que ainda podem demandar estoque/produção.
-    // Concluído, Cancelado e Negado não entram.
-    const productionStatuses = new Set(["Pendente", "Confirmado", "Pronto"]);
-    const demandMap = new Map();
-
-    database.pedidos
-      .filter((p) => {
-        if (!p?.dataEntrega) return false;
-        if (!productionStatuses.has(p.status || "Pendente")) return false;
-        return getWeekStart(p.dataEntrega) === selectedWeek;
-      })
-      .forEach((p) => {
-        (p.items || []).forEach((item) => {
-          if (item.isCustom || !item.pizzaId) return;
-          const qtd = Number(item.qtd || 0);
-          if (!Number.isFinite(qtd) || qtd <= 0) return;
-          demandMap.set(item.pizzaId, (demandMap.get(item.pizzaId) || 0) + qtd);
-        });
-      });
+    // Produção pendente:
+    // conta somente pedidos ainda não prontos e que ainda não tiveram estoque baixado.
+    // Pedido com estoque reservado já saiu do estoque livre, então não deve entrar de novo aqui.
+    const demandMap = computePizzaDemandForWeek(selectedWeek, {
+      statuses: ORDER_STATUSES_REQUIRING_PRODUCTION,
+      onlyUnreserved: true,
+      asMap: true,
+    });
 
     let productionData = database.estoque
       .filter((pizza) => !sizeFilter || pizza.tamanho === sizeFilter)
@@ -2465,7 +2459,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       const surplusClass = data.sobraProjetada < 0 ? "low-stock" : "";
       const produzirClass = data.quantidade > 0 ? "low-stock" : "";
       row.innerHTML = `
-                <td data-label="Sabor da Pizza">${data.sabor}<br><small>Pedidos da semana: ${data.pedidosSemana}x</small></td>
+                <td data-label="Sabor da Pizza">${data.sabor}<br><small>Sem reserva/produção: ${data.pedidosSemana}x</small></td>
                 <td data-label="Quantidade a Produzir" class="${produzirClass}"><b>${data.quantidade}x</b></td>
                 <td data-label="Estoque Atual">${data.estoqueAtual}</td>
                 <td data-label="Sobra Projetada" class="${surplusClass}"><b>${data.sobraProjetada}</b></td>
@@ -3379,26 +3373,44 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     }
   };
 
-  const computePizzaDemandForWeek = (weekStart) => {
+  const computePizzaDemandForWeek = (weekStart, options = {}) => {
+    const {
+      statuses = ORDER_STATUSES_HOLDING_AVAILABILITY,
+      onlyUnreserved = false,
+      asMap = false,
+    } = options;
+
+    const allowedStatuses = new Set(statuses);
     const demand = {};
-    const demandStatuses = ["Pendente", "Confirmado", "Pronto"];
+
     database.pedidos
-      .filter(p => {
-        if (!p.dataEntrega) return false;
-        const ws = getWeekStart(p.dataEntrega);
-        return ws === weekStart && demandStatuses.includes(p.status || "Pendente");
+      .filter((p) => {
+        if (!p?.dataEntrega) return false;
+        const status = p.status || "Pendente";
+        if (!allowedStatuses.has(status)) return false;
+        if (onlyUnreserved && pedidoHasReservedStock(p)) return false;
+        return getWeekStart(p.dataEntrega) === weekStart;
       })
-      .forEach(p => {
-        (p.items || []).forEach(item => {
+      .forEach((p) => {
+        (p.items || []).forEach((item) => {
           if (item.isCustom || !item.pizzaId) return;
-          demand[item.pizzaId] = (demand[item.pizzaId] || 0) + Number(item.qtd || 0);
+          const qtd = Number(item.qtd || 0);
+          if (!Number.isFinite(qtd) || qtd <= 0) return;
+          demand[item.pizzaId] = (demand[item.pizzaId] || 0) + qtd;
         });
       });
+
+    if (asMap) return new Map(Object.entries(demand));
     return demand;
   };
 
   const getPizzaWeekStats = (weekStart = getWeekStart()) => {
-    const demandByPizza = computePizzaDemandForWeek(weekStart);
+    // Disponível para retirada = estoque livre - pedidos ativos que ainda não tiveram reserva/baixa.
+    // Pedidos já reservados não entram aqui porque já foram abatidos de estoque.qtd.
+    const demandByPizza = computePizzaDemandForWeek(weekStart, {
+      statuses: ORDER_STATUSES_HOLDING_AVAILABILITY,
+      onlyUnreserved: true,
+    });
     return database.estoque.map((pizza) => {
       const pedidosSemana = Number(demandByPizza[pizza.id] || 0);
       const estoqueAtual = Number(pizza.qtd || 0);
@@ -3408,7 +3420,10 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
   };
 
   const getPizzaSobraForWeek = (pizzaId, weekStart = getWeekStart()) => {
-    const demandByPizza = computePizzaDemandForWeek(weekStart);
+    const demandByPizza = computePizzaDemandForWeek(weekStart, {
+      statuses: ORDER_STATUSES_HOLDING_AVAILABILITY,
+      onlyUnreserved: true,
+    });
     const pizza = database.estoque.find((p) => p.id === pizzaId);
     return Number(pizza?.qtd || 0) - Number(demandByPizza[pizzaId] || 0);
   };
@@ -4634,7 +4649,10 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
   };
 
   const getProductionSuggestion = (weekStart) => {
-    const demand = computePizzaDemandForWeek(weekStart);
+    const demand = computePizzaDemandForWeek(weekStart, {
+      statuses: ORDER_STATUSES_REQUIRING_PRODUCTION,
+      onlyUnreserved: true,
+    });
     const previousWeeks = getPreviousWeekStarts(weekStart, 4).map((ws) => getWeeklyPizzaSales(ws));
 
     return database.estoque.map((pizza) => {
@@ -4855,11 +4873,11 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
     const quantidadeSemana = pedidosSemana.reduce((a, p) => a + (p.items || []).reduce((n, it) => n + Number(it.qtd || 0), 0), 0);
     const sugerida = getProductionSuggestion(week);
     const precisaProduzir = sugerida.filter((x) => x.produzirPedidos > 0);
-    const sobras = database.estoque
-      .map((pizza) => ({ pizza, sobra: Number(pizza.qtd || 0) - Number((computePizzaDemandForWeek(week)[pizza.id] || 0)) }))
-      .filter((x) => x.sobra > 0)
-      .sort((a,b) => b.sobra - a.sobra)
-      .slice(0, 8);
+    const sobras = getPizzaWeekStats(week)
+      .filter((x) => Number(x.sobraProj || 0) > 0)
+      .sort((a,b) => b.sobraProj - a.sobraProj)
+      .slice(0, 8)
+      .map((x) => ({ pizza: x, sobra: x.sobraProj, pedidosSemana: x.pedidosSemana, estoqueAtual: x.estoqueAtual }));
     const pendencias = getSystemAlerts();
     homeKpis.innerHTML = `
       <div class="kpi-tile"><span>Pedidos pendentes</span><b>${pendentes.length}</b><small>Semana atual</small></div>
@@ -4871,7 +4889,7 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
 
     prodBox.innerHTML = `<div class="home-list">${precisaProduzir.slice(0,6).map((x) => `<div class="home-list-item"><b>${escapeHTML(x.pizza.nome)} (${escapeHTML(x.pizza.tamanho)})</b><span class="badge-inline danger">Produzir ${x.produzirPedidos}</span><small>Pedidos: ${x.pedidos} · Estoque: ${x.estoque} · Média 4 semanas: ${x.mediaAnterior.toFixed(1)}</small></div>`).join('') || '<p class="empty-state compact">Nada urgente para produzir.</p>'}</div>`;
 
-    sobraBox.innerHTML = `<div class="home-list">${sobras.map((x) => `<div class="home-list-item"><b>${escapeHTML(x.pizza.nome)} (${escapeHTML(x.pizza.tamanho)})</b><span class="badge-inline success">${x.sobra} disponível</span><small>Estoque: ${x.pizza.qtd} · Demanda da semana: ${computePizzaDemandForWeek(week)[x.pizza.id] || 0}</small></div>`).join('') || '<p class="empty-state compact">Sem sobras positivas nesta semana.</p>'}</div>`;
+    sobraBox.innerHTML = `<div class="home-list">${sobras.map((x) => `<div class="home-list-item"><b>${escapeHTML(x.pizza.nome)} (${escapeHTML(x.pizza.tamanho)})</b><span class="badge-inline success">${x.sobra} disponível</span><small>Estoque livre: ${x.estoqueAtual} · sem reserva: ${x.pedidosSemana || 0}</small></div>`).join('') || '<p class="empty-state compact">Sem sobras positivas nesta semana.</p>'}</div>`;
 
     alertBox.innerHTML = `<div class="home-list">
       <div class="home-list-item"><b>Prontos para concluir</b><span class="badge-inline ${pendencias.total ? 'danger' : 'success'}">${pendencias.total}</span><small>${pendencias.prontosParaConcluir.slice(0,4).map((p) => `${p.cliente} · ${formatCurrency(p.valorFinal || p.valorTotal || 0)}`).join('<br>') || 'Nenhuma pendência.'}</small></div>
