@@ -277,8 +277,15 @@
                                 <option value="Cartão de Débito">Cartão de Débito</option>
                                 <option value="Pix">Pix</option>
                             </select>
-                            <select id="pedido-semana-entrega" required title="Semana de Entrega">
-                                <option value="">Selecione a Semana de Entrega</option>
+                            <label class="pedido-data-field">
+                                <span>Dia exato do pedido/entrega</span>
+                                <input type="date" id="pedido-data-entrega" required>
+                                <small id="pedido-semana-label" class="field-hint">Semana: -</small>
+                            </label>
+                            <input type="hidden" id="pedido-semana-entrega">
+                            <select id="pedido-metodo-entrega" required title="Entrega ou retirada">
+                                <option value="retirada">Retirada</option>
+                                <option value="entrega">Entrega</option>
                             </select>
                         </form>
                         <hr>
