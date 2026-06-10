@@ -1,5 +1,5 @@
 document.addEventListener("DOMContentLoaded", () => {
-  window.SASSES_VERSION = "v56-producao-estoque-logica";
+  window.SASSES_VERSION = "v58-calendario-dia-metodo-entrega";
   console.log("Sasse's Pizza", window.SASSES_VERSION);
   const SUPABASE_URL = "https://iprnfzevdfmnraexthpy.supabase.co";
   const SUPABASE_ANON_KEY =
@@ -41,7 +41,23 @@ document.addEventListener("DOMContentLoaded", () => {
   const STOCK_ACTIVE_STATUSES = ["Pendente", "Confirmado", "Pronto", "Concluído"];
   const STOCK_RELEASED_STATUSES = ["Cancelado", "Negado"];
   const ALL_ORDER_STATUSES = [...STOCK_ACTIVE_STATUSES, ...STOCK_RELEASED_STATUSES];
-  const orderHoldsStock = (status) => STOCK_ACTIVE_STATUSES.includes(status || "Pendente");
+
+  const normalizePedidoStatusValue = (status) => {
+    const raw = String(status || "Pendente").trim();
+    const key = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    const map = {
+      pendente: "Pendente",
+      confirmado: "Confirmado",
+      pronto: "Pronto",
+      concluido: "Concluído",
+      cancelado: "Cancelado",
+      negado: "Negado",
+    };
+    return map[key] || raw;
+  };
+
+  const pedidoStatusIn = (status, list) => list.includes(normalizePedidoStatusValue(status));
+  const orderHoldsStock = (status) => pedidoStatusIn(status || "Pendente", STOCK_ACTIVE_STATUSES);
 
   // Estoque no banco já é o estoque livre depois das reservas.
   // Por isso a produção e as sobras só descontam pedidos que ainda NÃO tiveram estoque baixado.
@@ -240,8 +256,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const getPedidoPagamentoAtual = () => document.getElementById("pedido-pagamento")?.value || "";
 
-  const isPedidoPago = (pedido) => pedido?.pago === true || pedido?.status === "Concluído";
-  const isPedidoAtivoFinanceiro = (pedido) => !STOCK_RELEASED_STATUSES.includes(pedido?.status);
+  const isPedidoPago = (pedido) => pedido?.pago === true || normalizePedidoStatusValue(pedido?.status) === "Concluído";
+  const isPedidoAtivoFinanceiro = (pedido) => !pedidoStatusIn(pedido?.status, STOCK_RELEASED_STATUSES);
 
   const formatSupabaseError = (error, fallback = "Não foi possível salvar") => {
     const message = error?.message || String(error || fallback);
@@ -420,25 +436,54 @@ document.addEventListener("DOMContentLoaded", () => {
     openModal("notifications-modal", "Prontos para concluir", contentHTML);
   };
 
+  const parseSafeDate = (value) => {
+    if (value instanceof Date) return Number.isNaN(value.getTime()) ? new Date() : new Date(value.getTime());
+    if (!value) return new Date();
+    const str = String(value).trim();
+    const dateOnly = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (dateOnly) return new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]));
+    const parsed = new Date(str);
+    return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  };
+
   const formatDateToYYYYMMDD = (date) => {
-    const d = new Date(date);
-    const userTimezoneOffset = d.getTimezoneOffset() * 60000;
-    const adjustedDate = new Date(d.getTime() + userTimezoneOffset);
-    const year = adjustedDate.getFullYear();
-    const month = String(adjustedDate.getMonth() + 1).padStart(2, "0");
-    const day = String(adjustedDate.getDate()).padStart(2, "0");
+    const d = parseSafeDate(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
     return `${year}-${month}-${day}`;
   };
 
   const getWeekStart = (dateStr) => {
-    const d = dateStr ? new Date(dateStr) : new Date();
-    const day = d.getUTCDay();
-    const diff = d.getUTCDate() - day + (day === 0 ? -6 : 1);
-    const monday = new Date(d.setUTCDate(diff));
-    const year = monday.getUTCFullYear();
-    const month = String(monday.getUTCMonth() + 1).padStart(2, "0");
-    const dayOfMonth = String(monday.getUTCDate()).padStart(2, "0");
-    return `${year}-${month}-${dayOfMonth}`;
+    const d = parseSafeDate(dateStr);
+    const day = d.getDay();
+    const monday = new Date(d);
+    monday.setHours(0, 0, 0, 0);
+    monday.setDate(d.getDate() - day + (day === 0 ? -6 : 1));
+    return formatDateToYYYYMMDD(monday);
+  };
+
+  const getPedidoDataEntrega = (pedido) => pedido?.dataEntrega || pedido?.data_entrega || pedido?.semana_entrega || pedido?.created_at || "";
+  const getPedidoWeekStart = (pedido) => getWeekStart(getPedidoDataEntrega(pedido));
+
+  const formatWeekRangeLabel = (weekStartValue) => {
+    const start = parseSafeDate(weekStartValue || getWeekStart());
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    const fmt = (d) => d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+    return `Semana: ${fmt(start)} até ${fmt(end)}`;
+  };
+
+  const syncPedidoDataSemana = () => {
+    const dateInput = document.getElementById("pedido-data-entrega");
+    const weekInput = document.getElementById("pedido-semana-entrega");
+    const label = document.getElementById("pedido-semana-label");
+    if (!dateInput) return getWeekStart();
+    if (!dateInput.value) dateInput.value = formatDateToYYYYMMDD(new Date());
+    const weekStart = getWeekStart(dateInput.value);
+    if (weekInput) weekInput.value = weekStart;
+    if (label) label.textContent = formatWeekRangeLabel(weekStart);
+    return weekStart;
   };
 
 
@@ -462,15 +507,6 @@ document.addEventListener("DOMContentLoaded", () => {
       default:
         return { title: "Pedido", label: status, tone: "muted" };
     }
-  };
-  const getEstoqueStatusMeta = (pedido) => {
-    if (STOCK_RELEASED_STATUSES.includes(pedido?.status)) {
-      return { title: "Estoque", label: "Sem reserva", tone: "muted" };
-    }
-    if (pedido?.estoque_baixado === false) {
-      return { title: "Estoque", label: "A produzir", tone: "warning" };
-    }
-    return { title: "Estoque", label: "Reservado", tone: "success" };
   };
   const getAtendimentoStatusMeta = (pedido) => ({
     title: getMetodoEntregaLabel(pedido),
@@ -583,7 +619,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
         supabaseClient.from("ingredientes").select("*").order("nome"),
         supabaseClient.from("estoque").select("*").order("nome"),
         supabaseClient.from("receitas").select("*"),
-        supabaseClient.from("pedidos").select("*").order("created_at", { ascending: false }),
+        supabaseClient.from("pedidos").select("*").order("created_at", { ascending: false }).range(0, 4999),
         supabaseClient.from("clientes").select("*").order("nome"),
         supabaseClient.from("massas").select("*"),
         supabaseClient.from("massas_semanais").select("*"),
@@ -1225,6 +1261,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     applySellerProfileToForms(false);
     populateSelects();
     populateWeekSelector(undefined, { futureOnly: true, futureWeeks: 24, setCurrentDefault: true });
+    syncPedidoDataSemana();
     populateWeekSelector(document.getElementById("filter-demanda-semana"), { setCurrentDefault: true });
     populateWeekSelector(document.getElementById("dash-week-filter"));
     populateWeekSelector(document.getElementById("quick-semana"), { futureOnly: true, futureWeeks: 24, setCurrentDefault: true });
@@ -1291,6 +1328,10 @@ Deseja adicionar esse frete ao Valor Final?`)) {
   const populateWeekSelector = (selectElement, options = {}) => {
     const weekSelect = selectElement || document.getElementById("pedido-semana-entrega");
     if (!weekSelect) return;
+    if (!weekSelect.options) {
+      if (weekSelect.id === "pedido-semana-entrega") syncPedidoDataSemana();
+      return;
+    }
 
     const {
       includeFuture = false,
@@ -1918,7 +1959,6 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       const pago = isPedidoPago(p);
       const pagamentoTag = !isPedidoAtivoFinanceiro(p) ? '<span class="payment-tag muted">Sem cobrança</span>' : (pago ? '<span class="payment-tag paid">Pago</span>' : '<span class="payment-tag unpaid">Pagamento pendente</span>');
       const pedidoMeta = getPedidoStatusMeta(p);
-      const estoqueMeta = getEstoqueStatusMeta(p);
       const atendimentoMeta = getAtendimentoStatusMeta(p);
       const metodoTag = normalizeMetodoEntrega(p) === "entrega" ? '<span class="payment-tag info">Entrega</span>' : '<span class="payment-tag muted">Retirada</span>';
       const freteInfo = normalizeMetodoEntrega(p) === "entrega" ? `<br><small>Frete: ${formatCurrency(p.frete || 0)}${p.distancia_km ? ` · ${Number(p.distancia_km).toFixed(1).replace('.', ',')} km` : ''}</small>` : '';
@@ -1932,7 +1972,6 @@ Deseja adicionar esse frete ao Valor Final?`)) {
                 <td data-label="Situação">
                   <div class="status-stack">
                     <div class="status-row"><span class="status-key">${pedidoMeta.title}</span><span class="status-chip ${pedidoMeta.tone}">${pedidoMeta.label}</span></div>
-                    <div class="status-row"><span class="status-key">${estoqueMeta.title}</span><span class="status-chip ${estoqueMeta.tone}">${estoqueMeta.label}</span></div>
                     <div class="status-row"><span class="status-key">${atendimentoMeta.title}</span><span class="status-chip ${atendimentoMeta.tone}">${atendimentoMeta.label}</span></div>
                   </div>
                 </td>
@@ -2073,7 +2112,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       const label = pizza.tamanho ? `${pizza.nome} (${pizza.tamanho})` : pizza.nome;
       const price = getPrecoPorPagamento(pizza.precoVenda, pagamento);
       const stockClass = Number(pizza.qtd || 0) <= 0 ? "is-empty" : "";
-      const weekStart = document.getElementById("pedido-semana-entrega")?.value || getWeekStart();
+      const weekStart = document.getElementById("pedido-semana-entrega")?.value || syncPedidoDataSemana();
       return `<button type="button" class="pizza-shortcut ${stockClass}" onclick="window.quickAddPedidoItem('${pizza.id}')">
         <b>${label}</b>
         <small>${formatCurrency(price)} · ${formatStockSobra(pizza.id, weekStart)}</small>
@@ -2135,7 +2174,16 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     updateTotalPedido();
   });
   document.getElementById("pedido-pizza-search")?.addEventListener("input", renderPedidoAtalhos);
+  document.getElementById("pedido-data-entrega")?.addEventListener("change", () => {
+    syncPedidoDataSemana();
+    renderPedidoAtalhos();
+  });
   document.getElementById("pedido-semana-entrega")?.addEventListener("change", renderPedidoAtalhos);
+  document.getElementById("pedido-metodo-entrega")?.addEventListener("change", () => {
+    const metodo = document.getElementById("pedido-metodo-entrega")?.value || "retirada";
+    const endereco = document.getElementById("pedido-endereco");
+    if (endereco) endereco.required = metodo === "entrega";
+  });
 
   document.getElementById("item-pizza")?.addEventListener("change", (e) => {
     const isOutro = e.target.value === "outro";
@@ -2157,10 +2205,17 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     const cidade = document.getElementById("pedido-cidade").value;
     const endereco = document.getElementById("pedido-endereco")?.value || "";
     const pagamento = document.getElementById("pedido-pagamento").value;
-    const dataEntrega = document.getElementById("pedido-semana-entrega").value;
+    const dataEntrega = document.getElementById("pedido-data-entrega")?.value || formatDateToYYYYMMDD(new Date());
+    const semanaEntrega = getWeekStart(dataEntrega);
+    const metodoEntrega = document.getElementById("pedido-metodo-entrega")?.value || "retirada";
+    if (document.getElementById("pedido-semana-entrega")) document.getElementById("pedido-semana-entrega").value = semanaEntrega;
 
-    if (!clienteNome || !pagamento || !vendedor || !cidade || !dataEntrega) {
+    if (!clienteNome || !pagamento || !vendedor || !cidade || !dataEntrega || !metodoEntrega) {
       alert("Preencha todos os campos obrigatórios do pedido.");
+      return;
+    }
+    if (metodoEntrega === "entrega" && !endereco.trim()) {
+      alert("Informe o endereço para pedidos de entrega.");
       return;
     }
 
@@ -2209,6 +2264,8 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       endereco,
       pagamento,
       dataEntrega,
+      semana_entrega: semanaEntrega,
+      metodo_entrega: metodoEntrega,
       status: "Confirmado",
       origem_pedido: "gestao",
       items: itensComPrecoFinal,
@@ -2217,7 +2274,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       pago: false,
     };
 
-    const semanaInicio = getWeekStart(dataEntrega);
+    const semanaInicio = semanaEntrega;
     const quotas = database.massas_semanais.find((m) => m.semana_inicio === semanaInicio) || { g_semana: 0, p_semana: 0, pc_semana: 0 };
     const used = computeWeeklyUsage(semanaInicio);
     const newOrderDoughs = { G: 0, P: 0, PC: 0 };
@@ -2265,8 +2322,13 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     if (valorFinal) valorFinal.value = "";
     const desconto = document.getElementById("pedido-desconto");
     if (desconto) desconto.value = "";
+    const dateInput = document.getElementById("pedido-data-entrega");
+    if (dateInput) dateInput.value = formatDateToYYYYMMDD(new Date());
     const weekSelect = document.getElementById("pedido-semana-entrega");
-    if (weekSelect) weekSelect.value = getWeekStart();
+    if (weekSelect) weekSelect.value = getWeekStart(dateInput?.value || new Date());
+    const metodoEntrega = document.getElementById("pedido-metodo-entrega");
+    if (metodoEntrega) metodoEntrega.value = "retirada";
+    syncPedidoDataSemana();
     pedidoAtualItems = [];
     renderPedidoCarrinho();
     updateTotalPedido();
@@ -2412,25 +2474,24 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       weekFilterSelect.value = selectedWeek;
     }
 
-    // Produção pendente:
-    // conta somente pedidos ainda não prontos e que ainda não tiveram estoque baixado.
-    // Pedido com estoque reservado já saiu do estoque livre, então não deve entrar de novo aqui.
-    const demandMap = computePizzaDemandForWeek(selectedWeek, {
+    // Total da semana: usa todos os pedidos pendentes/confirmados da semana,
+    // sem mostrar controle de reserva de estoque.
+    const totalDemandMap = computePizzaDemandForWeek(selectedWeek, {
       statuses: ORDER_STATUSES_REQUIRING_PRODUCTION,
-      onlyUnreserved: true,
+      onlyUnreserved: false,
       asMap: true,
     });
 
     let productionData = database.estoque
       .filter((pizza) => !sizeFilter || pizza.tamanho === sizeFilter)
       .map((pizza) => {
-        const quantidadePedidos = Number(demandMap.get(pizza.id) || 0);
+        const pedidosSemana = Number(totalDemandMap.get(pizza.id) || 0);
         const estoqueAtual = Number(pizza.qtd || 0);
-        const quantidadeProduzir = Math.max(0, quantidadePedidos - estoqueAtual);
-        const sobraProjetada = estoqueAtual - quantidadePedidos;
+        const quantidadeProduzir = Math.max(0, pedidosSemana - estoqueAtual);
+        const sobraProjetada = estoqueAtual - pedidosSemana;
         return {
           sabor: `${pizza.nome} (${pizza.tamanho})`,
-          pedidosSemana: quantidadePedidos,
+          pedidosSemana,
           quantidade: quantidadeProduzir,
           estoqueAtual,
           sobraProjetada,
@@ -2459,7 +2520,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       const surplusClass = data.sobraProjetada < 0 ? "low-stock" : "";
       const produzirClass = data.quantidade > 0 ? "low-stock" : "";
       row.innerHTML = `
-                <td data-label="Sabor da Pizza">${data.sabor}<br><small>Sem reserva/produção: ${data.pedidosSemana}x</small></td>
+                <td data-label="Sabor da Pizza">${data.sabor}<br><small>Pedidos na semana: ${data.pedidosSemana}x</small></td>
                 <td data-label="Quantidade a Produzir" class="${produzirClass}"><b>${data.quantidade}x</b></td>
                 <td data-label="Estoque Atual">${data.estoqueAtual}</td>
                 <td data-label="Sobra Projetada" class="${surplusClass}"><b>${data.sobraProjetada}</b></td>
@@ -3072,8 +3133,14 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
             <label>Vendedor
               <input type="text" name="vendedor" value="${escapeAttr(pedido.vendedor || "")}" required>
             </label>
-            <label>Semana/data entrega
+            <label>Dia exato
               <input type="date" name="dataEntrega" value="${escapeAttr(dataEntrega)}" required>
+            </label>
+            <label>Entrega ou retirada
+              <select name="metodo_entrega" required>
+                <option value="retirada" ${normalizeMetodoEntrega(pedido) === "retirada" ? "selected" : ""}>Retirada</option>
+                <option value="entrega" ${normalizeMetodoEntrega(pedido) === "entrega" ? "selected" : ""}>Entrega</option>
+              </select>
             </label>
             <label>Forma de pagamento
               <select name="pagamento" id="edit-pedido-pagamento" required>
@@ -3289,6 +3356,13 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     const clienteNome = String(formData.get("cliente") || "").trim();
     const cidade = String(formData.get("cidade") || "").trim();
 
+    const metodoEntregaEdit = formData.get("metodo_entrega") || "retirada";
+    if (metodoEntregaEdit === "entrega" && !String(formData.get("endereco") || "").trim()) {
+      hideLoader();
+      alert("Informe o endereço para pedidos de entrega.");
+      return;
+    }
+
     const updatedPedidoData = {
       cliente: clienteNome,
       telefone: String(formData.get("telefone") || "").trim(),
@@ -3297,6 +3371,8 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       vendedor: String(formData.get("vendedor") || "").trim(),
       pagamento: formData.get("pagamento"),
       dataEntrega: formData.get("dataEntrega"),
+      semana_entrega: getWeekStart(formData.get("dataEntrega")),
+      metodo_entrega: metodoEntregaEdit,
       status: formData.get("status"),
       pago: formData.get("status") === "Concluído" || formData.get("pago") === "on",
       observacoes: String(formData.get("observacoes") || "").trim(),
@@ -3385,11 +3461,11 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
 
     database.pedidos
       .filter((p) => {
-        if (!p?.dataEntrega) return false;
-        const status = p.status || "Pendente";
+        if (!getPedidoDataEntrega(p)) return false;
+        const status = normalizePedidoStatusValue(p.status);
         if (!allowedStatuses.has(status)) return false;
         if (onlyUnreserved && pedidoHasReservedStock(p)) return false;
-        return getWeekStart(p.dataEntrega) === weekStart;
+        return getPedidoWeekStart(p) === weekStart;
       })
       .forEach((p) => {
         (p.items || []).forEach((item) => {
@@ -3636,9 +3712,9 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     const customWeek = document.getElementById("dash-week-filter")?.value;
     if (filterRange === "custom-week" && customWeek) {
       return database.pedidos.filter(p => {
-        if (p.status !== "Concluído" && p.status !== "Pronto") return false;
-        if (!p.dataEntrega) return false;
-        return getWeekStart(p.dataEntrega) === customWeek;
+        if (!isPedidoAtivoFinanceiro(p)) return false;
+        if (!getPedidoDataEntrega(p)) return false;
+        return getPedidoWeekStart(p) === customWeek;
       });
     }
 
@@ -3654,8 +3730,8 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
     return database.pedidos.filter((p) => {
-      if (p.status !== "Concluído" && p.status !== "Pronto") return false;
-      const pDate = new Date((p.dataEntrega || p.created_at) + "T00:00:00");
+      if (!isPedidoAtivoFinanceiro(p)) return false;
+      const pDate = parseSafeDate(getPedidoDataEntrega(p));
       switch (filterRange) {
         case "today": return pDate >= today;
         case "week": return pDate >= weekStart;
@@ -3664,6 +3740,26 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
         default: return true;
       }
     });
+  };
+
+  window.debugPedidosSemana = (weekStart = getWeekStart()) => {
+    const rows = database.pedidos
+      .map((p) => ({
+        id: p.id,
+        cliente: p.cliente,
+        statusOriginal: p.status,
+        statusNormalizado: normalizePedidoStatusValue(p.status),
+        dataEntrega: p.dataEntrega,
+        data_entrega: p.data_entrega,
+        created_at: p.created_at,
+        semanaCalculada: getPedidoWeekStart(p),
+        estoque_baixado: p.estoque_baixado,
+        itemsOk: Array.isArray(p.items),
+        qtdItens: Array.isArray(p.items) ? p.items.reduce((a, it) => a + Number(it.qtd || 0), 0) : 0,
+      }))
+      .filter((p) => p.semanaCalculada === weekStart);
+    console.table(rows);
+    return rows;
   };
 
   const renderDashboard = (filterRange = "all") => {
@@ -4289,7 +4385,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
 
 
   // ===== V4: Caixa, produção, impressão, venda rápida e clientes inteligentes =====
-  const getWeekOrders = (weekStart, statuses = ["Pendente", "Confirmado", "Pronto", "Concluído"]) => database.pedidos.filter(p => p.dataEntrega && getWeekStart(p.dataEntrega) === weekStart && statuses.includes(p.status));
+  const getWeekOrders = (weekStart, statuses = ["Pendente", "Confirmado", "Pronto", "Concluído"]) => database.pedidos.filter(p => p.dataEntrega && getWeekStart(p.dataEntrega) === weekStart && pedidoStatusIn(p.status, statuses));
 
   window.marcarPedidoPago = async (id) => {
     const pedido = database.pedidos.find((p) => p.id === id);
@@ -4316,7 +4412,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     const p = database.pedidos.find(x => x.id === id);
     if (!p) return;
     const itens = (p.items || []).map(i => `<li>${i.qtd}x ${i.pizzaNome}</li>`).join("");
-    const html = `<html><head><title>Pedido</title><style>body{font-family:Arial;padding:20px;font-size:14px}.ticket{max-width:360px}.line{border-top:1px dashed #999;margin:12px 0}h2{margin:0 0 8px}ul{padding-left:18px}.big{font-size:18px;font-weight:bold}</style></head><body><div class="ticket"><h2>Sasse's Pizza</h2><div class="line"></div><p><b>Cliente:</b> ${p.cliente}<br><b>Tel:</b> ${p.telefone || "-"}<br><b>Cidade:</b> ${p.cidade || "-"}<br><b>Endereço:</b> ${p.endereco || "-"}<br><b>Vendedor:</b> ${p.vendedor || "-"}<br><b>Semana:</b> ${new Date(p.dataEntrega + "T00:00:00").toLocaleDateString("pt-BR")}</p><div class="line"></div><ul>${itens}</ul><div class="line"></div><p class="big">Total: ${formatCurrency(p.valorFinal || p.valorTotal)}</p><p>Pagamento: ${p.pagamento || "-"} | ${p.pago ? "PAGO" : "PENDENTE"}</p></div><script>window.print(); setTimeout(()=>window.close(),300);<\/script></body></html>`;
+    const html = `<html><head><title>Pedido</title><style>body{font-family:Arial;padding:20px;font-size:14px}.ticket{max-width:360px}.line{border-top:1px dashed #999;margin:12px 0}h2{margin:0 0 8px}ul{padding-left:18px}.big{font-size:18px;font-weight:bold}</style></head><body><div class="ticket"><h2>Sasse's Pizza</h2><div class="line"></div><p><b>Cliente:</b> ${p.cliente}<br><b>Tel:</b> ${p.telefone || "-"}<br><b>Cidade:</b> ${p.cidade || "-"}<br><b>Endereço:</b> ${p.endereco || "-"}<br><b>Vendedor:</b> ${p.vendedor || "-"}<br><b>Tipo:</b> ${getMetodoEntregaLabel(p)}<br><b>Data:</b> ${new Date(p.dataEntrega + "T00:00:00").toLocaleDateString("pt-BR")}<br><b>Semana:</b> ${formatWeekRangeLabel(getWeekStart(p.dataEntrega))}</p><div class="line"></div><ul>${itens}</ul><div class="line"></div><p class="big">Total: ${formatCurrency(p.valorFinal || p.valorTotal)}</p><p>Pagamento: ${p.pagamento || "-"} | ${p.pago ? "PAGO" : "PENDENTE"}</p></div><script>window.print(); setTimeout(()=>window.close(),300);<\/script></body></html>`;
     const w = window.open("", "", "width=420,height=700");
     w.document.write(html); w.document.close();
   };
@@ -4476,6 +4572,8 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       vendedor,
       pagamento: document.getElementById("quick-pagamento").value,
       dataEntrega,
+      semana_entrega: getWeekStart(dataEntrega),
+      metodo_entrega: "retirada",
       status: "Confirmado",
       origem_pedido: "gestao",
       items,
@@ -4628,7 +4726,7 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
     database.pedidos
       .filter((pedido) => {
         if (!pedido.dataEntrega) return false;
-        return getWeekStart(pedido.dataEntrega) === weekStart && ["Pendente", "Confirmado", "Pronto", "Concluído"].includes(pedido.status);
+        return getWeekStart(pedido.dataEntrega) === weekStart && pedidoStatusIn(pedido.status, ["Pendente", "Confirmado", "Pronto", "Concluído"]);
       })
       .forEach((pedido) => {
         (pedido.items || []).forEach((item) => {
@@ -4841,9 +4939,9 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
 
   
   const getWeekPedidos = (weekStart, onlyPending = false) => database.pedidos.filter((pedido) => {
-    const sameWeek = getWeekStart(pedido.dataEntrega || pedido.created_at || getWeekStart()) === weekStart;
+    const sameWeek = getPedidoWeekStart(pedido) === weekStart;
     if (!sameWeek || !isPedidoAtivoFinanceiro(pedido)) return false;
-    return onlyPending ? pedido.status !== "Concluído" : true;
+    return onlyPending ? normalizePedidoStatusValue(pedido.status) !== "Concluído" : true;
   });
 
   const getFutureWeekOptions = (count = 4) => {
@@ -4867,7 +4965,7 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
     if (!homeKpis || !pendingBox || !prodBox || !sobraBox || !alertBox) return;
 
     const pedidosSemana = getWeekPedidos(week, false);
-    const pendentes = pedidosSemana.filter((p) => isPedidoAtivoFinanceiro(p) && p.status !== "Concluído");
+    const pendentes = pedidosSemana.filter((p) => isPedidoAtivoFinanceiro(p) && normalizePedidoStatusValue(p.status) !== "Concluído");
     const pagosSemana = pedidosSemana.filter((p) => isPedidoPago(p));
     const faturamentoSemana = pagosSemana.reduce((a, p) => a + Number(p.valorFinal || p.valorTotal || 0), 0);
     const quantidadeSemana = pedidosSemana.reduce((a, p) => a + (p.items || []).reduce((n, it) => n + Number(it.qtd || 0), 0), 0);
@@ -4889,7 +4987,7 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
 
     prodBox.innerHTML = `<div class="home-list">${precisaProduzir.slice(0,6).map((x) => `<div class="home-list-item"><b>${escapeHTML(x.pizza.nome)} (${escapeHTML(x.pizza.tamanho)})</b><span class="badge-inline danger">Produzir ${x.produzirPedidos}</span><small>Pedidos: ${x.pedidos} · Estoque: ${x.estoque} · Média 4 semanas: ${x.mediaAnterior.toFixed(1)}</small></div>`).join('') || '<p class="empty-state compact">Nada urgente para produzir.</p>'}</div>`;
 
-    sobraBox.innerHTML = `<div class="home-list">${sobras.map((x) => `<div class="home-list-item"><b>${escapeHTML(x.pizza.nome)} (${escapeHTML(x.pizza.tamanho)})</b><span class="badge-inline success">${x.sobra} disponível</span><small>Estoque livre: ${x.estoqueAtual} · sem reserva: ${x.pedidosSemana || 0}</small></div>`).join('') || '<p class="empty-state compact">Sem sobras positivas nesta semana.</p>'}</div>`;
+    sobraBox.innerHTML = `<div class="home-list">${sobras.map((x) => `<div class="home-list-item"><b>${escapeHTML(x.pizza.nome)} (${escapeHTML(x.pizza.tamanho)})</b><span class="badge-inline success">${x.sobra} disponível</span><small>Estoque livre: ${x.estoqueAtual} · pedidos na semana: ${x.pedidosSemana || 0}</small></div>`).join('') || '<p class="empty-state compact">Sem sobras positivas nesta semana.</p>'}</div>`;
 
     alertBox.innerHTML = `<div class="home-list">
       <div class="home-list-item"><b>Prontos para concluir</b><span class="badge-inline ${pendencias.total ? 'danger' : 'success'}">${pendencias.total}</span><small>${pendencias.prontosParaConcluir.slice(0,4).map((p) => `${p.cliente} · ${formatCurrency(p.valorFinal || p.valorTotal || 0)}`).join('<br>') || 'Nenhuma pendência.'}</small></div>
@@ -5113,8 +5211,8 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
 
   const renderMobileInicio = () => {
     const week = getWeekStart();
-    const pedidosSemana = database.pedidos.filter((p) => p.dataEntrega && getWeekStart(p.dataEntrega) === week);
-    const pendentes = pedidosSemana.filter((p) => isPedidoAtivoFinanceiro(p) && p.status !== "Concluído");
+    const pedidosSemana = database.pedidos.filter((p) => getPedidoDataEntrega(p) && getPedidoWeekStart(p) === week);
+    const pendentes = pedidosSemana.filter((p) => isPedidoAtivoFinanceiro(p) && normalizePedidoStatusValue(p.status) !== "Concluído");
     const receitaPaga = pedidosSemana.filter(isPedidoPago).reduce((a, p) => a + Number(p.valorFinal || p.valorTotal || 0), 0);
     const pizzasSemana = pedidosSemana.reduce((a, p) => a + (p.items || []).reduce((n, it) => n + Number(it.qtd || 0), 0), 0);
     const prod = getProductionSuggestion(week).filter((x) => x.produzirPedidos > 0).slice(0, 5);
@@ -5143,7 +5241,8 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
         <input id="m-pedido-endereco" placeholder="Endereço">
         <input id="m-pedido-vendedor" placeholder="Vendedor" value="${escapeAttr(getMobileSellerName())}" required>
         <select id="m-pedido-pagamento"><option value="Pix">Pix</option><option value="Dinheiro">Dinheiro</option><option value="Cartão de Crédito">Cartão de Crédito</option><option value="Cartão de Débito">Cartão de Débito</option></select>
-        <select id="m-pedido-semana">${mobileWeekOptionsHTML(24)}</select>
+        <input id="m-pedido-semana" type="date" value="${formatDateToYYYYMMDD(new Date())}" required>
+        <select id="m-pedido-metodo"><option value="retirada">Retirada</option><option value="entrega">Entrega</option></select>
         <div class="m-two"><select id="m-pedido-pizza"><option value="">Pizza...</option>${mPizzaOptions()}</select><input id="m-pedido-qtd" type="number" min="1" value="1"></div>
         <button type="button" id="m-add-pizza" class="m-btn secondary">Adicionar pizza</button>
         <div id="m-pedido-carrinho" class="m-cart"></div>
@@ -5212,6 +5311,8 @@ Lançar mesmo assim como encomenda/produção pendente?`);
         vendedor: document.getElementById("m-pedido-vendedor").value.trim(),
         pagamento: document.getElementById("m-pedido-pagamento").value,
         dataEntrega: document.getElementById("m-pedido-semana").value,
+        semana_entrega: getWeekStart(document.getElementById("m-pedido-semana").value),
+        metodo_entrega: document.getElementById("m-pedido-metodo")?.value || "retirada",
         items: mobileOrderItems,
         valorTotal: calcMobileOrderTotal(),
         valorFinal: safeNumber(document.getElementById("m-pedido-valor-final").value, applyDiscount(calcMobileOrderTotal(), document.getElementById("m-pedido-desconto").value)),
@@ -5225,6 +5326,10 @@ Lançar mesmo assim como encomenda/produção pendente?`);
       alert("Preencha cliente, cidade e vendedor.");
       return false;
     }
+    if ((pedidoData.metodo_entrega || "retirada") === "entrega" && !String(pedidoData.endereco || "").trim()) {
+      alert("Informe o endereço para pedidos de entrega.");
+      return false;
+    }
     showLoader();
     try {
       let cliente = database.clientes.find((c) => (c.nome || "").toLowerCase() === pedidoData.cliente.toLowerCase() && (c.cidade || "").toLowerCase() === pedidoData.cidade.toLowerCase());
@@ -5234,7 +5339,16 @@ Lançar mesmo assim como encomenda/produção pendente?`);
         if (r.error) throw r.error;
         clienteId = r.data.id;
       }
-      const newPedido = { ...pedidoData, clienteId, status: "Confirmado", origem_pedido: "gestao", pago: false };
+      const newPedido = {
+        ...pedidoData,
+        clienteId,
+        dataEntrega: pedidoData.dataEntrega || formatDateToYYYYMMDD(new Date()),
+        semana_entrega: pedidoData.semana_entrega || getWeekStart(pedidoData.dataEntrega || new Date()),
+        metodo_entrega: pedidoData.metodo_entrega || "retirada",
+        status: "Confirmado",
+        origem_pedido: "gestao",
+        pago: false
+      };
       const r = await supabaseClient.rpc("criar_pedido_com_reserva", { p_pedido: newPedido });
       if (r.error) throw r.error;
       mobileOrderItems = [];
