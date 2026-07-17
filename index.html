@@ -287,6 +287,19 @@
                                 <option value="retirada">Retirada</option>
                                 <option value="entrega">Entrega</option>
                             </select>
+                            <label class="pedido-grande-toggle">
+                                <input type="checkbox" id="pedido-grande">
+                                <span><b>Pedido grande</b><small>Separar as pizzas por cliente, sem criar novos cadastros.</small></span>
+                            </label>
+                            <div id="pedido-grande-config" class="pedido-grande-config hidden">
+                                <label for="pedido-secao-cliente">Cliente da seção atual</label>
+                                <div class="pedido-secao-row">
+                                    <input type="text" id="pedido-secao-cliente" placeholder="Ex.: João, Maria, Loja 2..." maxlength="80">
+                                    <button type="button" id="pedido-limpar-secao" class="secondary-btn">Limpar</button>
+                                </div>
+                                <small>As próximas pizzas adicionadas ficarão agrupadas neste nome. Troque o nome para iniciar outra seção.</small>
+                            </div>
+                            <textarea id="pedido-observacoes" rows="3" placeholder="Observações do pedido (opcional)"></textarea>
                         </form>
                         <hr>
                         <div id="form-item-pedido">
