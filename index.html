@@ -79,6 +79,7 @@
         <button class="tab-link active" data-tab="inicio"><span class="material-symbols-rounded">home</span><span>Início</span></button>
         <button class="tab-link" data-tab="pedidos"><span class="material-symbols-rounded">receipt_long</span><span>Pedidos</span></button>
         <button class="tab-link admin-only seller-visible" data-tab="vendedor-rapido"><span class="material-symbols-rounded">bolt</span><span>Venda rápida</span></button>
+        <button class="tab-link seller-only" data-tab="estoque-vendedor"><span class="material-symbols-rounded">inventory</span><span>Meu estoque</span></button>
         <button class="tab-link admin-only" data-tab="loja"><span class="material-symbols-rounded">storefront</span><span>Loja online</span></button>
         <div class="sidebar-section-label admin-only">Operação</div>
         <button class="tab-link admin-only" data-tab="producao"><span class="material-symbols-rounded">local_pizza</span><span>Produção</span></button>
@@ -87,7 +88,7 @@
             <div id="more-tabs-menu" class="more-tabs-menu" hidden>
                 <button class="tab-link" data-tab="logistica"><span class="material-symbols-rounded">calendar_month</span><span>Agenda</span></button>
                 <button class="tab-link" data-tab="cozinha"><span class="material-symbols-rounded">skillet</span><span>Modo cozinha</span></button>
-                <button class="tab-link seller-visible" data-tab="estoque"><span class="material-symbols-rounded">inventory_2</span><span>Estoque</span></button>
+                <button class="tab-link" data-tab="estoque"><span class="material-symbols-rounded">inventory_2</span><span>Estoque principal</span></button>
                 <div class="sidebar-section-label">Gestão</div>
                 <button class="tab-link" data-tab="caixa"><span class="material-symbols-rounded">payments</span><span>Caixa</span></button>
                 <button class="tab-link" data-tab="clientes"><span class="material-symbols-rounded">group</span><span>Clientes</span></button>
@@ -483,6 +484,17 @@
                 </div>
             </div>
 
+            <div class="card seller-lotes-card" id="seller-lotes-card">
+                <div class="table-header compact-header">
+                    <div>
+                        <span class="section-eyebrow"><span class="material-symbols-rounded">groups</span> Pedidos agrupados</span>
+                        <h3>Pedidos por vendedor e data</h3>
+                        <p class="small-muted">Clientes da loja aparecem como seções dentro do lote do vendedor, sem perder o pedido individual.</p>
+                    </div>
+                </div>
+                <div id="seller-lotes-list" class="seller-lotes-list"></div>
+            </div>
+
             <div class="card">
                 <div class="table-header">
                     <h3>Histórico de Pedidos</h3>
@@ -657,6 +669,52 @@
                     </table>
                 </div>
             </div>
+        </div>
+
+        <div id="estoque-vendedor" class="tab-content seller-only">
+            <div class="page-heading seller-stock-heading">
+                <span class="section-eyebrow"><span class="material-symbols-rounded">inventory</span> Controle do vendedor</span>
+                <h2>Meu estoque</h2>
+                <p class="small-muted">Controle apenas as pizzas que estão fisicamente com você. O estoque principal continua separado.</p>
+            </div>
+
+            <section class="card seller-stock-status-card">
+                <div class="seller-stock-status-main">
+                    <div>
+                        <span class="small-muted">Estoque próprio</span>
+                        <h3 id="seller-stock-title">Selecione um perfil de vendedor</h3>
+                        <p id="seller-stock-status-copy" class="small-muted">O estoque próprio só é usado pela loja quando estiver ativo.</p>
+                    </div>
+                    <button type="button" id="seller-stock-toggle" class="seller-stock-toggle">Ativar estoque próprio</button>
+                </div>
+                <div id="seller-stock-kpis" class="seller-stock-kpis"></div>
+            </section>
+
+            <section class="card">
+                <div class="table-header compact-header">
+                    <div><h3>Receber pizzas dos meus pedidos</h3><p class="small-muted">Pedidos já retirados do estoque principal aparecem aqui. Ao receber, as unidades entram no seu estoque sem baixar o principal novamente.</p></div>
+                </div>
+                <div id="seller-stock-suggestions" class="seller-stock-suggestions"></div>
+            </section>
+
+            <section class="card">
+                <div class="table-header">
+                    <div><h3>Consulta rápida do meu estoque</h3><p class="small-muted">Essa tela é somente do vendedor. A consulta do Início continua usando o estoque principal.</p></div>
+                    <input type="search" id="seller-stock-search" class="search-input" placeholder="Buscar pizza...">
+                </div>
+                <div id="seller-stock-quick" class="seller-stock-quick"></div>
+                <div class="table-container">
+                    <table id="seller-stock-table">
+                        <thead><tr><th>Pizza</th><th>Tamanho</th><th>Quantidade</th><th>Ajuste rápido</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="card">
+                <div class="table-header compact-header"><div><h3>Últimas movimentações</h3><p class="small-muted">Entradas, vendas, devoluções e ajustes do seu estoque.</p></div></div>
+                <div id="seller-stock-history" class="seller-stock-history"></div>
+            </section>
         </div>
 
         <div id="estoque" class="tab-content">
@@ -1105,6 +1163,7 @@
         <button class="tab-link admin-only" data-tab="loja">Loja</button>
         <button class="tab-link admin-only" data-tab="logistica">Agenda</button>
         <button class="tab-link admin-only seller-visible" data-tab="vendedor-rapido">Venda</button>
+        <button class="tab-link seller-only" data-tab="estoque-vendedor">Estoque</button>
         <button class="tab-link admin-only" data-tab="producao">Produção</button>
         <button class="tab-link admin-only" data-tab="graficos">Mais</button>
     </nav>
