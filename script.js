@@ -1,5 +1,5 @@
 document.addEventListener("DOMContentLoaded", () => {
-  window.SASSES_VERSION = "v61-estoque-proprio-vendedor";
+  window.SASSES_VERSION = "v62-limite-massas-loja";
   console.log("Sasse's Pizza", window.SASSES_VERSION);
   const SUPABASE_URL = "https://iprnfzevdfmnraexthpy.supabase.co";
   const SUPABASE_ANON_KEY =
@@ -2605,6 +2605,8 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     const totals = { G: 0, P: 0, PC: 0 };
     database.pedidos.forEach((p) => {
       if (!p.dataEntrega || !orderHoldsStock(p.status)) return;
+      // Venda que saiu do estoque próprio já foi contabilizada quando o vendedor retirou do estoque principal.
+      if (String(p.estoque_origem || 'principal').toLowerCase() === 'vendedor') return;
       const ws = getWeekStart(p.dataEntrega);
       if (ws !== weekStart) return;
       (p.items || []).forEach((item) => {
