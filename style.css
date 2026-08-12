@@ -7053,3 +7053,63 @@ tbody tr:last-child td { border-bottom: 0; }
     margin: 0 !important;
   }
 }
+
+/* V61 - estoque próprio do vendedor */
+.seller-only { display: none !important; }
+body.vendor-mode .seller-only { display: revert !important; }
+body.vendor-mode .seller-only.tab-link { display: inline-flex !important; }
+body.vendor-mode .main-nav .seller-only.tab-link {
+  position: relative;
+  width: 100%;
+  min-height: 43px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 11px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: #aaa29b;
+  font-size: .79rem;
+  font-weight: 650;
+  text-align: left;
+}
+body.vendor-mode .main-nav .seller-only.tab-link.active,
+body.vendor-mode .main-nav .seller-only.tab-link:hover { background: rgba(255,255,255,.07); color: #fff; }
+
+.seller-stock-status-main { display:flex; gap:20px; align-items:center; justify-content:space-between; }
+.seller-stock-toggle { min-width:190px; }
+.seller-stock-toggle.is-active { background: var(--success-color, #2e7d32); }
+.seller-stock-kpis { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-top:18px; }
+.seller-stock-kpi { padding:14px 16px; border:1px solid var(--border-color); border-radius:14px; background:var(--background-color); }
+.seller-stock-kpi span { display:block; color:var(--text-light-color); font-size:.78rem; margin-bottom:4px; }
+.seller-stock-kpi b { font-size:1.35rem; }
+.seller-stock-suggestions { display:grid; gap:12px; }
+.seller-stock-suggestion { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:15px; border:1px solid var(--border-color); border-radius:14px; background:var(--background-color); }
+.seller-stock-suggestion-main { min-width:0; }
+.seller-stock-suggestion-items { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.seller-stock-pill { display:inline-flex; align-items:center; padding:5px 9px; border-radius:999px; background:rgba(0,0,0,.055); font-size:.78rem; }
+.seller-stock-quick { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin:12px 0 16px; }
+.seller-stock-quick-card { padding:13px 14px; border:1px solid var(--border-color); border-radius:13px; background:var(--background-color); }
+.seller-stock-quick-card b { display:block; font-size:1.2rem; margin-top:3px; }
+.seller-stock-actions { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+.seller-stock-actions button { min-width:40px; padding:7px 10px; }
+.seller-stock-history { display:grid; gap:8px; }
+.seller-stock-history-item { display:flex; justify-content:space-between; gap:14px; padding:11px 0; border-bottom:1px solid var(--border-color); }
+.seller-stock-history-item:last-child { border-bottom:0; }
+.seller-stock-history-item small { display:block; color:var(--text-light-color); margin-top:3px; }
+.seller-lotes-list { display:grid; gap:12px; }
+.seller-lote { border:1px solid var(--border-color); border-radius:15px; overflow:hidden; background:var(--background-color); }
+.seller-lote-head { display:flex; justify-content:space-between; gap:12px; padding:14px 16px; background:rgba(0,0,0,.035); }
+.seller-lote-secoes { display:grid; gap:0; }
+.seller-lote-secao { padding:14px 16px; border-top:1px solid var(--border-color); }
+.seller-lote-secao:first-child { border-top:0; }
+.seller-lote-secao-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+.seller-lote-items { margin:7px 0 0; padding-left:18px; }
+.seller-lote-actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:9px; }
+
+@media (max-width: 700px) {
+  .seller-stock-status-main, .seller-stock-suggestion, .seller-lote-head, .seller-lote-secao-head { align-items:stretch; flex-direction:column; }
+  .seller-stock-toggle { width:100%; min-width:0; }
+  .seller-stock-kpis { grid-template-columns:1fr; }
+}
