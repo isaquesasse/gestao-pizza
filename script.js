@@ -1,10 +1,19 @@
 document.addEventListener("DOMContentLoaded", () => {
-  window.SASSES_VERSION = "v62-limite-massas-loja";
+  window.SASSES_VERSION = "v66-gestao-menu-estoque-fix";
   console.log("Sasse's Pizza", window.SASSES_VERSION);
   const SUPABASE_URL = "https://iprnfzevdfmnraexthpy.supabase.co";
   const SUPABASE_ANON_KEY =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlwcm5memV2ZGZtbnJhZXh0aHB5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE2NTE1NTAsImV4cCI6MjA2NzIyNzU1MH0.h5Omsd0XsRtAmOErRCpaqg91OkF53lB8WE9dYlVdRbo";
-  const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  if (!window.supabase || typeof window.supabase.createClient !== "function") {
+    console.error("Supabase JS não carregou.");
+    const status = document.getElementById("save-status");
+    if (status) {
+      status.textContent = "Não foi possível carregar a conexão com o banco. Recarregue a página.";
+      status.className = "visible error";
+    }
+    return;
+  }
+  const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   const LOADER = document.getElementById("loader");
   const SAVE_STATUS = document.getElementById("save-status");
@@ -15,7 +24,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const ADMIN_SESSION_KEY = "sassesAdminSessionActive";
 
   // Corrige sessões antigas: antes a visão ADM ficava salva no localStorage e acabava aparecendo para qualquer vendedor no mesmo navegador.
-  sessionStorage.removeItem(ADMIN_SESSION_KEY);
+  localStorage.removeItem(ADMIN_SESSION_KEY);
   if (sessionStorage.getItem(ADMIN_SESSION_KEY) === "true") {
     document.body.classList.add("admin-mode");
     const adminBtn = document.getElementById("btn-admin-view");
@@ -347,14 +356,37 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const getCurrentSellerId = () => localStorage.getItem(SELLER_PROFILE_KEY) || "";
   const getCurrentSeller = () => database.vendedores.find((v) => v.id === getCurrentSellerId()) || null;
-  const isSellerAdmin = (seller) => String(seller?.senha_admin || "").trim() === ADMIN_PASSWORD;
+  const isSellerAdmin = (seller) => {
+    const nome = String(seller?.nome || "").trim().toLocaleLowerCase("pt-BR");
+    return String(seller?.senha_admin || "").trim() === ADMIN_PASSWORD || nome === "carlos alvino sasse";
+  };
+
+  const ensureAdminUsesMainStock = (isAdmin) => {
+    if (!isAdmin) return;
+    const sellerStock = document.getElementById("estoque-vendedor");
+    if (!sellerStock?.classList.contains("active")) return;
+
+    document.querySelectorAll(".tab-content.active").forEach((el) => el.classList.remove("active"));
+    document.querySelectorAll(".tab-link.active").forEach((el) => el.classList.remove("active"));
+    document.getElementById("estoque")?.classList.add("active");
+    document.querySelector('.tab-link[data-tab="estoque"]')?.classList.add("active");
+  };
 
   const applySellerAccess = () => {
     const seller = getCurrentSeller();
     const manualAdmin = sessionStorage.getItem(ADMIN_SESSION_KEY) === "true";
     const profileAdmin = isSellerAdmin(seller);
+    const isAdmin = manualAdmin || profileAdmin;
     document.body.classList.toggle("vendor-mode", !!seller);
-    document.body.classList.toggle("admin-mode", manualAdmin || profileAdmin);
+    document.body.classList.toggle("admin-mode", isAdmin);
+    document.querySelectorAll(".seller-only").forEach((el) => {
+      el.hidden = isAdmin || !seller;
+      if (isAdmin || !seller) el.style.setProperty("display", "none", "important");
+      else el.style.removeProperty("display");
+    });
+    const profileRole = document.querySelector("#btn-profile .profile-copy small");
+    if (profileRole) profileRole.textContent = isAdmin ? "Administrador" : "Vendedor";
+    ensureAdminUsesMainStock(isAdmin);
     const adminBtn = document.getElementById("btn-admin-view");
     if (adminBtn) adminBtn.textContent = (manualAdmin || profileAdmin) ? "Sair da Visão ADM" : "Entrar na Visão ADM";
   };
@@ -700,30 +732,8 @@ Deseja adicionar esse frete ao Valor Final?`)) {
         database.vendedores = vendedoresRes.data || [];
       } catch { database.vendedores = []; }
 
-      try {
-        const currentSellerId = getCurrentSellerId();
-        if (currentSellerId) {
-          const painelRes = await supabaseClient.rpc("painel_estoque_vendedor", { p_vendedor_id: currentSellerId });
-          if (painelRes.error) throw painelRes.error;
-          database.estoque_vendedor_painel = painelRes.data || { ativo: false, estoque: [], sugestoes: [], movimentos: [] };
-        } else {
-          database.estoque_vendedor_painel = { ativo: false, estoque: [], sugestoes: [], movimentos: [] };
-        }
-      } catch (error) {
-        console.warn("Estoque do vendedor ainda não está disponível:", error?.message || error);
-        database.estoque_vendedor_painel = { ativo: false, estoque: [], sugestoes: [], movimentos: [] };
-      }
-
-      try {
-        const seller = getCurrentSeller();
-        const isAdmin = sessionStorage.getItem(ADMIN_SESSION_KEY) === "true" || isSellerAdmin(seller);
-        const lotesRes = await supabaseClient.rpc("listar_lotes_vendedor_gestao", { p_vendedor_id: isAdmin ? null : (seller?.id || null) });
-        if (lotesRes.error) throw lotesRes.error;
-        database.vendedor_lotes = Array.isArray(lotesRes.data) ? lotesRes.data : [];
-      } catch (error) {
-        console.warn("Lotes de vendedor ainda não estão disponíveis:", error?.message || error);
-        database.vendedor_lotes = [];
-      }
+      // Estoque próprio e lotes são carregados depois do núcleo da gestão.
+      // Assim uma RPC nova nunca impede estoque/pedidos/clientes de aparecerem.
 
       try {
         const calendarioRes = await supabaseClient
@@ -755,9 +765,20 @@ Deseja adicionar esse frete ao Valor Final?`)) {
 
       await syncClientsFromOrders();
       renderAll();
+
+      // Recursos novos não participam do caminho crítico da conexão principal.
+      // Se der erro em uma RPC de vendedor, a gestão principal permanece carregada.
+      Promise.resolve()
+        .then(() => loadSellerExtras())
+        .then(() => {
+          try { renderSellerInventory(); } catch (error) { console.warn("Falha ao renderizar estoque do vendedor:", error); }
+          try { renderSellerLots(); } catch (error) { console.warn("Falha ao renderizar lotes do vendedor:", error); }
+        })
+        .catch((error) => console.warn("Recursos extras do vendedor indisponíveis:", error));
     } catch (error) {
-      console.error(error);
-      showSaveStatus("Não foi possível carregar os dados agora.", false);
+      console.error("Erro ao carregar dados do Supabase:", error);
+      const detail = String(error?.message || error || "erro desconhecido").replace(/\s+/g, " ").slice(0, 180);
+      showSaveStatus(`Não foi possível carregar os dados. ${detail}`, false);
     } finally {
       hideLoader();
     }
@@ -1342,8 +1363,9 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     populateWeekSelector(document.getElementById("producao-semana"), { futureOnly: true, futureWeeks: 4, setCurrentDefault: true });
     renderIngredientes();
     renderEstoque();
-    renderSellerInventory();
-    renderSellerLots();
+    try { renderMainStockQuick(); } catch (error) { console.warn("Falha na entrada rápida de estoque:", error); }
+    try { renderSellerInventory(); } catch (error) { console.warn("Falha no estoque do vendedor:", error); }
+    try { renderSellerLots(); } catch (error) { console.warn("Falha nos lotes do vendedor:", error); }
     renderReceitas();
 
     applyDefaultPedidosFilters(false);
@@ -2062,6 +2084,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
                 <td data-label="Situação">
                   <div class="status-stack">
                     <div class="status-row"><span class="status-key">${pedidoMeta.title}</span><span class="status-chip ${pedidoMeta.tone}">${pedidoMeta.label}</span></div>
+                    ${p.status_motivo && ["Negado", "Cancelado"].includes(p.status) ? `<div class="status-reason-current"><b>Motivo:</b> ${escapeHTML(p.status_motivo)}</div>` : ""}
                     <div class="status-row"><span class="status-key">${atendimentoMeta.title}</span><span class="status-chip ${atendimentoMeta.tone}">${atendimentoMeta.label}</span></div>
                   </div>
                 </td>
@@ -2107,6 +2130,64 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     }
   };
 
+  let statusReasonResolver = null;
+
+  const finishStatusReasonModal = (value = null) => {
+    const modal = document.getElementById("status-reason-modal");
+    if (modal) modal.style.display = "none";
+    const resolver = statusReasonResolver;
+    statusReasonResolver = null;
+    if (resolver) resolver(value);
+  };
+
+  const askStatusReason = (pedido, targetStatus) => new Promise((resolve) => {
+    statusReasonResolver = resolve;
+    const modal = document.getElementById("status-reason-modal");
+    const title = document.getElementById("status-reason-title");
+    const eyebrow = document.getElementById("status-reason-eyebrow");
+    const copy = document.getElementById("status-reason-copy");
+    const textarea = document.getElementById("status-reason-text");
+    const error = document.getElementById("status-reason-error");
+    const confirmBtn = document.getElementById("status-reason-confirm");
+    if (!modal || !textarea || !confirmBtn) return finishStatusReasonModal(null);
+
+    const isDenied = targetStatus === "Negado";
+    if (eyebrow) eyebrow.textContent = `Pedido de ${pedido?.cliente || "cliente"}`;
+    if (title) title.textContent = isDenied ? "Por que o pedido será negado?" : "Por que o pedido será cancelado?";
+    if (copy) copy.textContent = isDenied
+      ? "Esse motivo ficará salvo no pedido e será enviado por e-mail ao cliente."
+      : "Esse motivo ficará salvo no pedido e será enviado por e-mail ao cliente.";
+    textarea.value = "";
+    textarea.placeholder = isDenied
+      ? "Ex.: Não teremos disponibilidade para essa data."
+      : "Ex.: Cancelado após contato com o cliente.";
+    if (error) { error.hidden = true; error.textContent = ""; }
+    confirmBtn.textContent = isDenied ? "Negar pedido" : "Cancelar pedido";
+    confirmBtn.classList.toggle("reject-btn", isDenied);
+    confirmBtn.classList.toggle("remove-btn", !isDenied);
+    modal.style.display = "block";
+    setTimeout(() => textarea.focus(), 60);
+  });
+
+  const submitStatusReason = () => {
+    const textarea = document.getElementById("status-reason-text");
+    const error = document.getElementById("status-reason-error");
+    const reason = String(textarea?.value || "").replace(/\s+/g, " ").trim().slice(0, 500);
+    if (reason.length < 3) {
+      if (error) { error.hidden = false; error.textContent = "Escreva um motivo curto para o cliente."; }
+      textarea?.focus();
+      return;
+    }
+    finishStatusReasonModal(reason);
+  };
+
+  document.getElementById("status-reason-confirm")?.addEventListener("click", submitStatusReason);
+  document.getElementById("status-reason-cancel")?.addEventListener("click", () => finishStatusReasonModal(null));
+  document.getElementById("status-reason-close")?.addEventListener("click", () => finishStatusReasonModal(null));
+  document.getElementById("status-reason-text")?.addEventListener("keydown", (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") submitStatusReason();
+  });
+
   window.updatePedidoStatus = async (id, newStatus) => {
     const pedido = database.pedidos.find((p) => p.id === id);
     let targetStatus = newStatus;
@@ -2121,16 +2202,37 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       showSaveStatus("Esse pedido continua pendente até a semana de entrega para não baixar o estoque atual.", false);
       return;
     }
-    const label = targetStatus === "Concluído" && newStatus === "Pronto" ? "Concluído" : targetStatus;
-    if (!confirm(`Alterar o pedido para "${label}"?`)) return;
+
+    let motivo = null;
+    if (pedido && ["Negado", "Cancelado"].includes(targetStatus)) {
+      motivo = await askStatusReason(pedido, targetStatus);
+      if (!motivo) return;
+    } else {
+      const label = targetStatus === "Concluído" && newStatus === "Pronto" ? "Concluído" : targetStatus;
+      if (!confirm(`Alterar o pedido para "${label}"?`)) return;
+    }
 
     showLoader();
     try {
-      const payload = { p_pedido_id: id, p_novo_status: targetStatus };
-      if (targetStatus === "Concluído") payload.p_pago = true;
-      const { error } = await supabaseClient.rpc("atualizar_status_pedido_seguro", payload);
+      const payload = {
+        p_pedido_id: id,
+        p_novo_status: targetStatus,
+        p_pago: targetStatus === "Concluído" ? true : null,
+        p_motivo: motivo,
+      };
+      const { data, error } = await supabaseClient.rpc("atualizar_status_pedido_seguro", payload);
       if (error) throw error;
-      showSaveStatus(targetStatus === "Concluído" ? "Pedido concluído." : "Pedido atualizado.");
+      const emailQueued = Boolean(data?.emailPendenteId);
+      const baseMessage = targetStatus === "Concluído"
+        ? "Pedido concluído."
+        : targetStatus === "Confirmado"
+          ? "Pedido confirmado."
+          : targetStatus === "Negado"
+            ? "Pedido negado."
+            : targetStatus === "Cancelado"
+              ? "Pedido cancelado."
+              : "Pedido atualizado.";
+      showSaveStatus(baseMessage + (emailQueued ? " E-mail do cliente enfileirado." : ""));
       await loadDataFromSupabase();
     } catch (error) {
       showSaveStatus(formatSupabaseError(error, "Não foi possível atualizar o pedido"), false);
@@ -2511,22 +2613,10 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     const pedido = database.pedidos.find((p) => p.id === id);
     if (!pedido) return;
     if (pedido.status === "Concluído") {
-      alert("Pedido concluído não deve ser cancelado pelo botão rápido. Se foi erro, abra Editar e mude o status manualmente para Cancelado.");
+      alert("Pedido concluído não deve ser cancelado pelo botão rápido. Se foi erro, abra Editar e revise o pedido.");
       return;
     }
-    if (confirm(`Cancelar o pedido de ${pedido.cliente}? O estoque reservado será devolvido automaticamente.`)) {
-      showLoader();
-      try {
-        const { error } = await supabaseClient.rpc("cancelar_pedido_seguro", { p_pedido_id: id });
-        if (error) throw error;
-        showSaveStatus("Pedido cancelado e estoque devolvido.");
-        await loadDataFromSupabase();
-      } catch (error) {
-        showSaveStatus(formatSupabaseError(error, "Erro ao cancelar pedido"), false);
-      } finally {
-        hideLoader();
-      }
-    }
+    return window.updatePedidoStatus(id, "Cancelado");
   };
 
   window.removerPedido = window.cancelarPedido;
@@ -2840,6 +2930,65 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
   };
 
   document.getElementById("search-ingredientes")?.addEventListener("input", renderIngredientes);
+
+  const renderMainStockQuickTarget = (listId, searchId) => {
+    const box = document.getElementById(listId);
+    if (!box) return;
+    const term = (document.getElementById(searchId)?.value || "").toLowerCase().trim();
+    const pizzas = [...database.estoque]
+      .filter((item) => !term || `${item.nome || ""} ${item.tamanho || ""}`.toLowerCase().includes(term))
+      .sort((a, b) => `${a.nome || ""} ${a.tamanho || ""}`.localeCompare(`${b.nome || ""} ${b.tamanho || ""}`, "pt-BR"));
+
+    if (!pizzas.length) {
+      box.innerHTML = '<div class="empty-state">Nenhuma pizza encontrada.</div>';
+      return;
+    }
+
+    box.innerHTML = pizzas.map((item) => {
+      const qtd = Number(item.qtd || 0);
+      const tamanho = item.tamanho ? escapeHTML(item.tamanho) : "Tamanho único";
+      return `<article class="main-stock-quick-item ${qtd <= 0 ? "is-empty" : ""}">
+        <div class="main-stock-quick-copy">
+          <b title="${escapeAttr(item.nome || "")}">${escapeHTML(item.nome || "")}</b>
+          <small>${tamanho} · estoque atual: <strong>${qtd}</strong></small>
+        </div>
+        <div class="main-stock-quick-actions" aria-label="Adicionar ${escapeAttr(item.nome || "")} ao estoque">
+          <button type="button" class="secondary-btn" onclick="window.quickAddMainStock('${escapeAttr(item.id)}', 1)">+1</button>
+          <button type="button" class="secondary-btn" onclick="window.quickAddMainStock('${escapeAttr(item.id)}', 5)">+5</button>
+          <button type="button" class="secondary-btn" onclick="window.quickAddMainStock('${escapeAttr(item.id)}', 10)">+10</button>
+        </div>
+      </article>`;
+    }).join("");
+  };
+
+  const renderMainStockQuick = () => {
+    renderMainStockQuickTarget("main-stock-quick-list", "main-stock-quick-search");
+  };
+
+  window.quickAddMainStock = async (pizzaId, quantidade) => {
+    const pizza = database.estoque.find((item) => item.id === pizzaId);
+    const qtd = Number(quantidade || 0);
+    if (!pizza || qtd <= 0) return;
+
+    const buttons = document.querySelectorAll(`.main-stock-quick-actions button[onclick*="${pizzaId}"]`);
+    buttons.forEach((button) => button.disabled = true);
+    try {
+      const { error } = await supabaseClient.rpc("ajustar_estoque_pizza_seguro", {
+        p_pizza_id: pizzaId,
+        p_delta: qtd,
+        p_observacao: `Entrada rápida pelo estoque principal (+${qtd})`,
+      });
+      if (error) throw error;
+      showSaveStatus(`${qtd} unidade${qtd === 1 ? "" : "s"} de ${pizza.nome} adicionada${qtd === 1 ? "" : "s"} ao estoque.`);
+      await loadDataFromSupabase();
+    } catch (error) {
+      showSaveStatus(formatSupabaseError(error, "Não foi possível adicionar ao estoque"), false);
+    } finally {
+      buttons.forEach((button) => button.disabled = false);
+    }
+  };
+
+  document.getElementById("main-stock-quick-search")?.addEventListener("input", renderMainStockQuick);
 
   const renderEstoque = () => {
     const tbody = document.getElementById("tabela-estoque")?.querySelector("tbody");
@@ -3519,9 +3668,18 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       return;
     }
 
-    showLoader();
     const form = document.getElementById("edit-pedido-form");
     const formData = new FormData(form);
+    const originalStatus = normalizePedidoStatusValue(originalPedido.status || "Pendente");
+    let requestedStatus = normalizePedidoStatusValue(formData.get("status") || originalStatus);
+    if (isFutureWeek(formData.get("dataEntrega")) && ["Confirmado", "Pronto"].includes(requestedStatus)) requestedStatus = "Pendente";
+    let statusReason = null;
+    if (requestedStatus !== originalStatus && ["Negado", "Cancelado"].includes(requestedStatus)) {
+      statusReason = await askStatusReason(originalPedido, requestedStatus);
+      if (!statusReason) return;
+    }
+
+    showLoader();
     const valorFinalInput = form.querySelector("#valor-final-edit-pedido").value;
     const valorCalculado = pedidoEditItems.reduce((acc, item) => acc + safeNumber(item.preco) * Number(item.qtd || 0), 0);
     const valorFinal = safeNumber(valorFinalInput, valorCalculado);
@@ -3546,8 +3704,8 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       semana_entrega: getWeekStart(formData.get("dataEntrega")),
       tipo_pedido: getInitialPedidoType(formData.get("dataEntrega")),
       metodo_entrega: metodoEntregaEdit,
-      status: formData.get("status"),
-      pago: formData.get("status") === "Concluído" || formData.get("pago") === "on",
+      status: originalStatus,
+      pago: originalStatus === "Concluído" || formData.get("pago") === "on",
       observacoes: String(formData.get("observacoes") || "").trim(),
       items: pedidoEditItems,
       valorTotal: valorCalculado,
@@ -3578,9 +3736,6 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
 
       const originalSemanaInicio = originalPedido.dataEntrega ? getWeekStart(originalPedido.dataEntrega) : null;
       const semanaInicio = getWeekStart(updatedPedidoData.dataEntrega);
-      if (isFutureWeek(updatedPedidoData.dataEntrega) && ["Confirmado", "Pronto"].includes(normalizePedidoStatusValue(updatedPedidoData.status))) {
-        updatedPedidoData.status = "Pendente";
-      }
       const quotas = database.massas_semanais.find((m) => m.semana_inicio === semanaInicio) || { g_semana: 0, p_semana: 0, pc_semana: 0 };
       const used = computeWeeklyUsage(semanaInicio);
 
@@ -3615,6 +3770,18 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       });
       if (updateError) throw updateError;
 
+      let statusResult = null;
+      if (requestedStatus !== originalStatus) {
+        const { data: statusData, error: statusError } = await supabaseClient.rpc("atualizar_status_pedido_seguro", {
+          p_pedido_id: originalPedido.id,
+          p_novo_status: requestedStatus,
+          p_pago: requestedStatus === "Concluído" ? true : null,
+          p_motivo: statusReason,
+        });
+        if (statusError) throw statusError;
+        statusResult = statusData;
+      }
+
       let complementoAviso = "";
       try {
         await persistPedidoComplementos(originalPedido.id, {
@@ -3628,11 +3795,15 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       }
 
       const pedidoAtualizadoRecord = getRpcPedidoRecord(pedidoAtualizado);
-      const pedidoMessage = isFutureWeek(updatedPedidoData.dataEntrega)
-        ? "Pedido atualizado para uma semana futura, sem baixar o estoque da semana atual."
-        : pedidoAtualizadoRecord?.estoque_baixado
-          ? "Pedido atualizado e estoque reservado."
-          : "Pedido atualizado como encomenda para produção.";
+      const mudouStatus = requestedStatus !== originalStatus;
+      const emailQueued = Boolean(statusResult?.emailPendenteId);
+      const pedidoMessage = mudouStatus
+        ? `Pedido atualizado para ${requestedStatus}.${emailQueued ? " E-mail do cliente enfileirado." : ""}`
+        : isFutureWeek(updatedPedidoData.dataEntrega)
+          ? "Pedido atualizado para uma semana futura, sem baixar o estoque da semana atual."
+          : pedidoAtualizadoRecord?.estoque_baixado
+            ? "Pedido atualizado e estoque reservado."
+            : "Pedido atualizado como encomenda para produção.";
       showSaveStatus(pedidoMessage + complementoAviso, !complementoAviso);
       closeModal("edit-modal");
       await loadDataFromSupabase();
