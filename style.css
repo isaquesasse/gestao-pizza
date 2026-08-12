@@ -7056,9 +7056,9 @@ tbody tr:last-child td { border-bottom: 0; }
 
 /* V61 - estoque próprio do vendedor */
 .seller-only { display: none !important; }
-body.vendor-mode .seller-only { display: revert !important; }
-body.vendor-mode .seller-only.tab-link { display: inline-flex !important; }
-body.vendor-mode .main-nav .seller-only.tab-link {
+body.vendor-mode:not(.admin-mode) .seller-only { display: revert !important; }
+body.vendor-mode:not(.admin-mode) .seller-only.tab-link { display: inline-flex !important; }
+body.vendor-mode:not(.admin-mode) .main-nav .seller-only.tab-link {
   position: relative;
   width: 100%;
   min-height: 43px;
@@ -7074,8 +7074,8 @@ body.vendor-mode .main-nav .seller-only.tab-link {
   font-weight: 650;
   text-align: left;
 }
-body.vendor-mode .main-nav .seller-only.tab-link.active,
-body.vendor-mode .main-nav .seller-only.tab-link:hover { background: rgba(255,255,255,.07); color: #fff; }
+body.vendor-mode:not(.admin-mode) .main-nav .seller-only.tab-link.active,
+body.vendor-mode:not(.admin-mode) .main-nav .seller-only.tab-link:hover { background: rgba(255,255,255,.07); color: #fff; }
 
 .seller-stock-status-main { display:flex; gap:20px; align-items:center; justify-content:space-between; }
 .seller-stock-toggle { min-width:190px; }
@@ -7113,3 +7113,104 @@ body.vendor-mode .main-nav .seller-only.tab-link:hover { background: rgba(255,25
   .seller-stock-toggle { width:100%; min-width:0; }
   .seller-stock-kpis { grid-template-columns:1fr; }
 }
+
+
+/* v63 — motivo ao negar/cancelar pedidos */
+.status-reason-content { max-width: 560px !important; }
+.status-reason-eyebrow { margin: 0 0 .35rem; text-transform: uppercase; letter-spacing: .08em; font-size: .72rem; font-weight: 900; color: var(--text-light-color); }
+.status-reason-label { display: grid; gap: .45rem; margin-top: 1.2rem; font-weight: 800; }
+.status-reason-label textarea { width: 100%; min-height: 120px; resize: vertical; border-radius: 12px; padding: .85rem; border: 1px solid var(--border-color, #d6d6d6); font: inherit; line-height: 1.45; }
+.status-reason-label textarea:focus { outline: 2px solid color-mix(in srgb, var(--accent-color) 35%, transparent); border-color: var(--accent-color); }
+.status-reason-actions { display: flex; justify-content: flex-end; gap: .65rem; margin-top: 1rem; }
+.status-reason-error { margin-top: .65rem; padding: .7rem .8rem; border-radius: 10px; background: #fff0ee; color: #9a241c; font-weight: 700; font-size: .88rem; }
+.status-reason-current { margin-top: .45rem; color: var(--text-light-color); font-size: .82rem; line-height: 1.45; }
+@media (max-width: 640px) { .status-reason-actions { flex-direction: column-reverse; } .status-reason-actions button { width: 100%; } }
+
+
+/* V64 - estoque principal rápido e separação ADM/vendedor */
+body.admin-mode #estoque-vendedor { display: none !important; }
+
+.main-stock-quick-card {
+  margin-top: 0;
+}
+.main-stock-quick-head {
+  align-items: end;
+}
+.main-stock-quick-head .search-input {
+  width: min(360px, 100%);
+  min-width: 240px;
+}
+.main-stock-quick-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(235px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+.main-stock-quick-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 13px;
+  border: 1px solid var(--border-color);
+  border-radius: 13px;
+  background: var(--background-color);
+}
+.main-stock-quick-copy { min-width: 0; }
+.main-stock-quick-copy b {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.main-stock-quick-copy small {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-light-color);
+}
+.main-stock-quick-actions {
+  display: flex;
+  gap: 5px;
+  flex: 0 0 auto;
+}
+.main-stock-quick-actions button {
+  min-width: 42px;
+  height: 35px;
+  padding: 0 8px;
+  border-radius: 9px;
+  font-size: .76rem;
+  font-weight: 800;
+}
+.main-stock-quick-item.is-empty {
+  border-style: dashed;
+}
+.seller-stock-receive-card {
+  border-top: 3px solid var(--accent-color);
+}
+@media (max-width: 700px) {
+  .main-stock-quick-head { align-items: stretch; }
+  .main-stock-quick-head .search-input { width: 100%; min-width: 0; }
+  .main-stock-quick-list { grid-template-columns: 1fr; }
+  .main-stock-quick-item { align-items: flex-start; }
+}
+
+
+/* V65 — gestão estável / entrada rápida no topo */
+#inicio > .home-main-stock-quick-card {
+  margin-top: 0;
+  margin-bottom: 14px;
+}
+#estoque > .main-stock-quick-card {
+  margin-top: 0;
+}
+body.vendor-mode:not(.admin-mode) .home-main-stock-quick-card {
+  display: none !important;
+}
+
+
+/* V66 - estoque prioritário + separação ADM robusta */
+body.admin-mode .seller-only,
+body.admin-mode .tab-link.seller-only,
+body.admin-mode #estoque-vendedor { display: none !important; }
+.stock-tools-primary { margin-top: 0; }
+.stock-tools-primary .form-producao-container { margin-top: 12px; }
