@@ -8,10 +8,11 @@
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0,0&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 
 <body>
+    <a class="skip-link" href="#inicio">Ir para o conteúdo</a>
     <div id="loader" class="loader-container">
         <div class="loader-spinner"></div>
     </div>
@@ -20,82 +21,138 @@
     <div id="mobile-app" class="mobile-app" aria-label="Sasse's Pizza mobile">
         <header class="mobile-app-header">
             <button type="button" id="mobile-home-brand" class="mobile-brand-btn">
-                <strong>Sasse's Pizza</strong>
-                <small>Sistema de Gestão</small>
+                <span class="mobile-brand-mark">SP</span>
+                <span class="mobile-brand-copy">
+                    <strong>Sasse's Pizza</strong>
+                    <small>Central de operações</small>
+                </span>
             </button>
-            <button type="button" id="mobile-profile-btn" class="mobile-icon-btn" title="Perfil">👤</button>
+            <button type="button" id="mobile-profile-btn" class="mobile-icon-btn" title="Perfil" aria-label="Abrir perfil">
+                <span class="material-symbols-rounded" aria-hidden="true">person</span>
+            </button>
         </header>
         <div class="mobile-search-row">
+            <span class="material-symbols-rounded" aria-hidden="true">search</span>
             <input type="search" id="mobile-search" placeholder="Buscar cliente, pedido ou pizza...">
         </div>
         <main id="mobile-screen" class="mobile-screen"></main>
         <nav class="mobile-app-nav">
-            <button type="button" data-mobile-page="inicio" class="active">Início</button>
-            <button type="button" data-mobile-page="pedido">Pedido</button>
-            <button type="button" data-mobile-page="loja">Loja</button>
-            <button type="button" data-mobile-page="producao">Produção</button>
-            <button type="button" data-mobile-page="mais">Mais</button>
+            <button type="button" data-mobile-page="inicio" class="active"><span class="material-symbols-rounded">home</span><span>Início</span></button>
+            <button type="button" data-mobile-page="pedido"><span class="material-symbols-rounded">receipt_long</span><span>Pedido</span></button>
+            <button type="button" data-mobile-page="venda"><span class="material-symbols-rounded">bolt</span><span>Venda</span></button>
+            <button type="button" data-mobile-page="loja"><span class="material-symbols-rounded">storefront</span><span>Loja</span></button>
+            <button type="button" data-mobile-page="producao"><span class="material-symbols-rounded">local_pizza</span><span>Produção</span></button>
+            <button type="button" data-mobile-page="mais"><span class="material-symbols-rounded">grid_view</span><span>Mais</span></button>
         </nav>
     </div>
 
     <header class="app-header">
-        <div class="header-brand" id="brand-home" role="button" tabindex="0" title="Abrir página inicial">
-            <h1>Sasse's Pizza</h1>
-            <p>Sistema de Gestão</p>
+        <div class="workspace-context" aria-label="Área atual">
+            <span>Central de operações</span>
+            <strong>Gestão da pizzaria</strong>
         </div>
         <div class="header-tools">
             <div class="global-search-wrap">
+                <span class="material-symbols-rounded search-leading" aria-hidden="true">search</span>
                 <input type="search" id="global-search" placeholder="Buscar cliente, pedido, pizza...">
-                <button type="button" id="global-search-btn" class="ghost-btn">Buscar</button>
+                <button type="button" id="global-search-btn" class="ghost-btn" aria-label="Buscar">
+                    <span class="material-symbols-rounded" aria-hidden="true">arrow_forward</span>
+                </button>
             </div>
             <button id="btn-profile" class="profile-pill" type="button" title="Perfil do vendedor">
-                <span class="profile-avatar">👤</span>
-                <span id="current-seller-name">Perfil</span>
+                <span class="profile-avatar"><span class="material-symbols-rounded" aria-hidden="true">person</span></span>
+                <span class="profile-copy"><small>Vendedor</small><span id="current-seller-name">Perfil</span></span>
+                <span class="material-symbols-rounded profile-chevron" aria-hidden="true">expand_more</span>
             </button>
         </div>
     </header>
 
-    <nav class="main-nav main-nav-compact">
-        <button class="tab-link active" data-tab="inicio">Início</button>
-        <button class="tab-link" data-tab="pedidos">Pedidos</button>
-        <button class="tab-link admin-only" data-tab="loja">Loja</button>
-        <button class="tab-link admin-only" data-tab="producao">Produção</button>
+    <nav class="main-nav main-nav-compact" aria-label="Navegação principal">
+        <div class="sidebar-brand" id="brand-home" role="button" tabindex="0" title="Abrir página inicial">
+            <span class="sidebar-brand-mark">SP</span>
+            <span class="sidebar-brand-copy">
+                <strong>Sasse's Pizza</strong>
+                <small>Gestão</small>
+            </span>
+        </div>
+        <div class="sidebar-section-label">Principal</div>
+        <button class="tab-link active" data-tab="inicio"><span class="material-symbols-rounded">home</span><span>Início</span></button>
+        <button class="tab-link" data-tab="pedidos"><span class="material-symbols-rounded">receipt_long</span><span>Pedidos</span></button>
+        <button class="tab-link admin-only seller-visible" data-tab="vendedor-rapido"><span class="material-symbols-rounded">bolt</span><span>Venda rápida</span></button>
+        <button class="tab-link admin-only" data-tab="loja"><span class="material-symbols-rounded">storefront</span><span>Loja online</span></button>
+        <div class="sidebar-section-label admin-only">Operação</div>
+        <button class="tab-link admin-only" data-tab="producao"><span class="material-symbols-rounded">local_pizza</span><span>Produção</span></button>
         <div class="more-menu-wrap admin-only">
-            <button type="button" id="btn-more-tabs" class="tab-more-btn" aria-expanded="false" aria-controls="more-tabs-menu">☰ Mais</button>
+            <button type="button" id="btn-more-tabs" class="tab-more-btn" aria-expanded="false" aria-controls="more-tabs-menu">Mais áreas</button>
             <div id="more-tabs-menu" class="more-tabs-menu" hidden>
-                <button class="tab-link" data-tab="logistica">Agenda</button>
-                <button class="tab-link seller-visible" data-tab="vendedor-rapido">Venda Rápida</button>
-                <button class="tab-link" data-tab="caixa">Caixa</button>
-                <button class="tab-link" data-tab="cozinha">Modo Cozinha</button>
-                <button class="tab-link" data-tab="clientes">Clientes</button>
-                <button class="tab-link seller-visible" data-tab="estoque">Estoque</button>
-                <button class="tab-link" data-tab="receitas">Receitas</button>
-                <button class="tab-link" data-tab="ingredientes">Ingredientes</button>
-                <button class="tab-link" data-tab="graficos">Dashboard</button>
+                <button class="tab-link" data-tab="logistica"><span class="material-symbols-rounded">calendar_month</span><span>Agenda</span></button>
+                <button class="tab-link" data-tab="cozinha"><span class="material-symbols-rounded">skillet</span><span>Modo cozinha</span></button>
+                <button class="tab-link seller-visible" data-tab="estoque"><span class="material-symbols-rounded">inventory_2</span><span>Estoque</span></button>
+                <div class="sidebar-section-label">Gestão</div>
+                <button class="tab-link" data-tab="caixa"><span class="material-symbols-rounded">payments</span><span>Caixa</span></button>
+                <button class="tab-link" data-tab="clientes"><span class="material-symbols-rounded">group</span><span>Clientes</span></button>
+                <button class="tab-link" data-tab="receitas"><span class="material-symbols-rounded">menu_book</span><span>Receitas</span></button>
+                <button class="tab-link" data-tab="ingredientes"><span class="material-symbols-rounded">grocery</span><span>Ingredientes</span></button>
+                <button class="tab-link" data-tab="graficos"><span class="material-symbols-rounded">monitoring</span><span>Dashboard</span></button>
             </div>
+        </div>
+        <div class="sidebar-footer">
+            <span class="material-symbols-rounded" aria-hidden="true">cloud_done</span>
+            <span><strong>Dados sincronizados</strong><small>Sasse's Pizza · 2026</small></span>
         </div>
     </nav>
 
     <main>
         <div id="inicio" class="tab-content active">
             <section class="home-hero card">
-                <div>
-                    <h2 style="margin-bottom: .35rem; border-bottom: 0; padding-bottom: 0;">Visão geral da semana</h2>
-                    <p class="small-muted">Tudo importante para bater o olho: pedidos, produção, sobras, pagamentos e ações rápidas.</p>
+                <div class="home-hero-copy">
+                    <span class="section-eyebrow"><span class="material-symbols-rounded">calendar_today</span> Semana em andamento</span>
+                    <h2>Visão geral da operação</h2>
+                    <p class="small-muted">Pedidos, produção, pizzas disponíveis e pagamentos reunidos para você decidir o próximo passo rápido.</p>
                 </div>
                 <div class="home-actions">
-                    <button class="home-action" data-open-tab="pedidos">+ Novo pedido</button>
-                    <button class="home-action" data-open-tab="vendedor-rapido">⚡ Venda rápida</button>
-                    <button class="home-action" data-open-tab="producao">🍕 Produção</button>
-                    <button class="home-action" data-open-tab="graficos">📊 Dashboard</button>
+                    <button class="home-action primary" data-open-tab="pedidos"><span class="material-symbols-rounded">add</span>Novo pedido</button>
+                    <button class="home-action" data-open-tab="vendedor-rapido"><span class="material-symbols-rounded">bolt</span>Venda rápida</button>
+                    <button class="home-action" data-open-tab="producao"><span class="material-symbols-rounded">local_pizza</span>Produção</button>
+                    <button class="home-action" data-open-tab="graficos"><span class="material-symbols-rounded">monitoring</span>Dashboard</button>
                 </div>
             </section>
             <section id="home-kpis" class="home-kpis"></section>
+
+            <section class="card stock-spotlight" id="home-consulta-rapida">
+                <div class="stock-spotlight-head">
+                    <div>
+                        <span class="section-eyebrow"><span class="material-symbols-rounded">inventory_2</span> Consulta rápida</span>
+                        <h3>Pizzas disponíveis para retirada</h3>
+                        <p class="small-muted">A quantidade já considera os pedidos da semana escolhida.</p>
+                    </div>
+                    <button type="button" id="home-copy-sobras" class="secondary-btn">
+                        <span class="material-symbols-rounded" aria-hidden="true">content_copy</span>
+                        Copiar mensagem
+                    </button>
+                </div>
+                <div class="home-stock-layout">
+                    <div class="home-stock-results">
+                        <div class="sobras-toolbar home-sobras-toolbar">
+                            <label for="home-sobras-semana-select">Semana</label>
+                            <select id="home-sobras-semana-select"></select>
+                            <input type="search" id="home-sobras-search-pizza" placeholder="Buscar sabor ou tamanho...">
+                        </div>
+                        <div id="home-sobras-cards" class="sobras-cards home-sobras-cards"></div>
+                    </div>
+                    <div class="sobras-message-box home-stock-message">
+                        <label for="home-sobras-mensagem">Mensagem pronta para enviar</label>
+                        <textarea id="home-sobras-mensagem" readonly></textarea>
+                        <small>Você pode copiar e enviar pelo WhatsApp.</small>
+                    </div>
+                </div>
+            </section>
+
             <section class="home-grid">
-                <div class="card"><h3>Pedidos pendentes</h3><div id="home-pedidos-pendentes"></div></div>
-                <div class="card"><h3>Produção da semana</h3><div id="home-producao"></div></div>
-                <div class="card"><h3>Disponíveis para retirada</h3><div id="home-sobras"></div></div>
-                <div class="card"><h3>Pagamentos e alertas</h3><div id="home-alertas"></div></div>
+                <div class="card home-panel"><h3><span class="panel-icon warm"><span class="material-symbols-rounded">pending_actions</span></span>Pedidos pendentes</h3><div id="home-pedidos-pendentes"></div></div>
+                <div class="card home-panel"><h3><span class="panel-icon red"><span class="material-symbols-rounded">local_pizza</span></span>Produção da semana</h3><div id="home-producao"></div></div>
+                <div class="card home-panel"><h3><span class="panel-icon green"><span class="material-symbols-rounded">inventory</span></span>Disponíveis para retirada</h3><div id="home-sobras"></div></div>
+                <div class="card home-panel"><h3><span class="panel-icon blue"><span class="material-symbols-rounded">notifications_active</span></span>Pagamentos e alertas</h3><div id="home-alertas"></div></div>
             </section>
         </div>
 
@@ -259,34 +316,58 @@
         <div id="pedidos" class="tab-content">
             <div class="grid-container">
                 <div class="grid-col">
-                    <h2>Registro de Pedidos</h2>
+                    <div class="page-heading">
+                        <span class="section-eyebrow"><span class="material-symbols-rounded">receipt_long</span> Vendas</span>
+                        <h2>Novo pedido</h2>
+                        <p class="small-muted">Registre os dados do cliente, escolha as pizzas e confirme a entrega.</p>
+                    </div>
                     <div class="card">
                         <form id="form-pedido-principal">
                             <input type="hidden" id="pedido-edit-id">
-                            <input type="text" id="pedido-cliente" placeholder="Nome do Cliente" required
-                                list="clientes-list">
+                            <div class="form-section-heading">
+                                <span class="material-symbols-rounded" aria-hidden="true">person</span>
+                                <span><strong>Cliente</strong><small>Quem está fazendo o pedido</small></span>
+                            </div>
+                            <label class="form-field field-wide"><span>Nome do cliente</span>
+                                <input type="text" id="pedido-cliente" placeholder="Digite ou selecione um cliente" required list="clientes-list">
+                            </label>
                             <datalist id="clientes-list"></datalist>
-                            <input type="text" id="pedido-cliente-telefone" placeholder="Telefone (Opcional)">
-                            <input type="text" id="pedido-cidade" placeholder="Cidade" required>
-                            <input type="text" id="pedido-endereco" placeholder="Endereço (Ex: Rua XV, 100)">
-                            <input type="text" id="pedido-vendedor" placeholder="Nome do Vendedor" required>
-                            <select id="pedido-pagamento" required>
-                                <option value="">Forma de Pagamento</option>
-                                <option value="Dinheiro">Dinheiro</option>
-                                <option value="Cartão de Crédito">Cartão de Crédito</option>
-                                <option value="Cartão de Débito">Cartão de Débito</option>
-                                <option value="Pix">Pix</option>
-                            </select>
-                            <label class="pedido-data-field">
-                                <span>Dia exato do pedido/entrega</span>
+                            <label class="form-field"><span>Telefone <small>opcional</small></span>
+                                <input type="text" id="pedido-cliente-telefone" placeholder="(47) 99999-9999">
+                            </label>
+                            <label class="form-field"><span>Cidade</span>
+                                <input type="text" id="pedido-cidade" placeholder="Cidade do cliente" required>
+                            </label>
+                            <label class="form-field field-wide"><span>Endereço <small>opcional para retirada</small></span>
+                                <input type="text" id="pedido-endereco" placeholder="Rua, número e complemento">
+                            </label>
+                            <div class="form-section-heading">
+                                <span class="material-symbols-rounded" aria-hidden="true">local_shipping</span>
+                                <span><strong>Pedido e entrega</strong><small>Como e quando o pedido será atendido</small></span>
+                            </div>
+                            <label class="form-field"><span>Vendedor</span>
+                                <input type="text" id="pedido-vendedor" placeholder="Nome do vendedor" required>
+                            </label>
+                            <label class="form-field"><span>Pagamento</span>
+                                <select id="pedido-pagamento" required>
+                                    <option value="">Selecione a forma</option>
+                                    <option value="Dinheiro">Dinheiro</option>
+                                    <option value="Cartão de Crédito">Cartão de Crédito</option>
+                                    <option value="Cartão de Débito">Cartão de Débito</option>
+                                    <option value="Pix">Pix</option>
+                                </select>
+                            </label>
+                            <label class="form-field pedido-data-field"><span>Data do pedido/entrega</span>
                                 <input type="date" id="pedido-data-entrega" required>
                                 <small id="pedido-semana-label" class="field-hint">Semana: -</small>
                             </label>
                             <input type="hidden" id="pedido-semana-entrega">
-                            <select id="pedido-metodo-entrega" required title="Entrega ou retirada">
-                                <option value="retirada">Retirada</option>
-                                <option value="entrega">Entrega</option>
-                            </select>
+                            <label class="form-field"><span>Atendimento</span>
+                                <select id="pedido-metodo-entrega" required title="Entrega ou retirada">
+                                    <option value="retirada">Retirada</option>
+                                    <option value="entrega">Entrega</option>
+                                </select>
+                            </label>
                             <label class="pedido-grande-toggle">
                                 <input type="checkbox" id="pedido-grande">
                                 <span><b>Pedido grande</b><small>Separar as pizzas por cliente, sem criar novos cadastros.</small></span>
@@ -299,7 +380,9 @@
                                 </div>
                                 <small>As próximas pizzas adicionadas ficarão agrupadas neste nome. Troque o nome para iniciar outra seção.</small>
                             </div>
-                            <textarea id="pedido-observacoes" rows="3" placeholder="Observações do pedido (opcional)"></textarea>
+                            <label class="form-field field-full"><span>Observações <small>opcional</small></span>
+                                <textarea id="pedido-observacoes" rows="3" placeholder="Ex.: retirar às 18h, sem cebola, falar com Carlos..."></textarea>
+                            </label>
                         </form>
                         <hr>
                         <div id="form-item-pedido">
@@ -341,6 +424,65 @@
                 </div>
             </div>
 
+            <div class="card" id="consulta-rapida-sobras">
+                <div class="table-header compact-header">
+                    <div>
+                        <span class="section-eyebrow"><span class="material-symbols-rounded">inventory_2</span> Estoque e reservas</span>
+                        <h3>Consulta rápida de pizzas</h3>
+                        <div class="small-muted">Confira o disponível da semana, veja o que falta produzir e copie a mensagem para clientes.</div>
+                    </div>
+                    <button type="button" class="secondary-btn" onclick="copySobrasMensagem()">
+                        <span class="material-symbols-rounded" aria-hidden="true">content_copy</span>
+                        Copiar mensagem
+                    </button>
+                </div>
+                <div class="sobras-toolbar">
+                    <label for="sobras-semana-select">Semana</label>
+                    <select id="sobras-semana-select"></select>
+                    <input type="search" id="sobras-search-pizza" placeholder="Buscar sabor ou tamanho...">
+                </div>
+
+                <div id="sobras-cards" class="sobras-cards"></div>
+
+                <div class="sobras-message-box">
+                    <label for="sobras-mensagem">Mensagem pronta para enviar</label>
+                    <textarea id="sobras-mensagem" readonly></textarea>
+                </div>
+
+                <div class="grid-container sobras-grid">
+                    <div class="grid-col">
+                        <h4>Massas da semana</h4>
+                        <table id="tabela-sobras-massas" class="table compact-table">
+                            <thead>
+                                <tr>
+                                    <th>Tipo</th>
+                                    <th>Quota</th>
+                                    <th>Usado</th>
+                                    <th>Restante</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                    <div class="grid-col">
+                        <h4>Pizzas da semana</h4>
+                        <div class="table-container">
+                            <table id="tabela-sobras-pizzas" class="table compact-table">
+                                <thead>
+                                    <tr>
+                                        <th>Pizza</th>
+                                        <th>Estoque</th>
+                                        <th>Reservado</th>
+                                        <th>Disponível</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="card">
                 <div class="table-header">
                     <h3>Histórico de Pedidos</h3>
@@ -372,60 +514,6 @@
                 </div>
             </div>
 
-            <div class="card" id="consulta-rapida-sobras">
-                <div class="table-header compact-header">
-                    <div>
-                        <h3>Consulta rápida de pizzas</h3>
-                        <div class="small-muted">Use para ver o que está disponível, o que falta produzir e copiar a mensagem para clientes.</div>
-                    </div>
-                    <button type="button" class="secondary-btn" onclick="copySobrasMensagem()">📋 Copiar mensagem</button>
-                </div>
-                <div class="sobras-toolbar">
-                    <label for="sobras-semana-select">Semana</label>
-                    <select id="sobras-semana-select"></select>
-                    <input type="search" id="sobras-search-pizza" placeholder="Buscar pizza...">
-                </div>
-
-                <div id="sobras-cards" class="sobras-cards"></div>
-
-                <div class="sobras-message-box">
-                    <label for="sobras-mensagem">Mensagem pronta para enviar</label>
-                    <textarea id="sobras-mensagem" readonly></textarea>
-                </div>
-
-                <div class="grid-container sobras-grid" style="margin-top: .75rem;">
-                    <div class="grid-col">
-                        <h4>Massas</h4>
-                        <table id="tabela-sobras-massas" class="table compact-table">
-                            <thead>
-                                <tr>
-                                    <th>Tipo</th>
-                                    <th>Quota</th>
-                                    <th>Usado</th>
-                                    <th>Restante</th>
-                                </tr>
-                            </thead>
-                            <tbody></tbody>
-                        </table>
-                    </div>
-                    <div class="grid-col">
-                        <h4>Pizzas</h4>
-                        <div class="table-container">
-                            <table id="tabela-sobras-pizzas" class="table compact-table">
-                                <thead>
-                                    <tr>
-                                        <th>Pizza</th>
-                                        <th>Estoque</th>
-                                        <th>Pedidos</th>
-                                        <th>Sobra</th>
-                                    </tr>
-                                </thead>
-                                <tbody></tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
         </div>
 
 
@@ -712,18 +800,49 @@
         </div>
 
         <div id="graficos" class="tab-content">
-            <h2>Dashboard e Relatórios</h2>
+            <section class="dashboard-heading">
+                <div>
+                    <span class="section-eyebrow"><span class="material-symbols-rounded">monitoring</span> Desempenho</span>
+                    <h2>Dashboard</h2>
+                    <p class="small-muted">Vendas, pagamentos, produção e desempenho comercial no período escolhido.</p>
+                </div>
+            </section>
 
-            <div class="card full-width">
+            <div class="card dashboard-controls-card">
+                <div class="dashboard-controls-copy">
+                    <h3>Período da análise</h3>
+                    <p class="small-muted">O filtro atualiza os indicadores, rankings e gráficos abaixo.</p>
+                </div>
+                <div class="dashboard-filters">
+                    <div class="dashboard-range-buttons" role="group" aria-label="Período do dashboard">
+                        <button class="date-filter active" data-range="all">Tudo</button>
+                        <button class="date-filter" data-range="today">Hoje</button>
+                        <button class="date-filter" data-range="week">Esta semana</button>
+                        <button class="date-filter" data-range="month">Este mês</button>
+                    </div>
+                    <label class="dashboard-week-field" for="dash-week-filter">
+                        <span>Semana específica</span>
+                        <select id="dash-week-filter">
+                            <option value="">Selecione...</option>
+                        </select>
+                    </label>
+                </div>
+            </div>
+
+            <div id="dashboard-compare-cards" class="home-kpis dashboard-kpis"></div>
+
+            <div class="card full-width dashboard-demand-card">
                 <div class="table-header">
-                    <h3>Demanda de Produção</h3>
-                    <p class="small-muted">Mostra os pedidos ativos da semana, compara com o estoque atual e calcula quanto falta produzir.</p>
+                    <div>
+                        <h3>Demanda de produção</h3>
+                        <p class="small-muted">Compara os pedidos ativos da semana com o estoque e mostra quanto precisa ser produzido.</p>
+                    </div>
                     <div class="filters-container">
-                        <label for="filter-demanda-semana">Semana:</label>
+                        <label for="filter-demanda-semana">Semana</label>
                         <select id="filter-demanda-semana">
                             <option value="">Semana</option>
                         </select>
-                        <label for="filter-demanda-tamanho" style="margin-left: 1rem;">Tamanho:</label>
+                        <label for="filter-demanda-tamanho">Tamanho</label>
                         <select id="filter-demanda-tamanho">
                             <option value="">Todos</option>
                             <option value="P">Pequena (P)</option>
@@ -747,61 +866,40 @@
                 </div>
             </div>
 
-            <div class="card">
-                <h3>Controles do Dashboard</h3>
-                <div class="dashboard-filters"
-                    style="display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: center; justify-content: space-between;">
-                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                        <button class="date-filter active" data-range="all">Tudo</button>
-                        <button class="date-filter" data-range="today">Hoje</button>
-                        <button class="date-filter" data-range="week">Esta Semana</button>
-                        <button class="date-filter" data-range="month">Este Mês</button>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 0.5rem;">
-                        <label for="dash-week-filter"><strong>Ou filtre por semana:</strong></label>
-                        <select id="dash-week-filter">
-                            <option value="">Selecione...</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
-
-            <div id="dashboard-compare-cards" class="home-kpis dashboard-kpis"></div>
-
             <div class="charts-container">
                 <div class="card chart-card">
-                    <h3>🏆 Top 10 Pizzas</h3>
+                    <h3>Top 10 pizzas</h3>
                     <div id="pizza-ranking-container" style="margin-top: 1rem;"></div>
                 </div>
 
                 <div class="card chart-card">
-                    <h3>🎉 Novos Clientes por Mês</h3>
+                    <h3>Novos clientes por mês</h3>
                     <canvas id="novosClientesChart"></canvas>
                 </div>
 
                 <div class="card chart-card full-width">
-                    <h3>🍕 Pizzas Vendidas no Período</h3>
+                    <h3>Pizzas nos pedidos do período</h3>
                     <div id="pizzas-mais-vendidas-list" class="simple-list-container"></div>
                 </div>
 
                 <div class="card chart-card">
-                    <h3>Balanço Financeiro (Receita x Custo)</h3>
+                    <h3>Resultado estimado dos pedidos</h3>
                     <canvas id="balancoChart"></canvas>
                 </div>
                 <div class="card chart-card">
-                    <h3>Pizzas Mais Lucrativas (Valor Total)</h3>
+                    <h3>Margem estimada por pizza</h3>
                     <canvas id="pizzasMaisLucrativasChart"></canvas>
                 </div>
                 <div class="card chart-card">
-                    <h3>Vendas por Vendedor</h3>
+                    <h3>Pedidos por vendedor</h3>
                     <canvas id="vendasPorVendedorChart"></canvas>
                 </div>
                 <div class="chart-container">
-                    <h3>Receita por Dia</h3>
+                    <h3>Valor dos pedidos por dia</h3>
                     <canvas id="vendasPorDiaChart"></canvas>
                 </div>
                 <div class="card chart-card full-width">
-                    <h3>Histórico de Vendas (Últimas Semanas)</h3>
+                    <h3>Pizzas nos pedidos por semana</h3>
                     <canvas id="pedidosSemanaChart"></canvas>
                 </div>
             </div>
