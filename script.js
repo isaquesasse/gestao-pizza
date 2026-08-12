@@ -1,5 +1,5 @@
 document.addEventListener("DOMContentLoaded", () => {
-  window.SASSES_VERSION = "v60";
+  window.SASSES_VERSION = "v61-estoque-proprio-vendedor";
   console.log("Sasse's Pizza", window.SASSES_VERSION);
   const SUPABASE_URL = "https://iprnfzevdfmnraexthpy.supabase.co";
   const SUPABASE_ANON_KEY =
@@ -36,6 +36,8 @@ document.addEventListener("DOMContentLoaded", () => {
     loja_entrega_recorrencia: [],
     loja_cupons: [],
     loja_config: {},
+    estoque_vendedor_painel: { ativo: false, estoque: [], sugestoes: [], movimentos: [] },
+    vendedor_lotes: [],
   };
 
   const STOCK_ACTIVE_STATUSES = ["Pendente", "Confirmado", "Pronto", "Concluído"];
@@ -148,7 +150,7 @@ document.addEventListener("DOMContentLoaded", () => {
     whatsapp_number: "5547936186148",
     pix_ativo: true,
     dinheiro_ativo: true,
-    cartao_ativo: true,
+    cartao_ativo: false,
     combinar_ativo: true,
     pix_key: "carlos.sasse@gmail.com",
     pix_name: "SASSES PIZZA",
@@ -387,7 +389,33 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     applySellerProfileToForms(true);
     renderSellerProfileUI();
-    renderAll();
+    if (!id && document.querySelector('.tab-link.active[data-tab="estoque-vendedor"]')) openTab('inicio');
+    loadSellerExtras().finally(() => renderAll());
+  };
+
+  const loadSellerExtras = async () => {
+    const seller = getCurrentSeller();
+    try {
+      if (seller?.id) {
+        const painelRes = await supabaseClient.rpc("painel_estoque_vendedor", { p_vendedor_id: seller.id });
+        if (painelRes.error) throw painelRes.error;
+        database.estoque_vendedor_painel = painelRes.data || { ativo:false, estoque:[], sugestoes:[], movimentos:[] };
+      } else {
+        database.estoque_vendedor_painel = { ativo:false, estoque:[], sugestoes:[], movimentos:[] };
+      }
+    } catch (error) {
+      database.estoque_vendedor_painel = { ativo:false, estoque:[], sugestoes:[], movimentos:[] };
+      console.warn(error);
+    }
+    try {
+      const isAdmin = sessionStorage.getItem(ADMIN_SESSION_KEY) === "true" || isSellerAdmin(seller);
+      const lotesRes = await supabaseClient.rpc("listar_lotes_vendedor_gestao", { p_vendedor_id: isAdmin ? null : (seller?.id || null) });
+      if (lotesRes.error) throw lotesRes.error;
+      database.vendedor_lotes = Array.isArray(lotesRes.data) ? lotesRes.data : [];
+    } catch (error) {
+      database.vendedor_lotes = [];
+      console.warn(error);
+    }
   };
 
   const renderSellerProfileUI = () => {
@@ -671,6 +699,31 @@ Deseja adicionar esse frete ao Valor Final?`)) {
         const vendedoresRes = await supabaseClient.from("vendedores").select("*").order("nome");
         database.vendedores = vendedoresRes.data || [];
       } catch { database.vendedores = []; }
+
+      try {
+        const currentSellerId = getCurrentSellerId();
+        if (currentSellerId) {
+          const painelRes = await supabaseClient.rpc("painel_estoque_vendedor", { p_vendedor_id: currentSellerId });
+          if (painelRes.error) throw painelRes.error;
+          database.estoque_vendedor_painel = painelRes.data || { ativo: false, estoque: [], sugestoes: [], movimentos: [] };
+        } else {
+          database.estoque_vendedor_painel = { ativo: false, estoque: [], sugestoes: [], movimentos: [] };
+        }
+      } catch (error) {
+        console.warn("Estoque do vendedor ainda não está disponível:", error?.message || error);
+        database.estoque_vendedor_painel = { ativo: false, estoque: [], sugestoes: [], movimentos: [] };
+      }
+
+      try {
+        const seller = getCurrentSeller();
+        const isAdmin = sessionStorage.getItem(ADMIN_SESSION_KEY) === "true" || isSellerAdmin(seller);
+        const lotesRes = await supabaseClient.rpc("listar_lotes_vendedor_gestao", { p_vendedor_id: isAdmin ? null : (seller?.id || null) });
+        if (lotesRes.error) throw lotesRes.error;
+        database.vendedor_lotes = Array.isArray(lotesRes.data) ? lotesRes.data : [];
+      } catch (error) {
+        console.warn("Lotes de vendedor ainda não estão disponíveis:", error?.message || error);
+        database.vendedor_lotes = [];
+      }
 
       try {
         const calendarioRes = await supabaseClient
@@ -1289,6 +1342,8 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     populateWeekSelector(document.getElementById("producao-semana"), { futureOnly: true, futureWeeks: 4, setCurrentDefault: true });
     renderIngredientes();
     renderEstoque();
+    renderSellerInventory();
+    renderSellerLots();
     renderReceitas();
 
     applyDefaultPedidosFilters(false);
@@ -1464,6 +1519,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     if (tabId === "loja") renderLojaHub();
     if (["vendedor-rapido", "caixa", "producao", "clientes", "cozinha"].includes(tabId) && typeof renderV4Panels === "function") renderV4Panels();
     if (tabId === "cozinha") renderKitchenMode();
+    if (tabId === "estoque-vendedor") renderSellerInventory();
   };
 
   window.openTabSection = openTab;
@@ -6056,6 +6112,143 @@ Lançar mesmo assim como encomenda/produção pendente?`);
     }
   };
 
+
+  const renderSellerInventory = () => {
+    const title = document.getElementById("seller-stock-title");
+    const copy = document.getElementById("seller-stock-status-copy");
+    const toggle = document.getElementById("seller-stock-toggle");
+    const kpis = document.getElementById("seller-stock-kpis");
+    const suggestions = document.getElementById("seller-stock-suggestions");
+    const tbody = document.querySelector("#seller-stock-table tbody");
+    const quick = document.getElementById("seller-stock-quick");
+    const history = document.getElementById("seller-stock-history");
+    if (!title || !toggle || !kpis || !suggestions || !tbody || !quick || !history) return;
+
+    const seller = getCurrentSeller();
+    const painel = database.estoque_vendedor_painel || { ativo:false, estoque:[], sugestoes:[], movimentos:[] };
+    if (!seller) {
+      title.textContent = "Selecione um perfil de vendedor";
+      copy.textContent = "Abra seu perfil no topo para acessar o estoque próprio.";
+      toggle.disabled = true;
+      kpis.innerHTML = suggestions.innerHTML = quick.innerHTML = history.innerHTML = "";
+      tbody.innerHTML = '<tr><td colspan="4" class="empty-row">Nenhum vendedor selecionado.</td></tr>';
+      return;
+    }
+
+    toggle.disabled = false;
+    title.textContent = seller.nome;
+    const active = Boolean(painel.ativo);
+    toggle.textContent = active ? "Desativar estoque próprio" : "Ativar estoque próprio";
+    toggle.classList.toggle("is-active", active);
+    copy.textContent = active
+      ? "Ativo: pedidos da loja vinculados a você usam primeiro o seu estoque, de forma atômica."
+      : "Inativo: pedidos da loja continuam seguindo a lógica normal do estoque principal.";
+
+    const stock = Array.isArray(painel.estoque) ? painel.estoque : [];
+    const withStock = stock.filter((item) => Number(item.qtd || 0) > 0);
+    const totalUnits = withStock.reduce((sum,item) => sum + Number(item.qtd || 0), 0);
+    const lowStock = withStock.filter((item) => Number(item.qtd || 0) <= 2).length;
+    kpis.innerHTML = `
+      <div class="seller-stock-kpi"><span>Unidades comigo</span><b>${totalUnits}</b></div>
+      <div class="seller-stock-kpi"><span>Sabores disponíveis</span><b>${withStock.length}</b></div>
+      <div class="seller-stock-kpi"><span>Com 2 ou menos</span><b>${lowStock}</b></div>`;
+
+    const search = (document.getElementById("seller-stock-search")?.value || "").trim().toLowerCase();
+    const filtered = stock.filter((item) => `${item.nome || ""} ${item.tamanho || ""}`.toLowerCase().includes(search));
+    tbody.innerHTML = filtered.length ? filtered.map((item) => `
+      <tr class="${Number(item.qtd || 0) <= 0 ? "low-stock" : ""}">
+        <td data-label="Pizza"><b>${escapeHTML(item.nome || "")}</b></td>
+        <td data-label="Tamanho">${escapeHTML(item.tamanho || "Único")}</td>
+        <td data-label="Quantidade"><b>${Number(item.qtd || 0)}</b></td>
+        <td data-label="Ajuste rápido"><div class="seller-stock-actions">
+          <button type="button" class="action-btn remove-btn" onclick="window.adjustSellerStock('${escapeAttr(item.pizzaId)}', -1)">−1</button>
+          <button type="button" class="action-btn confirm-btn" onclick="window.adjustSellerStock('${escapeAttr(item.pizzaId)}', 1)">+1</button>
+          <button type="button" class="action-btn edit-btn" onclick="window.customAdjustSellerStock('${escapeAttr(item.pizzaId)}', '${escapeAttr(item.nome || "Pizza")}')">Ajustar</button>
+        </div></td>
+      </tr>`).join("") : '<tr><td colspan="4" class="empty-row">Nenhuma pizza encontrada.</td></tr>';
+
+    const topStock = withStock.slice().sort((a,b) => Number(b.qtd||0)-Number(a.qtd||0)).slice(0,8);
+    quick.innerHTML = topStock.length ? topStock.map((item) => `<div class="seller-stock-quick-card"><span>${escapeHTML(item.nome || "")}${item.tamanho ? ` · ${escapeHTML(item.tamanho)}` : ""}</span><b>${Number(item.qtd || 0)} un.</b></div>`).join("") : '<div class="empty-state">Seu estoque próprio ainda está vazio.</div>';
+
+    const sugg = Array.isArray(painel.sugestoes) ? painel.sugestoes : [];
+    suggestions.innerHTML = sugg.length ? sugg.map((pedido) => {
+      const items = Array.isArray(pedido.items) ? pedido.items.filter((item) => Number(item.qtd || 0) > 0) : [];
+      return `<article class="seller-stock-suggestion"><div class="seller-stock-suggestion-main"><b>Pedido ${escapeHTML(formatDateBR(pedido.dataEntrega || ""))}</b><small>Origem: estoque principal · ${escapeHTML(pedido.status || "")}</small><div class="seller-stock-suggestion-items">${items.map((item) => `<span class="seller-stock-pill">${Number(item.qtd||0)}x ${escapeHTML(item.nome || "")}${item.tamanho ? ` (${escapeHTML(item.tamanho)})` : ""}</span>`).join("")}</div></div><button type="button" class="action-btn confirm-btn" onclick="window.receiveSellerOrder('${escapeAttr(pedido.pedidoId)}')">Adicionar ao meu estoque</button></article>`;
+    }).join("") : '<div class="empty-state">Nenhum pedido aguardando recebimento no seu estoque.</div>';
+
+    const movements = Array.isArray(painel.movimentos) ? painel.movimentos : [];
+    const movementLabel = { entrada_pedido:"Recebido do estoque principal", saida_venda:"Venda", devolucao_venda:"Devolução", ajuste_entrada:"Entrada manual", ajuste_saida:"Saída manual" };
+    history.innerHTML = movements.length ? movements.slice(0,30).map((mv) => `<div class="seller-stock-history-item"><div><b>${escapeHTML(movementLabel[mv.tipo] || mv.tipo || "Movimentação")}</b><small>${escapeHTML(mv.nome || "")}${mv.tamanho ? ` · ${escapeHTML(mv.tamanho)}` : ""}${mv.observacao ? ` · ${escapeHTML(mv.observacao)}` : ""}</small></div><div><b>${["saida_venda","ajuste_saida"].includes(mv.tipo) ? "−" : "+"}${Number(mv.qtd || 0)}</b><small>${mv.createdAt ? new Date(mv.createdAt).toLocaleString("pt-BR") : ""}</small></div></div>`).join("") : '<div class="empty-state">Nenhuma movimentação registrada.</div>';
+  };
+
+  const renderSellerLots = () => {
+    const container = document.getElementById("seller-lotes-list");
+    const card = document.getElementById("seller-lotes-card");
+    if (!container || !card) return;
+    const seller = getCurrentSeller();
+    const isAdmin = sessionStorage.getItem(ADMIN_SESSION_KEY) === "true" || isSellerAdmin(seller);
+    const lots = Array.isArray(database.vendedor_lotes) ? database.vendedor_lotes : [];
+    card.hidden = !isAdmin && !seller;
+    if (card.hidden) return;
+    container.innerHTML = lots.length ? lots.map((lot) => {
+      const sections = Array.isArray(lot.secoes) ? lot.secoes : [];
+      return `<article class="seller-lote"><header class="seller-lote-head"><div><b>${escapeHTML(lot.vendedor || "Vendedor")}</b><small>${escapeHTML(formatDateBR(lot.dataEntrega || ""))} · ${sections.length} cliente(s)</small></div><div><span class="status-chip ${String(lot.status||"").toLowerCase()==="pronto" ? "success" : "warning"}">${escapeHTML(lot.status || "Pendente")}</span><b>${formatCurrency(lot.valorTotal || 0)}</b></div></header><div class="seller-lote-secoes">${sections.map((section) => `<section class="seller-lote-secao"><div class="seller-lote-secao-head"><div><b>${escapeHTML(section.cliente || "Cliente")}</b><small>${escapeHTML(section.pagamento || "A combinar")} · ${escapeHTML(section.codigo || "")}</small></div><div>${section.pago ? '<span class="payment-tag paid">Pago</span>' : '<span class="payment-tag unpaid">Aguardando pagamento</span>'}</div></div><ul class="seller-lote-items">${(Array.isArray(section.items)?section.items:[]).map((item) => `<li>${Number(item.qtd||0)}x ${escapeHTML(item.pizzaNome || "Item")}</li>`).join("")}</ul><div class="seller-lote-actions">${section.status !== "Concluído" && section.status !== "Cancelado" && section.status !== "Negado" ? `<button class="action-btn paid-btn" type="button" onclick="window.marcarPedidoPago('${escapeAttr(section.pedidoId)}')">Marcar pago</button><button class="action-btn complete-btn" type="button" onclick="window.updatePedidoStatus('${escapeAttr(section.pedidoId)}','Concluído')">Concluir</button>` : ""}<button class="action-btn edit-btn" type="button" onclick="window.openEditPedidoModal('${escapeAttr(section.pedidoId)}')">Editar pedido</button></div></section>`).join("")}</div></article>`;
+    }).join("") : '<div class="empty-state">Nenhum pedido agrupado de vendedor ainda.</div>';
+  };
+
+  window.adjustSellerStock = async (pizzaId, delta) => {
+    const seller = getCurrentSeller();
+    if (!seller) return showSaveStatus("Selecione seu perfil de vendedor.", false);
+    try {
+      showLoader();
+      const { error } = await supabaseClient.rpc("ajustar_estoque_vendedor", { p_vendedor_id:seller.id, p_pizza_id:pizzaId, p_delta:delta, p_observacao:"Ajuste rápido pela gestão" });
+      if (error) throw error;
+      await loadSellerExtras();
+      renderSellerInventory();
+      showSaveStatus(delta > 0 ? "Unidade adicionada ao seu estoque." : "Unidade removida do seu estoque.");
+    } catch (error) { showSaveStatus(formatSupabaseError(error,"Não foi possível ajustar seu estoque"),false); }
+    finally { hideLoader(); }
+  };
+
+  window.customAdjustSellerStock = async (pizzaId, pizzaName) => {
+    const value = prompt(`Ajuste de ${pizzaName}\nUse número positivo para entrada ou negativo para saída.`, "1");
+    if (value === null) return;
+    const delta = parseInt(value,10);
+    if (!Number.isInteger(delta) || delta === 0) return showSaveStatus("Informe um número inteiro diferente de zero.", false);
+    await window.adjustSellerStock(pizzaId, delta);
+  };
+
+  window.receiveSellerOrder = async (pedidoId) => {
+    const seller = getCurrentSeller();
+    if (!seller) return showSaveStatus("Selecione seu perfil de vendedor.", false);
+    if (!confirm("Confirmar que você recebeu essas pizzas do estoque principal?")) return;
+    try {
+      showLoader();
+      const { data, error } = await supabaseClient.rpc("receber_pedido_estoque_vendedor", { p_vendedor_id:seller.id, p_pedido_id:pedidoId });
+      if (error) throw error;
+      await loadSellerExtras();
+      renderSellerInventory();
+      showSaveStatus(`${Number(data?.adicionado || 0)} unidade(s) adicionada(s) ao seu estoque.`);
+    } catch (error) { showSaveStatus(formatSupabaseError(error,"Não foi possível receber esse pedido"),false); }
+    finally { hideLoader(); }
+  };
+
+  document.getElementById("seller-stock-toggle")?.addEventListener("click", async () => {
+    const seller = getCurrentSeller();
+    if (!seller) return showSaveStatus("Selecione seu perfil de vendedor.", false);
+    const next = !Boolean(database.estoque_vendedor_painel?.ativo);
+    try {
+      showLoader();
+      const { error } = await supabaseClient.rpc("definir_estoque_proprio_vendedor", { p_vendedor_id:seller.id, p_ativo:next });
+      if (error) throw error;
+      seller.estoque_proprio_ativo = next;
+      await loadSellerExtras();
+      renderSellerInventory();
+      showSaveStatus(next ? "Estoque próprio ativado." : "Estoque próprio desativado. A loja volta a usar o fluxo normal.");
+    } catch (error) { showSaveStatus(formatSupabaseError(error,"Não foi possível alterar o estoque próprio"),false); }
+    finally { hideLoader(); }
+  });
+  document.getElementById("seller-stock-search")?.addEventListener("input", renderSellerInventory);
 
   loadDataFromSupabase();
 
