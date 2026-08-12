@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestão Sasse's Pizza</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=67">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0,0&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -79,6 +79,7 @@
         <button class="tab-link active" data-tab="inicio"><span class="material-symbols-rounded">home</span><span>Início</span></button>
         <button class="tab-link" data-tab="pedidos"><span class="material-symbols-rounded">receipt_long</span><span>Pedidos</span></button>
         <button class="tab-link admin-only seller-visible" data-tab="vendedor-rapido"><span class="material-symbols-rounded">bolt</span><span>Venda rápida</span></button>
+        <button class="tab-link admin-only" data-tab="estoque"><span class="material-symbols-rounded">inventory_2</span><span>Estoque</span></button>
         <button class="tab-link seller-only" data-tab="estoque-vendedor"><span class="material-symbols-rounded">inventory</span><span>Meu estoque</span></button>
         <button class="tab-link admin-only" data-tab="loja"><span class="material-symbols-rounded">storefront</span><span>Loja online</span></button>
         <div class="sidebar-section-label admin-only">Operação</div>
@@ -88,7 +89,6 @@
             <div id="more-tabs-menu" class="more-tabs-menu" hidden>
                 <button class="tab-link" data-tab="logistica"><span class="material-symbols-rounded">calendar_month</span><span>Agenda</span></button>
                 <button class="tab-link" data-tab="cozinha"><span class="material-symbols-rounded">skillet</span><span>Modo cozinha</span></button>
-                <button class="tab-link" data-tab="estoque"><span class="material-symbols-rounded">inventory_2</span><span>Estoque principal</span></button>
                 <div class="sidebar-section-label">Gestão</div>
                 <button class="tab-link" data-tab="caixa"><span class="material-symbols-rounded">payments</span><span>Caixa</span></button>
                 <button class="tab-link" data-tab="clientes"><span class="material-symbols-rounded">group</span><span>Clientes</span></button>
@@ -678,6 +678,17 @@
                 <p class="small-muted">Controle apenas as pizzas que estão fisicamente com você. O estoque principal continua separado.</p>
             </div>
 
+            <section class="card seller-stock-receive-card">
+                <div class="table-header compact-header">
+                    <div>
+                        <span class="section-eyebrow"><span class="material-symbols-rounded">add_circle</span> Entrada rápida</span>
+                        <h3>Adicionar pizzas dos meus pedidos</h3>
+                        <p class="small-muted">As pizzas que você retirou do estoque principal aparecem primeiro aqui. Confirme o recebimento para adicionar ao seu estoque próprio.</p>
+                    </div>
+                </div>
+                <div id="seller-stock-suggestions" class="seller-stock-suggestions"></div>
+            </section>
+
             <section class="card seller-stock-status-card">
                 <div class="seller-stock-status-main">
                     <div>
@@ -688,13 +699,6 @@
                     <button type="button" id="seller-stock-toggle" class="seller-stock-toggle">Ativar estoque próprio</button>
                 </div>
                 <div id="seller-stock-kpis" class="seller-stock-kpis"></div>
-            </section>
-
-            <section class="card">
-                <div class="table-header compact-header">
-                    <div><h3>Receber pizzas dos meus pedidos</h3><p class="small-muted">Pedidos já retirados do estoque principal aparecem aqui. Ao receber, as unidades entram no seu estoque sem baixar o principal novamente.</p></div>
-                </div>
-                <div id="seller-stock-suggestions" class="seller-stock-suggestions"></div>
             </section>
 
             <section class="card">
@@ -719,8 +723,15 @@
 
         <div id="estoque" class="tab-content">
             <h2>Estoque de Pizzas Prontas</h2>
-            <div class="card">
-                <h3>Ferramentas de Estoque</h3>
+
+            <div class="card stock-tools-primary">
+                <div class="table-header compact-header">
+                    <div>
+                        <span class="section-eyebrow"><span class="material-symbols-rounded">local_pizza</span> Produção rápida</span>
+                        <h3>Selecionar pizzas para produzir</h3>
+                        <p class="small-muted">Use esta ferramenta primeiro para lançar rapidamente as pizzas produzidas no estoque principal.</p>
+                    </div>
+                </div>
                 <div class="form-producao-container">
                     <form id="form-producao" style="flex: 2; min-width: 300px;">
                         <select id="producao-pizza-select" required>
@@ -731,6 +742,19 @@
                     </form>
                 </div>
             </div>
+
+            <section class="card main-stock-quick-card">
+                <div class="table-header main-stock-quick-head">
+                    <div>
+                        <span class="section-eyebrow"><span class="material-symbols-rounded">add_box</span> Entrada rápida</span>
+                        <h3>Adicionar estoque rápido</h3>
+                        <p class="small-muted">Atualize as pizzas prontas sem precisar abrir o cadastro. Os botões adicionam diretamente ao estoque principal.</p>
+                    </div>
+                    <input type="search" id="main-stock-quick-search" class="search-input" placeholder="Buscar pizza ou tamanho...">
+                </div>
+                <div id="main-stock-quick-list" class="main-stock-quick-list"></div>
+            </section>
+
             <div class="card">
                 <h3>Adicionar Nova Pizza ao Cardápio</h3>
                 <form id="form-estoque">
@@ -1160,6 +1184,7 @@
     <nav class="mobile-bottom-nav">
         <button class="tab-link active" data-tab="inicio">Início</button>
         <button class="tab-link" data-tab="pedidos">Pedidos</button>
+        <button class="tab-link admin-only" data-tab="estoque">Estoque</button>
         <button class="tab-link admin-only" data-tab="loja">Loja</button>
         <button class="tab-link admin-only" data-tab="logistica">Agenda</button>
         <button class="tab-link admin-only seller-visible" data-tab="vendedor-rapido">Venda</button>
@@ -1176,15 +1201,32 @@
         </div>
     </div>
 
+    <div id="status-reason-modal" class="modal status-reason-modal">
+        <div class="modal-content status-reason-content">
+            <span class="close-button" id="status-reason-close">&times;</span>
+            <p class="status-reason-eyebrow" id="status-reason-eyebrow">Atualizar pedido</p>
+            <h2 id="status-reason-title">Informe o motivo</h2>
+            <p id="status-reason-copy" class="small-muted"></p>
+            <label class="status-reason-label" for="status-reason-text">Motivo
+                <textarea id="status-reason-text" rows="5" maxlength="500" placeholder="Escreva de forma clara para o cliente..."></textarea>
+            </label>
+            <div id="status-reason-error" class="status-reason-error" hidden></div>
+            <div class="status-reason-actions">
+                <button type="button" id="status-reason-cancel" class="ghost-light-btn">Voltar</button>
+                <button type="button" id="status-reason-confirm" class="action-btn reject-btn">Continuar</button>
+            </div>
+        </div>
+    </div>
+
     <div id="save-status"></div>
     <footer>
         <p>&copy; 2026 Sasse's Pizza</p>
     </footer>
 
-    <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" onerror="this.onerror=null;this.src='https://unpkg.com/@supabase/supabase-js@2'"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script defer src="script.js"></script>
+    <script defer src="script.js?v=67"></script>
 </body>
 
 </html>
