@@ -6299,6 +6299,39 @@ tbody tr:last-child td { border-bottom: 0; }
   font-size: .68rem;
 }
 
+.card-header-actions {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  flex-wrap: wrap;
+}
+
+.card-collapse-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  border: 1px solid var(--border-color);
+  background: #faf8f6;
+  color: var(--primary-color);
+  border-radius: 999px;
+  padding: .55rem .9rem;
+  font-weight: 700;
+  font-size: .78rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.card-collapse-btn:hover { background: #f1ece5; }
+
+.card-collapse-btn .material-symbols-rounded {
+  font-size: 1.1rem;
+  transition: transform .15s ease;
+}
+
+.card-collapse-btn[aria-expanded="true"] .material-symbols-rounded { transform: rotate(180deg); }
+
+.card-collapsible-body[hidden] { display: none; }
+
 .bulk-calendar-grid { border-color: #e5ded7; background: #faf8f6; }
 .bulk-calendar-day { border-color: #e3dcd5; border-radius: 13px; }
 .bulk-calendar-day:not(:disabled):hover { border-color: var(--secondary-color); }

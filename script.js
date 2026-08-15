@@ -1,5 +1,5 @@
 document.addEventListener("DOMContentLoaded", () => {
-  window.SASSES_VERSION = "v66-gestao-menu-estoque-fix";
+  window.SASSES_VERSION = "v68-estoque-confirmacao-fix";
   console.log("Sasse's Pizza", window.SASSES_VERSION);
   const SUPABASE_URL = "https://iprnfzevdfmnraexthpy.supabase.co";
   const SUPABASE_ANON_KEY =
@@ -1286,7 +1286,8 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     renderLojaCupons();
 
     const aguardando = database.pedidos
-      .filter((p) => p.status === "Pendente")
+      // Pedido lançado manualmente pela gestão não precisa de confirmação da loja online.
+      .filter((p) => p.status === "Pendente" && p.origem !== "gestao")
       .sort((a, b) => `${a.dataEntrega || ""} ${a.horario_preferencia || ""}`.localeCompare(`${b.dataEntrega || ""} ${b.horario_preferencia || ""}`));
     const entregasHoje = getLogisticaPedidos().filter((p) => normalizeMetodoEntrega(p) === "entrega");
     const retiradasHoje = getLogisticaPedidos().filter((p) => normalizeMetodoEntrega(p) === "retirada");
@@ -3829,6 +3830,12 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
         if (!getPedidoDataEntrega(p)) return false;
         const status = normalizePedidoStatusValue(p.status);
         if (!allowedStatuses.has(status)) return false;
+        // Pedido já reservado (estoque_baixado) já foi descontado direto de estoque.qtd
+        // na hora da reserva. Contar de novo aqui subtrairia a mesma pizza duas vezes
+        // da disponibilidade/sobra e inflava "precisa produzir".
+        if (p.estoque_baixado === true) return false;
+        // Pedido atendido pelo estoque próprio do vendedor não consome o estoque principal.
+        if (String(p.estoque_origem || "principal").toLowerCase() === "vendedor") return false;
         return getPedidoWeekStart(p) === normalizedWeek;
       })
       .forEach((p) => {
@@ -6007,7 +6014,8 @@ Lançar mesmo assim como encomenda/produção pendente?`);
 
   const renderMobileLoja = () => {
     const aguardando = database.pedidos
-      .filter((p) => p.status === "Pendente")
+      // Pedido lançado manualmente pela gestão não precisa de confirmação da loja online.
+      .filter((p) => p.status === "Pendente" && p.origem !== "gestao")
       .sort((a, b) => `${a.dataEntrega || ""} ${a.horario_preferencia || ""}`.localeCompare(`${b.dataEntrega || ""} ${b.horario_preferencia || ""}`));
     const proximos = getLogisticaPedidos().slice(0, 8);
     renderMobileShell(`<section class="m-section">
@@ -6422,6 +6430,25 @@ Lançar mesmo assim como encomenda/produção pendente?`);
     finally { hideLoader(); }
   });
   document.getElementById("seller-stock-search")?.addEventListener("input", renderSellerInventory);
+
+  // Seções de consulta/entrada rápida começam minimizadas; o botão alterna mostrar/ocultar o corpo.
+  document.querySelectorAll("[data-collapse-toggle]").forEach((btn) => {
+    const body = document.getElementById(btn.dataset.collapseToggle);
+    if (!body) return;
+    const label = btn.querySelector(".card-collapse-btn-label");
+    const icon = btn.querySelector(".material-symbols-rounded");
+    const syncCollapseBtn = () => {
+      const expanded = !body.hidden;
+      btn.setAttribute("aria-expanded", String(expanded));
+      if (label) label.textContent = expanded ? "Minimizar" : "Maximizar";
+      if (icon) icon.textContent = expanded ? "expand_less" : "expand_more";
+    };
+    btn.addEventListener("click", () => {
+      body.hidden = !body.hidden;
+      syncCollapseBtn();
+    });
+    syncCollapseBtn();
+  });
 
   loadDataFromSupabase();
 

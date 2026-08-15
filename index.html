@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestão Sasse's Pizza</title>
-    <link rel="stylesheet" href="style.css?v=67">
+    <link rel="stylesheet" href="style.css?v=68">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0,0&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -432,53 +432,61 @@
                         <h3>Consulta rápida de pizzas</h3>
                         <div class="small-muted">Confira o disponível da semana, veja o que falta produzir e copie a mensagem para clientes.</div>
                     </div>
-                    <button type="button" class="secondary-btn" onclick="copySobrasMensagem()">
-                        <span class="material-symbols-rounded" aria-hidden="true">content_copy</span>
-                        Copiar mensagem
-                    </button>
-                </div>
-                <div class="sobras-toolbar">
-                    <label for="sobras-semana-select">Semana</label>
-                    <select id="sobras-semana-select"></select>
-                    <input type="search" id="sobras-search-pizza" placeholder="Buscar sabor ou tamanho...">
-                </div>
-
-                <div id="sobras-cards" class="sobras-cards"></div>
-
-                <div class="sobras-message-box">
-                    <label for="sobras-mensagem">Mensagem pronta para enviar</label>
-                    <textarea id="sobras-mensagem" readonly></textarea>
-                </div>
-
-                <div class="grid-container sobras-grid">
-                    <div class="grid-col">
-                        <h4>Massas da semana</h4>
-                        <table id="tabela-sobras-massas" class="table compact-table">
-                            <thead>
-                                <tr>
-                                    <th>Tipo</th>
-                                    <th>Quota</th>
-                                    <th>Usado</th>
-                                    <th>Restante</th>
-                                </tr>
-                            </thead>
-                            <tbody></tbody>
-                        </table>
+                    <div class="card-header-actions">
+                        <button type="button" class="secondary-btn" onclick="copySobrasMensagem()">
+                            <span class="material-symbols-rounded" aria-hidden="true">content_copy</span>
+                            Copiar mensagem
+                        </button>
+                        <button type="button" class="card-collapse-btn" data-collapse-toggle="consulta-rapida-sobras-body" aria-expanded="false" aria-controls="consulta-rapida-sobras-body">
+                            <span class="material-symbols-rounded" aria-hidden="true">expand_more</span>
+                            <span class="card-collapse-btn-label">Maximizar</span>
+                        </button>
                     </div>
-                    <div class="grid-col">
-                        <h4>Pizzas da semana</h4>
-                        <div class="table-container">
-                            <table id="tabela-sobras-pizzas" class="table compact-table">
+                </div>
+                <div id="consulta-rapida-sobras-body" class="card-collapsible-body" hidden>
+                    <div class="sobras-toolbar">
+                        <label for="sobras-semana-select">Semana</label>
+                        <select id="sobras-semana-select"></select>
+                        <input type="search" id="sobras-search-pizza" placeholder="Buscar sabor ou tamanho...">
+                    </div>
+
+                    <div id="sobras-cards" class="sobras-cards"></div>
+
+                    <div class="sobras-message-box">
+                        <label for="sobras-mensagem">Mensagem pronta para enviar</label>
+                        <textarea id="sobras-mensagem" readonly></textarea>
+                    </div>
+
+                    <div class="grid-container sobras-grid">
+                        <div class="grid-col">
+                            <h4>Massas da semana</h4>
+                            <table id="tabela-sobras-massas" class="table compact-table">
                                 <thead>
                                     <tr>
-                                        <th>Pizza</th>
-                                        <th>Estoque</th>
-                                        <th>Reservado</th>
-                                        <th>Disponível</th>
+                                        <th>Tipo</th>
+                                        <th>Quota</th>
+                                        <th>Usado</th>
+                                        <th>Restante</th>
                                     </tr>
                                 </thead>
                                 <tbody></tbody>
                             </table>
+                        </div>
+                        <div class="grid-col">
+                            <h4>Pizzas da semana</h4>
+                            <div class="table-container">
+                                <table id="tabela-sobras-pizzas" class="table compact-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Pizza</th>
+                                            <th>Estoque</th>
+                                            <th>Reservado</th>
+                                            <th>Disponível</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -750,9 +758,17 @@
                         <h3>Adicionar estoque rápido</h3>
                         <p class="small-muted">Atualize as pizzas prontas sem precisar abrir o cadastro. Os botões adicionam diretamente ao estoque principal.</p>
                     </div>
-                    <input type="search" id="main-stock-quick-search" class="search-input" placeholder="Buscar pizza ou tamanho...">
+                    <div class="card-header-actions">
+                        <input type="search" id="main-stock-quick-search" class="search-input" placeholder="Buscar pizza ou tamanho...">
+                        <button type="button" class="card-collapse-btn" data-collapse-toggle="main-stock-quick-body" aria-expanded="false" aria-controls="main-stock-quick-body">
+                            <span class="material-symbols-rounded" aria-hidden="true">expand_more</span>
+                            <span class="card-collapse-btn-label">Maximizar</span>
+                        </button>
+                    </div>
                 </div>
-                <div id="main-stock-quick-list" class="main-stock-quick-list"></div>
+                <div id="main-stock-quick-body" class="card-collapsible-body" hidden>
+                    <div id="main-stock-quick-list" class="main-stock-quick-list"></div>
+                </div>
             </section>
 
             <div class="card">
@@ -1226,7 +1242,7 @@
     <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" onerror="this.onerror=null;this.src='https://unpkg.com/@supabase/supabase-js@2'"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script defer src="script.js?v=67"></script>
+    <script defer src="script.js?v=68"></script>
 </body>
 
 </html>
