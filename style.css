@@ -1260,6 +1260,8 @@ button:hover { transform: translateY(-1px); }
 .payment-tag.paid { background: #dcfce7; color: #166534; }
 .payment-tag.unpaid { background: #fee2e2; color: #991b1b; }
 .payment-tag.muted { background: #e5e7eb; color: #374151; }
+.payment-tag.danger { background: #fee2e2; color: #991b1b; margin-left: .4rem; }
+.logistica-day-card.atrasado { border-left: 3px solid #dc2626; }
 .paid-btn { background: var(--success-color); }
 .paid-btn:hover { background: #15803d; }
 

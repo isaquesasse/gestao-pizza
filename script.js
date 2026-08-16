@@ -546,6 +546,17 @@ document.addEventListener("DOMContentLoaded", () => {
   const getInitialPedidoStatus = (dateValue) => isFutureWeek(dateValue) ? "Pendente" : "Confirmado";
   const getInitialPedidoType = (dateValue) => isFutureWeek(dateValue) ? "encomenda" : "estoque";
 
+  // Um pedido fica "atrasado" quando a data de entrega já passou e ele ainda
+  // não foi marcado como concluído/cancelado/negado. Sem essa checagem, telas
+  // que só olham a semana atual (início, mobile, agenda) fazem esses pedidos
+  // somem de vista assim que a data vira, mesmo que ainda precisem ser entregues.
+  const isPedidoAtrasado = (pedido) => {
+    const dataEntrega = getPedidoDataEntrega(pedido);
+    if (!dataEntrega) return false;
+    const hoje = formatDateToYYYYMMDD(new Date());
+    return String(dataEntrega).slice(0, 10) < hoje && pedidoStatusIn(pedido?.status, ORDER_STATUSES_HOLDING_AVAILABILITY);
+  };
+
   const formatWeekRangeLabel = (weekStartValue) => {
     const start = parseSafeDate(weekStartValue || getWeekStart());
     const end = new Date(start);
@@ -574,22 +585,25 @@ document.addEventListener("DOMContentLoaded", () => {
   const getMetodoEntregaLabel = (pedido) => normalizeMetodoEntrega(pedido) === "entrega" ? "Entrega" : "Retirada";
   const getPedidoStatusMeta = (pedido) => {
     const status = pedido?.status || "Pendente";
+    let meta;
     switch (status) {
       case "Pendente":
-        return { title: "Pedido", label: "Aguardando confirmação", tone: "warning" };
+        meta = { title: "Pedido", label: "Aguardando confirmação", tone: "warning" }; break;
       case "Confirmado":
-        return { title: "Pedido", label: "Confirmado", tone: "info" };
+        meta = { title: "Pedido", label: "Confirmado", tone: "info" }; break;
       case "Pronto":
-        return { title: "Pedido", label: "Pronto", tone: "success" };
+        meta = { title: "Pedido", label: "Pronto", tone: "success" }; break;
       case "Concluído":
-        return { title: "Pedido", label: "Concluído", tone: "success" };
+        meta = { title: "Pedido", label: "Concluído", tone: "success" }; break;
       case "Negado":
-        return { title: "Pedido", label: "Rejeitado", tone: "danger" };
+        meta = { title: "Pedido", label: "Rejeitado", tone: "danger" }; break;
       case "Cancelado":
-        return { title: "Pedido", label: "Cancelado", tone: "muted" };
+        meta = { title: "Pedido", label: "Cancelado", tone: "muted" }; break;
       default:
-        return { title: "Pedido", label: status, tone: "muted" };
+        meta = { title: "Pedido", label: status, tone: "muted" };
     }
+    if (isPedidoAtrasado(pedido)) return { ...meta, label: `${meta.label} · Atrasado`, tone: "danger" };
+    return meta;
   };
   const getAtendimentoStatusMeta = (pedido) => ({
     title: getMetodoEntregaLabel(pedido),
@@ -823,7 +837,9 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     max.setDate(max.getDate() + 35);
     const maxDate = formatDateToYYYYMMDD(max);
     return database.pedidos
-      .filter((p) => p.dataEntrega && p.dataEntrega >= today && p.dataEntrega <= maxDate)
+      // Pedidos atrasados (data passou, ainda não concluído/pronto) continuam aparecendo
+      // aqui mesmo fora da janela today..+35d, para não sumirem da agenda sem entrega.
+      .filter((p) => p.dataEntrega && p.dataEntrega <= maxDate && (p.dataEntrega >= today || isPedidoAtrasado(p)))
       .filter((p) => !STOCK_RELEASED_STATUSES.includes(p.status))
       .sort((a, b) => `${a.dataEntrega || ""} ${a.horario_preferencia || ""}`.localeCompare(`${b.dataEntrega || ""} ${b.horario_preferencia || ""}`));
   };
@@ -867,13 +883,15 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       return acc;
     }, {});
 
+    const hojeStr = formatDateToYYYYMMDD(new Date());
     container.innerHTML = Object.entries(grouped).map(([date, list]) => {
       const entregas = list.filter((p) => normalizeMetodoEntrega(p) === "entrega").length;
       const retiradas = list.length - entregas;
+      const atrasado = date < hojeStr;
       return `
-        <article class="logistica-day-card">
+        <article class="logistica-day-card${atrasado ? " atrasado" : ""}">
           <header>
-            <div><strong>${formatDateBR(date)}</strong><small>${list.length} pedido(s)</small></div>
+            <div><strong>${formatDateBR(date)}</strong>${atrasado ? '<span class="payment-tag danger">Atrasado</span>' : ""}<small>${list.length} pedido(s)</small></div>
             <div class="logistica-day-tags"><span>Entregas: ${entregas}</span><span>Retiradas: ${retiradas}</span></div>
           </header>
           <div class="logistica-order-list">
@@ -1166,7 +1184,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
   const normalizeCupomCodigo = (value) => String(value || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 32);
 
   const resetCupomForm = () => {
-    const ids = ['cupom-id', 'cupom-codigo', 'cupom-valor', 'cupom-minimo', 'cupom-inicio', 'cupom-fim', 'cupom-limite'];
+    const ids = ['cupom-id', 'cupom-codigo', 'cupom-valor', 'cupom-minimo', 'cupom-inicio', 'cupom-fim', 'cupom-limite', 'cupom-limite-cliente'];
     ids.forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
     const tipo = document.getElementById('cupom-tipo');
     if (tipo) tipo.value = 'percentual';
@@ -1186,7 +1204,8 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       const valor = cupom.tipo === 'percentual' ? `${Number(cupom.valor || 0).toString().replace('.', ',')}%` : formatCurrency(cupom.valor || 0);
       const validade = [cupom.inicio_em ? `de ${formatDateBR(cupom.inicio_em)}` : '', cupom.fim_em ? `até ${formatDateBR(cupom.fim_em)}` : ''].filter(Boolean).join(' ');
       const usos = cupom.uso_limite ? `${cupom.uso_total || 0}/${cupom.uso_limite} usos` : `${cupom.uso_total || 0} uso(s)`;
-      return `<article class="coupon-admin-item ${cupom.ativo === false ? 'is-off' : ''}"><div><strong>${escapeHTML(cupom.codigo)}</strong><small>${escapeHTML(valor)}${cupom.minimo_pedido > 0 ? ` · mínimo ${formatCurrency(cupom.minimo_pedido)}` : ''}${validade ? ` · ${escapeHTML(validade)}` : ''} · ${escapeHTML(usos)}</small></div><div class="coupon-admin-buttons"><button class="mini-btn" type="button" onclick="window.editLojaCupom('${cupom.id}')">Editar</button><button class="mini-btn" type="button" onclick="window.toggleLojaCupom('${cupom.id}', ${cupom.ativo === false ? 'true' : 'false'})">${cupom.ativo === false ? 'Ativar' : 'Pausar'}</button><button class="mini-btn danger" type="button" onclick="window.deleteLojaCupom('${cupom.id}')">Remover</button></div></article>`;
+      const limitePorCliente = cupom.uso_limite_por_cliente ? ` · até ${cupom.uso_limite_por_cliente}x por cliente` : '';
+      return `<article class="coupon-admin-item ${cupom.ativo === false ? 'is-off' : ''}"><div><strong>${escapeHTML(cupom.codigo)}</strong><small>${escapeHTML(valor)}${cupom.minimo_pedido > 0 ? ` · mínimo ${formatCurrency(cupom.minimo_pedido)}` : ''}${validade ? ` · ${escapeHTML(validade)}` : ''} · ${escapeHTML(usos)}${limitePorCliente}</small></div><div class="coupon-admin-buttons"><button class="mini-btn" type="button" onclick="window.editLojaCupom('${cupom.id}')">Editar</button><button class="mini-btn" type="button" onclick="window.toggleLojaCupom('${cupom.id}', ${cupom.ativo === false ? 'true' : 'false'})">${cupom.ativo === false ? 'Ativar' : 'Pausar'}</button><button class="mini-btn danger" type="button" onclick="window.deleteLojaCupom('${cupom.id}')">Remover</button></div></article>`;
     }).join('');
   };
 
@@ -1201,6 +1220,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     document.getElementById('cupom-inicio').value = cupom.inicio_em || '';
     document.getElementById('cupom-fim').value = cupom.fim_em || '';
     document.getElementById('cupom-limite').value = cupom.uso_limite || '';
+    document.getElementById('cupom-limite-cliente').value = cupom.uso_limite_por_cliente || '';
     document.getElementById('cupom-ativo').checked = cupom.ativo !== false;
     document.getElementById('cupom-codigo').focus();
   };
@@ -5424,7 +5444,11 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
     if (!homeKpis || !pendingBox || !prodBox || !sobraBox || !alertBox) return;
 
     const pedidosSemana = getWeekPedidos(week, false);
-    const pendentes = pedidosSemana.filter((p) => isPedidoAtivoFinanceiro(p) && normalizePedidoStatusValue(p.status) !== "Concluído");
+    // Pendentes da semana atual + qualquer pedido atrasado de semanas anteriores
+    // (data de entrega já passou e ele nunca foi marcado pronto/concluído).
+    const pendentesSemana = pedidosSemana.filter((p) => isPedidoAtivoFinanceiro(p) && normalizePedidoStatusValue(p.status) !== "Concluído");
+    const atrasados = database.pedidos.filter((p) => isPedidoAtrasado(p) && getPedidoWeekStart(p) !== week);
+    const pendentes = [...atrasados, ...pendentesSemana];
     const pagosSemana = pedidosSemana.filter((p) => isPedidoPago(p));
     const faturamentoSemana = pagosSemana.reduce((a, p) => a + Number(p.valorFinal || p.valorTotal || 0), 0);
     const quantidadeSemana = pedidosSemana.reduce((a, p) => a + (p.items || []).reduce((n, it) => n + Number(it.qtd || 0), 0), 0);
@@ -5437,12 +5461,12 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
       .map((x) => ({ pizza: x, sobra: x.sobraProj, pedidosSemana: x.pedidosSemana, estoqueAtual: x.estoqueAtual }));
     const pendencias = getSystemAlerts();
     homeKpis.innerHTML = `
-      <div class="kpi-tile"><span>Pedidos pendentes</span><b>${pendentes.length}</b><small>Semana atual</small></div>
+      <div class="kpi-tile"><span>Pedidos pendentes</span><b>${pendentes.length}</b><small>Semana atual${atrasados.length ? ` · ${atrasados.length} atrasado(s)` : ""}</small></div>
       <div class="kpi-tile"><span>Pizzas na semana</span><b>${quantidadeSemana}</b><small>Entre pedidos registrados</small></div>
       <div class="kpi-tile"><span>Receita já paga</span><b>${formatCurrency(faturamentoSemana)}</b><small>Pagamentos confirmados</small></div>
       <div class="kpi-tile"><span>Pendências</span><b>${pendencias.total}</b><small>Prontos para concluir</small></div>`;
 
-    pendingBox.innerHTML = `<div class="home-list">${pendentes.slice(0,6).map((p) => `<div class="home-list-item"><b>${escapeHTML(p.cliente || 'Cliente')}</b><span class="badge-inline ${isPedidoPago(p)?'success':'warning'}">${escapeHTML(p.status || 'Pendente')}</span><small>${escapeHTML((p.items || []).map((it) => `${Number(it.qtd || 0)}x ${it.pizzaNome || "Item"}`).join(' · ') || 'Sem itens')}<br>${formatCurrency(p.valorFinal || p.valorTotal || 0)}</small></div>`).join('') || '<p class="empty-state compact">Sem pedidos pendentes na semana.</p>'}</div>`;
+    pendingBox.innerHTML = `<div class="home-list">${pendentes.slice(0,6).map((p) => `<div class="home-list-item"><b>${escapeHTML(p.cliente || 'Cliente')}</b><span class="badge-inline ${isPedidoAtrasado(p) ? 'danger' : (isPedidoPago(p)?'success':'warning')}">${isPedidoAtrasado(p) ? 'Atrasado' : escapeHTML(p.status || 'Pendente')}</span><small>${escapeHTML((p.items || []).map((it) => `${Number(it.qtd || 0)}x ${it.pizzaNome || "Item"}`).join(' · ') || 'Sem itens')}<br>${formatCurrency(p.valorFinal || p.valorTotal || 0)}</small></div>`).join('') || '<p class="empty-state compact">Sem pedidos pendentes na semana.</p>'}</div>`;
 
     prodBox.innerHTML = `<div class="home-list">${precisaProduzir.slice(0,6).map((x) => `<div class="home-list-item"><b>${escapeHTML(x.pizza.nome)} (${escapeHTML(x.pizza.tamanho)})</b><span class="badge-inline danger">Produzir ${x.produzirPedidos}</span><small>Pedidos: ${x.pedidos} · Estoque: ${x.estoque} · Média 4 semanas: ${x.mediaAnterior.toFixed(1)}</small></div>`).join('') || '<p class="empty-state compact">Nada urgente para produzir.</p>'}</div>`;
 
@@ -5717,7 +5741,9 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
   const renderMobileInicio = () => {
     const week = getWeekStart();
     const pedidosSemana = database.pedidos.filter((p) => getPedidoDataEntrega(p) && getPedidoWeekStart(p) === week);
-    const pendentes = pedidosSemana.filter((p) => isPedidoAtivoFinanceiro(p) && normalizePedidoStatusValue(p.status) !== "Concluído");
+    const pendentesSemana = pedidosSemana.filter((p) => isPedidoAtivoFinanceiro(p) && normalizePedidoStatusValue(p.status) !== "Concluído");
+    const atrasados = database.pedidos.filter((p) => isPedidoAtrasado(p) && getPedidoWeekStart(p) !== week);
+    const pendentes = [...atrasados, ...pendentesSemana];
     const receitaPaga = pedidosSemana.filter(isPedidoPago).reduce((a, p) => a + Number(p.valorFinal || p.valorTotal || 0), 0);
     const pizzasSemana = pedidosSemana.reduce((a, p) => a + (p.items || []).reduce((n, it) => n + Number(it.qtd || 0), 0), 0);
     const prod = getProductionSuggestion(week).filter((x) => x.produzirPedidos > 0).slice(0, 5);
@@ -5736,7 +5762,7 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
       </div>
       <div class="m-actions"><button class="m-btn" data-mobile-page-go="venda">Venda rápida</button><button class="m-btn secondary" data-mobile-page-go="pedido">Novo pedido</button></div>
       <div class="m-card"><div class="m-card-heading"><h3>Disponíveis para retirada</h3><button type="button" class="m-mini-btn" id="m-home-copy-sobras">Copiar</button></div><div class="m-list">${disponiveis.map((pizza) => `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(pizza.nome)} (${escapeHTML(pizza.tamanho || "")})</b><span class="m-badge ok">${pizza.sobraProj}</span></div><div class="m-line">Estoque ${pizza.estoqueAtual} · reservado ${pizza.pedidosSemana}</div></div>`).join("") || `<p class="m-muted">Sem pizzas disponíveis nesta semana.</p>`}</div></div>
-      <div class="m-card"><h3>Pedidos pendentes</h3><div class="m-list">${pendentes.slice(0, 5).map((p) => { const items = (p.items || []); const resumo = items.slice(0, 2).map((it) => `${it.qtd}x ${it.pizzaNome}`).join(" · ") + (items.length > 2 ? ` · +${items.length - 2} item(ns)` : ""); return `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(p.cliente || "Cliente")}</b><span class="m-badge warn">${escapeHTML(p.status || "Pendente")}</span></div><div class="m-line">${escapeHTML(resumo)}</div><div class="m-line"><b>${formatCurrency(p.valorFinal || p.valorTotal || 0)}</b></div></div>`; }).join("") || `<p class="m-muted">Sem pedidos pendentes.</p>`}</div></div>
+      <div class="m-card"><h3>Pedidos pendentes${atrasados.length ? ` · ${atrasados.length} atrasado(s)` : ""}</h3><div class="m-list">${pendentes.slice(0, 5).map((p) => { const items = (p.items || []); const resumo = items.slice(0, 2).map((it) => `${it.qtd}x ${it.pizzaNome}`).join(" · ") + (items.length > 2 ? ` · +${items.length - 2} item(ns)` : ""); const atrasado = isPedidoAtrasado(p); return `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(p.cliente || "Cliente")}</b><span class="m-badge ${atrasado ? "bad" : "warn"}">${atrasado ? "Atrasado" : escapeHTML(p.status || "Pendente")}</span></div><div class="m-line">${escapeHTML(resumo)}</div><div class="m-line"><b>${formatCurrency(p.valorFinal || p.valorTotal || 0)}</b></div></div>`; }).join("") || `<p class="m-muted">Sem pedidos pendentes.</p>`}</div></div>
       <div class="m-card"><h3>Produzir agora</h3><div class="m-list">${prod.map((x) => `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(x.pizza.nome)} (${escapeHTML(x.pizza.tamanho)})</b><span class="m-badge bad">${x.produzirPedidos}</span></div><div class="m-line">Pedidos: ${x.pedidos} · Estoque: ${x.estoque} · Sobra: ${x.sobra}</div></div>`).join("") || `<p class="m-muted">Nada urgente para produzir.</p>`}</div></div>
     </section>`);
     document.getElementById("m-home-copy-sobras")?.addEventListener("click", () => copyTextToClipboard(generateSobrasMessage(week)));
@@ -6028,7 +6054,7 @@ Lançar mesmo assim como encomenda/produção pendente?`);
         const resumo = summarizeMobileItems(p.items, 2);
         return `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(p.cliente || "Cliente")}</b><span class="m-badge warn">A confirmar</span></div><div class="m-line">${escapeHTML(getMetodoEntregaLabel(p))} · ${escapeHTML(formatPedidoAgenda(p))}</div><div class="m-line">${escapeHTML(resumo)}</div><div class="m-actions"><button class="m-mini-btn green" data-confirm-id="${p.id}">Confirmar</button><button class="m-mini-btn danger" data-reject-id="${p.id}">Rejeitar</button></div></div>`;
       }).join("") || `<p class="m-muted">Sem pedidos para confirmar.</p>`}</div></div>
-      <div class="m-card"><h3>Próximas entregas e retiradas</h3><div class="m-list">${proximos.map((p) => `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(p.cliente || "Cliente")}</b><span class="m-badge ${normalizeMetodoEntrega(p) === "entrega" ? "ok" : "muted"}">${escapeHTML(getMetodoEntregaLabel(p))}</span></div><div class="m-line">${escapeHTML(formatPedidoAgenda(p))} · ${escapeHTML(p.cidade || "-")}</div></div>`).join("") || `<p class="m-muted">Nada agendado.</p>`}</div></div>
+      <div class="m-card"><h3>Próximas entregas e retiradas</h3><div class="m-list">${proximos.map((p) => `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(p.cliente || "Cliente")}</b><span class="m-badge ${isPedidoAtrasado(p) ? "bad" : (normalizeMetodoEntrega(p) === "entrega" ? "ok" : "muted")}">${isPedidoAtrasado(p) ? "Atrasado" : escapeHTML(getMetodoEntregaLabel(p))}</span></div><div class="m-line">${escapeHTML(formatPedidoAgenda(p))} · ${escapeHTML(p.cidade || "-")}</div></div>`).join("") || `<p class="m-muted">Nada agendado.</p>`}</div></div>
     </section>`);
     document.querySelectorAll("[data-confirm-id]").forEach((btn) => btn.addEventListener("click", () => window.updatePedidoStatus(btn.dataset.confirmId, "Confirmado")));
     document.querySelectorAll("[data-reject-id]").forEach((btn) => btn.addEventListener("click", () => window.updatePedidoStatus(btn.dataset.rejectId, "Negado")));
@@ -6225,7 +6251,7 @@ Lançar mesmo assim como encomenda/produção pendente?`);
   document.getElementById('loja-cupom-form')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const id = document.getElementById('cupom-id')?.value || '';
-    const payload = { codigo: normalizeCupomCodigo(document.getElementById('cupom-codigo')?.value), tipo: document.getElementById('cupom-tipo')?.value || 'percentual', valor: safeNumber(document.getElementById('cupom-valor')?.value, 0), minimo_pedido: safeNumber(document.getElementById('cupom-minimo')?.value, 0), inicio_em: document.getElementById('cupom-inicio')?.value || null, fim_em: document.getElementById('cupom-fim')?.value || null, uso_limite: document.getElementById('cupom-limite')?.value ? Number(document.getElementById('cupom-limite').value) : null, ativo: document.getElementById('cupom-ativo')?.checked !== false };
+    const payload = { codigo: normalizeCupomCodigo(document.getElementById('cupom-codigo')?.value), tipo: document.getElementById('cupom-tipo')?.value || 'percentual', valor: safeNumber(document.getElementById('cupom-valor')?.value, 0), minimo_pedido: safeNumber(document.getElementById('cupom-minimo')?.value, 0), inicio_em: document.getElementById('cupom-inicio')?.value || null, fim_em: document.getElementById('cupom-fim')?.value || null, uso_limite: document.getElementById('cupom-limite')?.value ? Number(document.getElementById('cupom-limite').value) : null, uso_limite_por_cliente: document.getElementById('cupom-limite-cliente')?.value ? Number(document.getElementById('cupom-limite-cliente').value) : null, ativo: document.getElementById('cupom-ativo')?.checked !== false };
     if (!payload.codigo || payload.codigo.length < 3) return showSaveStatus('Informe um código com pelo menos 3 caracteres.', false);
     if (!payload.valor || payload.valor <= 0) return showSaveStatus('Informe o valor do desconto.', false);
     if (payload.tipo === 'percentual' && payload.valor > 100) return showSaveStatus('Percentual máximo: 100%.', false);
