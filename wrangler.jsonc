@@ -1,0 +1,13 @@
+{
+  "name": "gestao",
+  "compatibility_date": "2026-08-16",
+  "assets": {
+    "directory": ".",
+    "not_found_handling": "404-page"
+  },
+  "routes": [
+    { "pattern": "gestao.sassespizzas.com.br", "custom_domain": true }
+  ],
+  "workers_dev": false,
+  "preview_urls": false
+}

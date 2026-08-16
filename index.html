@@ -13,6 +13,21 @@
 
 <body>
     <a class="skip-link" href="#inicio">Ir para o conteúdo</a>
+    <div id="staff-login-overlay" class="staff-login-overlay">
+        <form id="staff-login-form" class="staff-login-card">
+            <h1>Sasse's Pizza</h1>
+            <p class="small-muted">Entre com sua conta de equipe para acessar a gestão.</p>
+            <label>E-mail
+                <input type="email" id="staff-login-email" autocomplete="username" required>
+            </label>
+            <label>Senha
+                <input type="password" id="staff-login-password" autocomplete="current-password" required>
+            </label>
+            <p id="staff-login-error" class="staff-login-error"></p>
+            <button type="submit" id="staff-login-submit">Entrar</button>
+        </form>
+    </div>
+
     <div id="loader" class="loader-container">
         <div class="loader-spinner"></div>
     </div>
@@ -1131,6 +1146,7 @@
                     <p class="small-muted">Escolha um perfil para preencher o vendedor automaticamente neste navegador.</p>
                 </div>
                 <button id="btn-admin-view" type="button" class="ghost-light-btn">Visão ADM</button>
+                <button id="btn-staff-logout" type="button" class="ghost-light-btn">Sair da conta</button>
             </div>
             <div class="profile-current-card" id="profile-current-card"></div>
             <div class="profile-layout">
@@ -1242,7 +1258,8 @@
     <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" onerror="this.onerror=null;this.src='https://unpkg.com/@supabase/supabase-js@2'"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script defer src="script.js?v=68"></script>
+    <script defer src="config.js"></script>
+    <script defer src="script.js?v=69"></script>
 </body>
 
 </html>

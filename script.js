@@ -1,9 +1,58 @@
-document.addEventListener("DOMContentLoaded", () => {
-  window.SASSES_VERSION = "v68-estoque-confirmacao-fix";
+// Bloqueia o app inteiro até existir uma sessão Supabase Auth com
+// app_metadata.staff_role em ('admin','developer'). Sem isso, o painel de
+// gestão ficava acessível a qualquer pessoa com a anon key (nunca teve login,
+// só a senha fixa "sasse" que só escondia um botão, sem proteger o banco).
+async function ensureStaffSession(supabaseClient) {
+  const overlay = document.getElementById("staff-login-overlay");
+  const form = document.getElementById("staff-login-form");
+  const errorEl = document.getElementById("staff-login-error");
+  const submitBtn = document.getElementById("staff-login-submit");
+  const loader = document.getElementById("loader");
+  const isStaff = (session) => ["admin", "developer"].includes(session?.user?.app_metadata?.staff_role);
+
+  const {
+    data: { session: initialSession },
+  } = await supabaseClient.auth.getSession();
+  if (isStaff(initialSession)) {
+    overlay.style.display = "none";
+    return initialSession;
+  }
+  if (initialSession) await supabaseClient.auth.signOut();
+
+  overlay.style.display = "flex";
+  if (loader) loader.style.display = "none";
+
+  return new Promise((resolve) => {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      errorEl.style.display = "none";
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Entrando...";
+      const email = document.getElementById("staff-login-email").value.trim();
+      const password = document.getElementById("staff-login-password").value;
+      const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Entrar";
+      if (error) {
+        errorEl.textContent = "E-mail ou senha incorretos.";
+        errorEl.style.display = "block";
+        return;
+      }
+      if (!isStaff(data.session)) {
+        await supabaseClient.auth.signOut();
+        errorEl.textContent = "Essa conta não tem acesso a este painel.";
+        errorEl.style.display = "block";
+        return;
+      }
+      overlay.style.display = "none";
+      resolve(data.session);
+    });
+  });
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+  window.SASSES_VERSION = "v69-login-equipe";
   console.log("Sasse's Pizza", window.SASSES_VERSION);
-  const SUPABASE_URL = "https://iprnfzevdfmnraexthpy.supabase.co";
-  const SUPABASE_ANON_KEY =
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlwcm5memV2ZGZtbnJhZXh0aHB5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE2NTE1NTAsImV4cCI6MjA2NzIyNzU1MH0.h5Omsd0XsRtAmOErRCpaqg91OkF53lB8WE9dYlVdRbo";
   if (!window.supabase || typeof window.supabase.createClient !== "function") {
     console.error("Supabase JS não carregou.");
     const status = document.getElementById("save-status");
@@ -13,7 +62,18 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     return;
   }
-  const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const supabaseClient = window.supabase.createClient(
+    window.SASSES_SUPABASE_CONFIG.url,
+    window.SASSES_SUPABASE_CONFIG.anonKey
+  );
+
+  const staffSession = await ensureStaffSession(supabaseClient);
+  window.SASSES_STAFF_ROLE = staffSession.user.app_metadata?.staff_role || null;
+
+  document.getElementById("btn-staff-logout")?.addEventListener("click", async () => {
+    await supabaseClient.auth.signOut();
+    location.reload();
+  });
 
   const LOADER = document.getElementById("loader");
   const SAVE_STATUS = document.getElementById("save-status");
