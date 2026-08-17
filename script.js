@@ -8,7 +8,7 @@ async function ensureStaffSession(supabaseClient) {
   const errorEl = document.getElementById("staff-login-error");
   const submitBtn = document.getElementById("staff-login-submit");
   const loader = document.getElementById("loader");
-  const isStaff = (session) => ["admin", "developer"].includes(session?.user?.app_metadata?.staff_role);
+  const isStaff = (session) => ["admin", "developer", "team"].includes(session?.user?.app_metadata?.staff_role);
 
   const {
     data: { session: initialSession },
