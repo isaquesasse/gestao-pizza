@@ -3100,13 +3100,36 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       const lucro = item.precoVenda - custo;
       const row = tbody.insertRow();
       if (item.qtd <= 0) row.classList.add("low-stock");
-      const lojaTag = item.visivel_loja === false
-        ? '<span class="payment-tag unpaid">Oculto</span>'
-        : '<span class="payment-tag paid">Visível</span>';
+      // O selo de visibilidade é um botão: alternar visível/oculto era o ajuste
+      // mais repetido da tela e exigia abrir o modal de edição só para isso.
+      const visivel = item.visivel_loja !== false;
+      const lojaTag = `<button type="button" class="payment-tag toggle-tag ${visivel ? "paid" : "unpaid"}" onclick="window.toggleVisivelLoja('${item.id}')" title="${visivel ? "Clique para ocultar da loja" : "Clique para mostrar na loja"}" aria-pressed="${visivel}">${visivel ? "Visível" : "Oculto"}</button>`;
       const imgTag = item.imagem_url ? '<span class="payment-tag info">Imagem</span>' : '';
       row.innerHTML = `<td data-label="Sabor da Pizza">${escapeHTML(item.nome)}</td><td data-label="Tamanho">${escapeHTML(item.tamanho || "N/A")}</td><td data-label="Qtd.">${item.qtd}</td><td data-label="Custo Produção" class="admin-only">${formatCurrency(custo)}</td><td data-label="Preço Venda">${formatCurrency(item.precoVenda)}</td><td data-label="Loja">${lojaTag}${imgTag}<small class="shop-meta-preview">${escapeHTML(item.categoria_loja || "Pizzas")}</small></td><td data-label="Lucro Bruto" class="admin-only" style="color:${lucro >= 0 ? "green" : "red"};font-weight:bold;">${formatCurrency(lucro)}</td><td data-label="Ações"><button class="action-btn edit-btn" onclick="window.editEstoque('${item.id}')">Editar</button><button class="action-btn remove-btn" onclick="window.removeEstoque('${item.id}')">Remover</button></td>`;
     });
     updateSortHeaders("tabela-estoque", column, direction);
+  };
+
+  window.toggleVisivelLoja = async (id) => {
+    const item = database.estoque.find((p) => p.id === id);
+    if (!item) return;
+    const novoValor = item.visivel_loja === false;
+    try {
+      showLoader();
+      const { error } = await supabaseClient
+        .from("estoque")
+        .update({ visivel_loja: novoValor })
+        .eq("id", id);
+      if (error) throw error;
+      await loadDataFromSupabase();
+      showSaveStatus(novoValor
+        ? `${item.nome} agora aparece na loja.`
+        : `${item.nome} foi ocultado da loja.`);
+    } catch (error) {
+      showSaveStatus(formatSupabaseError(error, "Não foi possível alterar a visibilidade"), false);
+    } finally {
+      hideLoader();
+    }
   };
 
   document.getElementById("form-estoque")?.addEventListener("submit", async (e) => {

@@ -1331,6 +1331,16 @@ button:hover { transform: translateY(-1px); }
 .payment-tag.unpaid { background: #fee2e2; color: #991b1b; }
 .payment-tag.muted { background: #e5e7eb; color: #374151; }
 .payment-tag.danger { background: #fee2e2; color: #991b1b; margin-left: .4rem; }
+/* Selo que também é botão (visibilidade na loja, na tabela de estoque). */
+.payment-tag.toggle-tag {
+  border: 1px solid transparent;
+  font-family: inherit;
+  line-height: inherit;
+  cursor: pointer;
+  transition: filter .15s ease, border-color .15s ease;
+}
+.payment-tag.toggle-tag:hover { filter: brightness(.94); border-color: currentColor; }
+.payment-tag.toggle-tag:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
 .logistica-day-card.atrasado { border-left: 3px solid #dc2626; }
 .paid-btn { background: var(--success-color); }
 .paid-btn:hover { background: #15803d; }
