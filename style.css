@@ -4101,7 +4101,10 @@ button:disabled {
     overscroll-behavior: none !important;
   }
 
-  body > *:not(#mobile-app):not(.modal):not(.loader-container):not(#loader):not(#save-status):not(#staff-login-overlay) {
+  /* O :not() empilhado da regra abaixo tem especificidade altissima (4 ids) e
+     ganhava de qualquer override, inclusive do escape hatch. Sem este guarda,
+     .force-desktop-mobile nao conseguia reexibir <main> no celular. */
+  body:not(.force-desktop-mobile) > *:not(#mobile-app):not(.modal):not(.loader-container):not(#loader):not(#save-status):not(#staff-login-overlay) {
     display: none !important;
   }
 
@@ -6838,6 +6841,18 @@ tbody tr:last-child td { border-bottom: 0; }
   body.force-desktop-mobile .workspace-context { display: none !important; }
   body.force-desktop-mobile .header-tools { display: flex !important; width: 100% !important; }
   body.force-desktop-mobile .global-search-wrap { display: none !important; }
+
+  /* O header fica claro nesse modo, mas a pilula de perfil continuava com as
+     cores do header escuro: texto branco em fundo branco. */
+  body.force-desktop-mobile .header-tools { justify-content: flex-end !important; }
+  body.force-desktop-mobile .profile-pill {
+    border: 1px solid var(--border-color) !important;
+    background: var(--subtle-bg-color) !important;
+    color: var(--primary-color) !important;
+  }
+  body.force-desktop-mobile .profile-pill span,
+  body.force-desktop-mobile .profile-pill small,
+  body.force-desktop-mobile .profile-pill strong { color: inherit !important; }
   body.force-desktop-mobile .profile-pill { margin-left: auto !important; }
   body.force-desktop-mobile .home-grid,
   body.force-desktop-mobile .home-kpis,
@@ -7204,9 +7219,6 @@ body.vendor-mode:not(.admin-mode) .main-nav .seller-only.tab-link:hover { backgr
 .seller-stock-suggestion-main { min-width:0; }
 .seller-stock-suggestion-items { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
 .seller-stock-pill { display:inline-flex; align-items:center; padding:5px 9px; border-radius:999px; background:rgba(0,0,0,.055); font-size:.78rem; }
-.seller-stock-quick { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin:12px 0 16px; }
-.seller-stock-quick-card { padding:13px 14px; border:1px solid var(--border-color); border-radius:13px; background:var(--background-color); }
-.seller-stock-quick-card b { display:block; font-size:1.2rem; margin-top:3px; }
 .seller-stock-actions { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
 .seller-stock-actions button { min-width:40px; padding:7px 10px; }
 .seller-stock-history { display:grid; gap:8px; }
@@ -7329,3 +7341,254 @@ body.admin-mode .tab-link.seller-only,
 body.admin-mode #estoque-vendedor { display: none !important; }
 .stock-tools-primary { margin-top: 0; }
 .stock-tools-primary .form-producao-container { margin-top: 12px; }
+
+
+/* V67 — Meu estoque do vendedor: leitura rápida em vez de paredão de linhas */
+.seller-stock-hero { border-top: 3px solid var(--accent-color); }
+.seller-stock-identity { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.seller-stock-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
+  border-radius: 50%;
+  background: var(--subtle-bg-color);
+  border: 1px solid var(--border-color);
+  font-size: 1.25rem;
+}
+.seller-stock-identity h3 { margin: 2px 0 3px; }
+.seller-stock-state {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 6px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  border: 1px solid transparent;
+  font-size: .66rem;
+  font-weight: 800;
+}
+.seller-stock-state.on { background: #e6f6ec; border-color: #bfe4cd; color: #1d7a41; }
+.seller-stock-state.off { background: #f1f2f6; border-color: var(--border-color); color: var(--text-light-color); }
+
+.seller-stock-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.seller-stock-kpi b { line-height: 1.25; }
+.seller-stock-kpi.highlight { border-color: #cddff0; background: #eef5fc; }
+.seller-stock-kpi.highlight b { color: var(--accent-color); }
+
+/* Contador de pedidos aguardando recebimento, ao lado do título do card. */
+.count-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 99px;
+  background: var(--secondary-color);
+  color: #fff;
+  font-size: .74rem;
+  font-weight: 800;
+  vertical-align: middle;
+}
+.count-chip.is-zero { background: var(--border-color); color: var(--text-light-color); }
+
+.seller-stock-table-head { align-items: flex-start; gap: 12px; }
+.seller-stock-filters { display: inline-flex; gap: 4px; padding: 3px; border: 1px solid var(--border-color); border-radius: 999px; background: var(--subtle-bg-color); }
+.seller-filter-chip {
+  border: 0;
+  background: transparent;
+  color: var(--text-light-color);
+  border-radius: 999px;
+  padding: .4rem .8rem;
+  font-family: inherit;
+  font-size: .8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.seller-filter-chip:hover { color: var(--primary-color); }
+.seller-filter-chip.is-active { background: var(--card-background); color: var(--primary-color); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.seller-filter-chip:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 1px; }
+
+/* A quantidade é o dado que o vendedor procura: ganha peso e cor por nível. */
+.seller-qty { display: inline-block; min-width: 30px; font-size: 1.1rem; font-weight: 800; }
+.seller-qty.ok { color: var(--success-color); }
+.seller-qty.baixo { color: #b8860b; }
+.seller-qty.zero { color: var(--text-light-color); font-weight: 600; }
+.seller-qty-note { display: block; color: #b8860b; font-size: .68rem; font-weight: 700; }
+.seller-stock-row.level-baixo { background: #fffaf0; }
+.seller-stock-row.level-zero td { color: var(--text-light-color); }
+.seller-stock-actions button[disabled] { opacity: .4; cursor: not-allowed; }
+
+.seller-stock-suggestion { align-items: stretch; }
+.seller-stock-suggestion-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.seller-stock-suggestion-main small { display: block; color: var(--text-light-color); margin-top: 4px; }
+.seller-stock-receive-btn { align-self: center; white-space: nowrap; font-weight: 800; }
+
+.seller-stock-history-qty { text-align: right; white-space: nowrap; }
+.seller-stock-history-qty.in b { color: var(--success-color); }
+.seller-stock-history-qty.out b { color: var(--danger-color); }
+.seller-stock-history-more { margin-top: 10px; text-align: center; }
+
+@media (max-width: 700px) {
+  .seller-stock-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .seller-stock-table-head .card-header-actions { width: 100%; }
+  .seller-stock-filters { width: 100%; justify-content: space-between; }
+  .seller-filter-chip { flex: 1; }
+  .seller-stock-table-head .search-input { width: 100%; min-width: 0; }
+  .seller-stock-receive-btn { width: 100%; }
+}
+
+
+/* V67 — escape hatch "abrir aba de desktop no celular".
+   Os blocos legados de @media (max-width:900px) escondiam `body > main` sem
+   nenhuma excecao e forcavam #mobile-app visivel, entao a classe
+   .force-desktop-mobile nao surtia efeito: os botoes "Meu estoque",
+   "Sabores e estoque", "Agenda completa" e "Pedidos completos" do menu Mais
+   trocavam a aba mas a tela continuava mostrando o app mobile. */
+@media (max-width: 900px) {
+  body.force-desktop-mobile > .app-header,
+  body.force-desktop-mobile > header,
+  body.force-desktop-mobile > main,
+  body.force-desktop-mobile > footer,
+  body.force-desktop-mobile > #btn-notificacoes {
+    display: block !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+    width: auto !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  /* A barra legada herda `inset: 0` do bloco mobile e, ao ser reexibida, cobria
+     a tela inteira por cima do conteudo. Aqui ela volta grudada embaixo. */
+  body.force-desktop-mobile > .mobile-bottom-nav,
+  body.force-desktop-mobile > nav.mobile-bottom-nav {
+    display: grid !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+    position: fixed !important;
+    top: auto !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    z-index: 40 !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    border-top: 1px solid var(--border-color) !important;
+    background: var(--card-background) !important;
+    padding-bottom: env(safe-area-inset-bottom, 0) !important;
+  }
+
+  /* No celular o botao de minimizar herdava o visual de botao primario e virava
+     uma barra laranja gigante dentro do card. */
+  body.force-desktop-mobile .card-collapse-btn {
+    width: auto !important;
+    align-self: flex-start !important;
+    justify-self: start !important;
+    background: var(--subtle-bg-color) !important;
+    color: var(--primary-color) !important;
+    border: 1px solid var(--border-color) !important;
+    font-size: .8rem !important;
+    padding: .45rem .8rem !important;
+  }
+  body.force-desktop-mobile #mobile-app,
+  body.force-desktop-mobile #mobile-app.mobile-app { display: none !important; }
+  body.force-desktop-mobile { overflow: auto !important; height: auto !important; }
+}
+
+
+/* V67 — aviso de pedidos aguardando confirmação */
+.tab-link.has-pending { position: relative; }
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 19px;
+  height: 19px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--secondary-color);
+  color: #fff;
+  font-size: .66rem;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 0 0 2px rgba(232, 65, 24, .18);
+  animation: tab-badge-pulse 2.2s ease-in-out infinite;
+}
+@keyframes tab-badge-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(232, 65, 24, .18); }
+  50% { box-shadow: 0 0 0 6px rgba(232, 65, 24, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tab-badge { animation: none; }
+}
+/* Na barra de baixo do celular os itens são empilhados (ícone + texto), então
+   o selo vira um ponto no canto em vez de empurrar o rótulo. */
+@media (max-width: 900px) {
+  .mobile-bottom-nav .tab-link.has-pending { position: relative; }
+  .mobile-bottom-nav .tab-badge { position: absolute; top: 2px; right: 50%; transform: translateX(20px); margin: 0; }
+}
+
+.pending-alert {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 10050;
+  transform: translate(-50%, 14px);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(560px, calc(100vw - 24px));
+  padding: 14px 16px;
+  border: 1px solid #f0c7c3;
+  border-left: 4px solid var(--secondary-color);
+  border-radius: 14px;
+  background: var(--card-background);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .18);
+  opacity: 0;
+  transition: opacity .22s ease, transform .22s ease;
+}
+.pending-alert[hidden] { display: none; }
+.pending-alert.is-visible { opacity: 1; transform: translate(-50%, 0); }
+.pending-alert-icon { color: var(--secondary-color); font-size: 1.6rem; flex: 0 0 auto; }
+.pending-alert-text { min-width: 0; flex: 1; }
+.pending-alert-text b { display: block; color: var(--primary-color); font-size: .95rem; }
+.pending-alert-text small { display: block; color: var(--text-light-color); margin-top: 2px; }
+.pending-alert-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.pending-alert-cta {
+  border: 0;
+  border-radius: 999px;
+  background: var(--secondary-color);
+  color: #fff;
+  padding: .55rem 1rem;
+  font-family: inherit;
+  font-weight: 800;
+  font-size: .84rem;
+  cursor: pointer;
+}
+.pending-alert-cta:hover { filter: brightness(.94); }
+.pending-alert-close {
+  border: 0;
+  background: transparent;
+  color: var(--text-light-color);
+  font-size: 1.4rem;
+  line-height: 1;
+  padding: 0 4px;
+  cursor: pointer;
+}
+.pending-alert-cta:focus-visible,
+.pending-alert-close:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 2px; }
+
+.pending-section-title { margin: 18px 0 4px; display: flex; align-items: center; gap: 4px; }
+.pending-section-title:first-child { margin-top: 0; }
+
+@media (max-width: 600px) {
+  .pending-alert { flex-wrap: wrap; bottom: 84px; }
+  .pending-alert-actions { width: 100%; justify-content: space-between; }
+  .pending-alert-cta { flex: 1; }
+}

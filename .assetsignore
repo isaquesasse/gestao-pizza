@@ -1,4 +1,17 @@
+# O Worker serve esta pasta inteira como assets estaticos.
 .git
-.wrangler
+.git/**
 .gitignore
+.assetsignore
+.wrangler
+.wrangler/**
+node_modules
+node_modules/**
+.dev.vars
+.env
+.env.*
+*.log
 wrangler.jsonc
+wrangler.toml
+package.json
+package-lock.json

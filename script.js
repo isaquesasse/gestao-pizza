@@ -398,21 +398,89 @@ document.addEventListener("DOMContentLoaded", async () => {
   };
 
   const getSystemAlerts = () => {
-    const prontosParaConcluir = database.pedidos
-      .filter((p) => p.status === "Pronto")
-      .sort((a, b) => `${a.dataEntrega || ""} ${a.cliente || ""}`.localeCompare(`${b.dataEntrega || ""} ${b.cliente || ""}`));
-    return { prontosParaConcluir, total: prontosParaConcluir.length };
+    const sortByEntrega = (a, b) => `${a.dataEntrega || ""} ${a.cliente || ""}`.localeCompare(`${b.dataEntrega || ""} ${b.cliente || ""}`);
+    // "Pendente" é o rótulo interno de "Aguardando confirmação". Pedidos de
+    // semanas futuras ficam pendentes de propósito (updatePedidoStatus recusa
+    // confirmá-los para não baixar o estoque atual), então avisar sobre eles
+    // seria só ruído: só contam os que já dá para confirmar hoje.
+    const aguardandoConfirmacao = database.pedidos
+      .filter((p) => (p.status || "Pendente") === "Pendente" && !isFutureWeek(getPedidoDataEntrega(p)))
+      .sort(sortByEntrega);
+    const prontosParaConcluir = database.pedidos.filter((p) => p.status === "Pronto").sort(sortByEntrega);
+    return {
+      aguardandoConfirmacao,
+      prontosParaConcluir,
+      confirmar: aguardandoConfirmacao.length,
+      concluir: prontosParaConcluir.length,
+      total: aguardandoConfirmacao.length + prontosParaConcluir.length
+    };
+  };
+
+  // Selo numérico na aba Pedidos (barra de cima e barra de baixo do celular),
+  // para o aviso aparecer mesmo com outra aba aberta.
+  const refreshPedidosTabBadge = (count) => {
+    document.querySelectorAll('.tab-link[data-tab="pedidos"]').forEach((link) => {
+      let badge = link.querySelector(".tab-badge");
+      if (!count) {
+        badge?.remove();
+        link.classList.remove("has-pending");
+        return;
+      }
+      if (!badge) {
+        badge = document.createElement("span");
+        badge.className = "tab-badge";
+        link.appendChild(badge);
+      }
+      badge.textContent = count > 99 ? "99+" : String(count);
+      badge.title = `${count} pedido(s) aguardando confirmação`;
+      link.classList.add("has-pending");
+    });
   };
 
   const refreshNotificationBadge = () => {
+    const alerts = getSystemAlerts();
+    refreshPedidosTabBadge(alerts.confirmar);
     const btn = document.getElementById("btn-notificacoes");
     const badge = document.getElementById("notificacoes-badge");
     if (!btn || !badge) return;
-    const alerts = getSystemAlerts();
     badge.textContent = alerts.total;
     btn.classList.toggle("has-alerts", alerts.total > 0);
-    btn.title = alerts.total > 0 ? `${alerts.total} pedido(s) pronto(s) para concluir` : "Sem pendências";
+    const partes = [];
+    if (alerts.confirmar) partes.push(`${alerts.confirmar} aguardando confirmação`);
+    if (alerts.concluir) partes.push(`${alerts.concluir} pronto(s) para concluir`);
+    btn.title = partes.join(" · ") || "Sem pendências";
   };
+
+  const abrirPedidosAguardandoConfirmacao = () => {
+    const select = document.getElementById("filter-modal-status");
+    if (select) select.value = "Pendente";
+    document.querySelectorAll("#filter-status-chips button").forEach((b) => b.classList.toggle("active", b.dataset.status === "Pendente"));
+    if (isMobileViewport()) openDesktopTabOnMobile("pedidos");
+    else openTab("pedidos");
+    renderPedidos();
+  };
+
+  // Aviso único por sessão ao abrir a gestão. Não manda e-mail de propósito:
+  // é só um lembrete na tela de quem já entrou no painel.
+  const PENDING_ALERT_SESSION_KEY = "sassesPendingOrdersAlertShown";
+  const hidePendingOrdersAlert = () => document.getElementById("pending-orders-alert")?.setAttribute("hidden", "");
+  const maybeAnnouncePendingOrders = () => {
+    const box = document.getElementById("pending-orders-alert");
+    if (!box || sessionStorage.getItem(PENDING_ALERT_SESSION_KEY) === "true") return;
+    const { confirmar, aguardandoConfirmacao } = getSystemAlerts();
+    if (!confirmar) return;
+    sessionStorage.setItem(PENDING_ALERT_SESSION_KEY, "true");
+    const title = document.getElementById("pending-alert-title");
+    const copy = document.getElementById("pending-alert-copy");
+    if (title) title.textContent = confirmar === 1 ? "1 pedido aguardando confirmação" : `${confirmar} pedidos aguardando confirmação`;
+    if (copy) {
+      const nomes = aguardandoConfirmacao.slice(0, 2).map((p) => p.cliente || "Cliente").join(", ");
+      copy.textContent = confirmar > 2 ? `${nomes} e mais ${confirmar - 2}. Confirme para entrarem na produção.` : `${nomes}. Confirme para entrar na produção.`;
+    }
+    box.removeAttribute("hidden");
+    box.classList.add("is-visible");
+  };
+
 
   const getCurrentSellerId = () => localStorage.getItem(SELLER_PROFILE_KEY) || "";
   const getCurrentSeller = () => database.vendedores.find((v) => v.id === getCurrentSellerId()) || null;
@@ -546,31 +614,40 @@ document.addEventListener("DOMContentLoaded", async () => {
   };
 
   window.openNotificationsModal = () => {
-    const { prontosParaConcluir, total } = getSystemAlerts();
+    const { aguardandoConfirmacao, prontosParaConcluir, confirmar, concluir, total } = getSystemAlerts();
+    const linha = (p, acoes) => {
+      const info = getPedidoDiscountInfo(p);
+      const itens = (p.items || []).slice(0, 4).map((item) => `${item.qtd}x ${item.pizzaNome}`).join("<br>") || "Sem itens";
+      const more = (p.items || []).length > 4 ? `<br><small>+${(p.items || []).length - 4} item(ns)</small>` : "";
+      const data = p.dataEntrega ? new Date(p.dataEntrega + "T00:00:00").toLocaleDateString("pt-BR") : "sem data";
+      const valorHtml = `<b>${formatCurrency(info.final)}</b>${renderPedidoDiscountBadge(p)}${info.amount > 0 ? `<small>Original: ${formatCurrency(info.base)}</small>` : ""}`;
+      return `<tr>
+        <td data-label="Cliente"><b>${escapeHTML(p.cliente || "Cliente")}</b><br><small>${escapeHTML(p.telefone || "")}</small></td>
+        <td data-label="Data">${escapeHTML(data)}<br><small>${escapeHTML(p.cidade || "-")}</small></td>
+        <td data-label="Itens">${itens}${more}</td>
+        <td data-label="Valor" class="pending-value-cell">${valorHtml}</td>
+        <td data-label="Ações"><div class="pending-actions">${acoes(p)}<button class="action-btn edit-btn" onclick="window.openEditPedidoModal('${escapeAttr(p.id)}')">Editar</button></div></td>
+      </tr>`;
+    };
+    const tabela = (pedidos, acoes) => `<div class="pending-orders-modal table-container"><table class="pending-orders-table"><thead><tr><th>Cliente</th><th>Data</th><th>Itens</th><th>Valor</th><th>Ações</th></tr></thead><tbody>${pedidos.slice(0, 60).map((p) => linha(p, acoes)).join("")}</tbody></table></div>`;
+
     let contentHTML = "";
     if (total === 0) {
-      contentHTML = `<p class="empty-state">Nenhum pedido pronto aguardando conclusão.</p>`;
+      contentHTML = `<p class="empty-state">Tudo em dia: nenhum pedido aguardando confirmação ou conclusão.</p>`;
     } else {
-      const rows = prontosParaConcluir.slice(0, 60).map((p) => {
-        const info = getPedidoDiscountInfo(p);
-        const itens = (p.items || []).slice(0, 4).map((item) => `${item.qtd}x ${item.pizzaNome}`).join("<br>") || "Sem itens";
-        const more = (p.items || []).length > 4 ? `<br><small>+${(p.items || []).length - 4} item(ns)</small>` : "";
-        const data = p.dataEntrega ? new Date(p.dataEntrega + "T00:00:00").toLocaleDateString("pt-BR") : "sem data";
-        const action = isPedidoPago(p)
-          ? `<button class="action-btn complete-btn" onclick="window.updatePedidoStatus('${p.id}', 'Concluído')">Concluir</button>`
-          : `<button class="action-btn paid-btn complete-btn" onclick="window.marcarPedidoPago('${p.id}')">Pago</button>`;
-        const valorHtml = `<b>${formatCurrency(info.final)}</b>${renderPedidoDiscountBadge(p)}${info.amount > 0 ? `<small>Original: ${formatCurrency(info.base)}</small>` : ""}`;
-        return `<tr>
-          <td data-label="Cliente"><b>${escapeHTML(p.cliente || "Cliente")}</b><br><small>${escapeHTML(p.telefone || "")}</small></td>
-          <td data-label="Data">${escapeHTML(data)}<br><small>${escapeHTML(p.cidade || "-")}</small></td>
-          <td data-label="Itens">${itens}${more}</td>
-          <td data-label="Valor" class="pending-value-cell">${valorHtml}</td>
-          <td data-label="Ações"><div class="pending-actions">${action}<button class="action-btn edit-btn" onclick="window.openEditPedidoModal('${p.id}')">Editar</button></div></td>
-        </tr>`;
-      }).join("");
-      contentHTML = `<div class="pending-orders-modal table-container"><table class="pending-orders-table"><thead><tr><th>Cliente</th><th>Data</th><th>Itens</th><th>Valor</th><th>Ações</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      if (confirmar) {
+        contentHTML += `<h3 class="pending-section-title">Aguardando confirmação <span class="count-chip">${confirmar}</span></h3>`
+          + `<p class="small-muted">Enquanto não forem confirmados, esses pedidos não entram na produção da semana.</p>`
+          + tabela(aguardandoConfirmacao, (p) => `<button class="action-btn confirm-btn" onclick="window.updatePedidoStatus('${escapeAttr(p.id)}', 'Confirmado')">Confirmar</button>`);
+      }
+      if (concluir) {
+        contentHTML += `<h3 class="pending-section-title">Prontos para concluir <span class="count-chip">${concluir}</span></h3>`
+          + tabela(prontosParaConcluir, (p) => isPedidoPago(p)
+            ? `<button class="action-btn complete-btn" onclick="window.updatePedidoStatus('${escapeAttr(p.id)}', 'Concluído')">Concluir</button>`
+            : `<button class="action-btn paid-btn complete-btn" onclick="window.marcarPedidoPago('${escapeAttr(p.id)}')">Pago</button>`);
+      }
     }
-    openModal("notifications-modal", "Prontos para concluir", contentHTML);
+    openModal("notifications-modal", "Pendências", contentHTML);
   };
 
   const parseSafeDate = (value) => {
@@ -1465,6 +1542,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     const activeRange = document.querySelector(".date-filter.active")?.dataset.range || "all";
     renderDashboard(activeRange);
     refreshNotificationBadge();
+    maybeAnnouncePendingOrders();
   };
 
   const populateSelects = (selectElementId) => {
@@ -4946,6 +5024,11 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
   });
 
   document.getElementById("btn-notificacoes")?.addEventListener("click", window.openNotificationsModal);
+  document.getElementById("pending-alert-close")?.addEventListener("click", hidePendingOrdersAlert);
+  document.getElementById("pending-alert-open")?.addEventListener("click", () => {
+    hidePendingOrdersAlert();
+    abrirPedidosAguardandoConfirmacao();
+  });
 
 
   // ===== V4: Caixa, produção, impressão, venda rápida e prioridades de clientes =====
@@ -5547,7 +5630,7 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
       <div class="kpi-tile"><span>Pedidos pendentes</span><b>${pendentes.length}</b><small>Semana atual${atrasados.length ? ` · ${atrasados.length} atrasado(s)` : ""}</small></div>
       <div class="kpi-tile"><span>Pizzas na semana</span><b>${quantidadeSemana}</b><small>Entre pedidos registrados</small></div>
       <div class="kpi-tile"><span>Receita já paga</span><b>${formatCurrency(faturamentoSemana)}</b><small>Pagamentos confirmados</small></div>
-      <div class="kpi-tile"><span>Pendências</span><b>${pendencias.total}</b><small>Prontos para concluir</small></div>`;
+      <div class="kpi-tile"><span>Pendências</span><b>${pendencias.total}</b><small>${pendencias.confirmar} a confirmar · ${pendencias.concluir} a concluir</small></div>`;
 
     pendingBox.innerHTML = `<div class="home-list">${pendentes.slice(0,6).map((p) => `<div class="home-list-item"><b>${escapeHTML(p.cliente || 'Cliente')}</b><span class="badge-inline ${isPedidoAtrasado(p) ? 'danger' : (isPedidoPago(p)?'success':'warning')}">${isPedidoAtrasado(p) ? 'Atrasado' : escapeHTML(p.status || 'Pendente')}</span><small>${escapeHTML((p.items || []).map((it) => `${Number(it.qtd || 0)}x ${it.pizzaNome || "Item"}`).join(' · ') || 'Sem itens')}<br>${formatCurrency(p.valorFinal || p.valorTotal || 0)}</small></div>`).join('') || '<p class="empty-state compact">Sem pedidos pendentes na semana.</p>'}</div>`;
 
@@ -5556,7 +5639,8 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
     sobraBox.innerHTML = `<div class="home-list">${sobras.map((x) => `<div class="home-list-item"><b>${escapeHTML(x.pizza.nome)} (${escapeHTML(x.pizza.tamanho)})</b><span class="badge-inline success">${x.sobra} disponível</span><small>Estoque: ${x.estoqueAtual} · reservado na semana: ${x.pedidosSemana || 0}</small></div>`).join('') || '<p class="empty-state compact">Sem pizzas disponíveis nesta semana.</p>'}</div>`;
 
     alertBox.innerHTML = `<div class="home-list">
-      <div class="home-list-item"><b>Prontos para concluir</b><span class="badge-inline ${pendencias.total ? 'danger' : 'success'}">${pendencias.total}</span><small>${pendencias.prontosParaConcluir.slice(0,4).map((p) => `${escapeHTML(p.cliente || "Cliente")} · ${formatCurrency(p.valorFinal || p.valorTotal || 0)}`).join('<br>') || 'Nenhuma pendência.'}</small></div>
+      <div class="home-list-item"><b>Aguardando confirmação</b><span class="badge-inline ${pendencias.confirmar ? 'danger' : 'success'}">${pendencias.confirmar}</span><small>${pendencias.aguardandoConfirmacao.slice(0,4).map((p) => `${escapeHTML(p.cliente || "Cliente")} · ${formatCurrency(p.valorFinal || p.valorTotal || 0)}`).join('<br>') || 'Nenhum pedido esperando confirmação.'}</small></div>
+      <div class="home-list-item"><b>Prontos para concluir</b><span class="badge-inline ${pendencias.concluir ? 'danger' : 'success'}">${pendencias.concluir}</span><small>${pendencias.prontosParaConcluir.slice(0,4).map((p) => `${escapeHTML(p.cliente || "Cliente")} · ${formatCurrency(p.valorFinal || p.valorTotal || 0)}`).join('<br>') || 'Nenhuma pendência.'}</small></div>
       <div class="home-list-item"><b>Ações rápidas</b><small><button class="home-action" data-open-tab="pedidos">Novo pedido</button> <button class="home-action" data-open-tab="cozinha">Abrir cozinha</button></small></div>
     </div>`;
     document.querySelectorAll("#inicio [data-open-tab]").forEach((btn) => btn.onclick = () => openTab(btn.dataset.openTab));
@@ -6143,14 +6227,31 @@ Lançar mesmo assim como encomenda/produção pendente?`);
     document.querySelectorAll("[data-reject-id]").forEach((btn) => btn.addEventListener("click", () => window.updatePedidoStatus(btn.dataset.rejectId, "Negado")));
   };
 
+  // Abre uma aba de desktop dentro do celular. Alem da classe, precisa desfazer
+  // os estilos inline que hardFixMobileLayout aplica (app fixo em tela cheia e
+  // scroll travado), senao a aba abre atras do app mobile e nao rola.
+  const openDesktopTabOnMobile = (tab) => {
+    document.body.classList.add("force-desktop-mobile");
+    document.getElementById("mobile-app")?.removeAttribute("style");
+    document.querySelectorAll(".mobile-bottom-nav").forEach((el) => el.removeAttribute("style"));
+    document.documentElement.style.removeProperty("overflow");
+    document.body.style.removeProperty("overflow");
+    openTab(tab);
+    window.scrollTo(0, 0);
+  };
+
   const renderMobileMais = () => {
     const week = getWeekStart();
+    // No celular o app proprio substitui as abas; sem esta entrada o vendedor
+    // simplesmente nao tinha como chegar em "Meu estoque" pelo telefone.
+    const isVendorOnly = !!getCurrentSeller() && !document.body.classList.contains("admin-mode");
     const sobras = getPizzaWeekStats(week).filter((p) => Number(p.sobraProj || 0) > 0).sort((a, b) => b.sobraProj - a.sobraProj || String(a.nome).localeCompare(String(b.nome))).slice(0, 12);
-    renderMobileShell(`<section class="m-section"><div class="m-card"><h2>Mais</h2><div class="m-actions single"><button class="m-btn secondary" id="m-open-profile">Perfil do vendedor</button><button class="m-btn secondary" data-mobile-page-go="venda">Venda rápida</button><button class="m-btn secondary" id="m-open-desktop-agenda">Agenda completa</button><button class="m-btn secondary" id="m-open-desktop-estoque">Sabores e estoque</button><button class="m-btn secondary" id="m-open-desktop-pedidos">Pedidos completos</button><button class="m-btn secondary" id="m-copy-sobras">Copiar disponíveis</button></div></div><div class="m-card"><h3>Disponíveis para retirada</h3><div class="m-list">${sobras.map((p) => `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(p.nome)} (${escapeHTML(p.tamanho)})</b><span class="m-badge ok">${p.sobraProj}</span></div><div class="m-line">Estoque: ${p.estoqueAtual} · pedidos: ${p.pedidosSemana}</div></div>`).join("") || `<p class="m-muted">Sem sobras positivas nesta semana.</p>`}</div></div></section>`);
+    renderMobileShell(`<section class="m-section"><div class="m-card"><h2>Mais</h2><div class="m-actions single"><button class="m-btn secondary" id="m-open-profile">Perfil do vendedor</button><button class="m-btn secondary" data-mobile-page-go="venda">Venda rápida</button><button class="m-btn secondary" id="m-open-desktop-agenda">Agenda completa</button>${isVendorOnly ? '<button class="m-btn secondary" id="m-open-meu-estoque">Meu estoque</button>' : '<button class="m-btn secondary" id="m-open-desktop-estoque">Sabores e estoque</button>'}<button class="m-btn secondary" id="m-open-desktop-pedidos">Pedidos completos</button><button class="m-btn secondary" id="m-copy-sobras">Copiar disponíveis</button></div></div><div class="m-card"><h3>Disponíveis para retirada</h3><div class="m-list">${sobras.map((p) => `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(p.nome)} (${escapeHTML(p.tamanho)})</b><span class="m-badge ok">${p.sobraProj}</span></div><div class="m-line">Estoque: ${p.estoqueAtual} · pedidos: ${p.pedidosSemana}</div></div>`).join("") || `<p class="m-muted">Sem sobras positivas nesta semana.</p>`}</div></div></section>`);
     document.getElementById("m-open-profile")?.addEventListener("click", openSellerProfileModal);
-    document.getElementById("m-open-desktop-pedidos")?.addEventListener("click", () => { document.body.classList.add('force-desktop-mobile'); openTab('pedidos'); });
-    document.getElementById("m-open-desktop-agenda")?.addEventListener("click", () => { document.body.classList.add('force-desktop-mobile'); openTab('logistica'); });
-    document.getElementById("m-open-desktop-estoque")?.addEventListener("click", () => { document.body.classList.add('force-desktop-mobile'); openTab('estoque'); });
+    document.getElementById("m-open-desktop-pedidos")?.addEventListener("click", () => openDesktopTabOnMobile('pedidos'));
+    document.getElementById("m-open-desktop-agenda")?.addEventListener("click", () => openDesktopTabOnMobile('logistica'));
+    document.getElementById("m-open-desktop-estoque")?.addEventListener("click", () => openDesktopTabOnMobile('estoque'));
+    document.getElementById("m-open-meu-estoque")?.addEventListener("click", () => openDesktopTabOnMobile('estoque-vendedor'));
     document.getElementById("m-copy-sobras")?.addEventListener("click", () => copyTextToClipboard(generateSobrasMessage(week)));
     document.querySelectorAll("[data-mobile-page-go]").forEach((btn) => btn.addEventListener("click", () => { mobilePage = btn.dataset.mobilePageGo; renderMobileApp(); }));
   };
@@ -6189,6 +6290,7 @@ Lançar mesmo assim como encomenda/produção pendente?`);
 
   const hardFixMobileLayout = () => {
     if (window.innerWidth > 900) return;
+    if (document.body.classList.contains("force-desktop-mobile")) return;
     document.querySelectorAll(".mobile-bottom-nav").forEach((el) => {
       el.style.display = "none";
       el.style.visibility = "hidden";
@@ -6403,16 +6505,21 @@ Lançar mesmo assim como encomenda/produção pendente?`);
   };
 
 
+  // Filtro da tabela do vendedor. O padrão é "comigo" porque a lista completa
+  // tem 80+ sabores e o vendedor normalmente carrega meia dúzia: mostrar tudo
+  // por padrão transformava a tela num paredão de linhas zeradas.
+  let sellerStockFilter = "comigo";
+
   const renderSellerInventory = () => {
     const title = document.getElementById("seller-stock-title");
     const copy = document.getElementById("seller-stock-status-copy");
     const toggle = document.getElementById("seller-stock-toggle");
     const kpis = document.getElementById("seller-stock-kpis");
     const suggestions = document.getElementById("seller-stock-suggestions");
+    const receiveCount = document.getElementById("seller-stock-receive-count");
     const tbody = document.querySelector("#seller-stock-table tbody");
-    const quick = document.getElementById("seller-stock-quick");
     const history = document.getElementById("seller-stock-history");
-    if (!title || !toggle || !kpis || !suggestions || !tbody || !quick || !history) return;
+    if (!title || !toggle || !kpis || !suggestions || !tbody || !history) return;
 
     const seller = getCurrentSeller();
     const painel = database.estoque_vendedor_painel || { ativo:false, estoque:[], sugestoes:[], movimentos:[] };
@@ -6420,8 +6527,9 @@ Lançar mesmo assim como encomenda/produção pendente?`);
       title.textContent = "Selecione um perfil de vendedor";
       copy.textContent = "Abra seu perfil no topo para acessar o estoque próprio.";
       toggle.disabled = true;
-      kpis.innerHTML = suggestions.innerHTML = quick.innerHTML = history.innerHTML = "";
-      tbody.innerHTML = '<tr><td colspan="4" class="empty-row">Nenhum vendedor selecionado.</td></tr>';
+      kpis.innerHTML = suggestions.innerHTML = history.innerHTML = "";
+      if (receiveCount) receiveCount.textContent = "0";
+      tbody.innerHTML = '<tr><td colspan="5" class="empty-row">Nenhum vendedor selecionado.</td></tr>';
       return;
     }
 
@@ -6430,45 +6538,89 @@ Lançar mesmo assim como encomenda/produção pendente?`);
     const active = Boolean(painel.ativo);
     toggle.textContent = active ? "Desativar estoque próprio" : "Ativar estoque próprio";
     toggle.classList.toggle("is-active", active);
-    copy.textContent = active
-      ? "Ativo: pedidos da loja vinculados a você usam primeiro o seu estoque, de forma atômica."
-      : "Inativo: pedidos da loja continuam seguindo a lógica normal do estoque principal.";
+    copy.innerHTML = active
+      ? '<span class="seller-stock-state on">Ativo</span> Pedidos da loja vinculados a você usam primeiro o seu estoque.'
+      : '<span class="seller-stock-state off">Inativo</span> Pedidos da loja seguem a lógica normal do estoque principal.';
 
     const stock = Array.isArray(painel.estoque) ? painel.estoque : [];
     const withStock = stock.filter((item) => Number(item.qtd || 0) > 0);
-    const totalUnits = withStock.reduce((sum,item) => sum + Number(item.qtd || 0), 0);
-    const lowStock = withStock.filter((item) => Number(item.qtd || 0) <= 2).length;
+    const totalUnits = withStock.reduce((sum, item) => sum + Number(item.qtd || 0), 0);
+    const totalValue = withStock.reduce((sum, item) => sum + Number(item.qtd || 0) * Number(item.precoVenda || 0), 0);
+    const sugg = Array.isArray(painel.sugestoes) ? painel.sugestoes : [];
+    const toReceive = sugg.reduce((sum, pedido) => sum + (Array.isArray(pedido.items) ? pedido.items.reduce((s, i) => s + Number(i.qtd || 0), 0) : 0), 0);
+
     kpis.innerHTML = `
       <div class="seller-stock-kpi"><span>Unidades comigo</span><b>${totalUnits}</b></div>
-      <div class="seller-stock-kpi"><span>Sabores disponíveis</span><b>${withStock.length}</b></div>
-      <div class="seller-stock-kpi"><span>Com 2 ou menos</span><b>${lowStock}</b></div>`;
+      <div class="seller-stock-kpi"><span>Sabores diferentes</span><b>${withStock.length}</b></div>
+      <div class="seller-stock-kpi"><span>Valor em mãos</span><b>${formatCurrency(totalValue)}</b></div>
+      <div class="seller-stock-kpi ${toReceive ? "highlight" : ""}"><span>A receber</span><b>${toReceive}</b></div>`;
 
+    // --- tabela ---
     const search = (document.getElementById("seller-stock-search")?.value || "").trim().toLowerCase();
-    const filtered = stock.filter((item) => `${item.nome || ""} ${item.tamanho || ""}`.toLowerCase().includes(search));
-    tbody.innerHTML = filtered.length ? filtered.map((item) => `
-      <tr class="${Number(item.qtd || 0) <= 0 ? "low-stock" : ""}">
+    document.querySelectorAll("[data-seller-filter]").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.dataset.sellerFilter === sellerStockFilter);
+    });
+    const byFilter = stock.filter((item) => {
+      const qtd = Number(item.qtd || 0);
+      if (sellerStockFilter === "comigo") return qtd > 0;
+      if (sellerStockFilter === "acabando") return qtd > 0 && qtd <= 2;
+      return true;
+    });
+    const filtered = byFilter.filter((item) => `${item.nome || ""} ${item.tamanho || ""}`.toLowerCase().includes(search));
+    const emptyMessage = search
+      ? "Nenhuma pizza com esse nome."
+      : sellerStockFilter === "comigo"
+        ? 'Você ainda não tem pizzas próprias. Confirme um pedido na Entrada rápida acima ou use o filtro <b>Todas</b> para lançar uma entrada manual.'
+        : sellerStockFilter === "acabando"
+          ? "Nada acabando: tudo que você tem está com 3 ou mais unidades."
+          : "Nenhuma pizza cadastrada no cardápio.";
+    tbody.innerHTML = filtered.length ? filtered.map((item) => {
+      const qtd = Number(item.qtd || 0);
+      const nivel = qtd <= 0 ? "zero" : qtd <= 2 ? "baixo" : "ok";
+      return `
+      <tr class="seller-stock-row level-${nivel}">
         <td data-label="Pizza"><b>${escapeHTML(item.nome || "")}</b></td>
         <td data-label="Tamanho">${escapeHTML(item.tamanho || "Único")}</td>
-        <td data-label="Quantidade"><b>${Number(item.qtd || 0)}</b></td>
+        <td data-label="Comigo"><span class="seller-qty ${nivel}">${qtd}</span>${qtd > 0 && qtd <= 2 ? '<small class="seller-qty-note">acabando</small>' : ""}</td>
+        <td data-label="Valor em mãos">${qtd > 0 ? formatCurrency(qtd * Number(item.precoVenda || 0)) : "—"}</td>
         <td data-label="Ajuste rápido"><div class="seller-stock-actions">
-          <button type="button" class="action-btn remove-btn" onclick="window.adjustSellerStock('${escapeAttr(item.pizzaId)}', -1)">−1</button>
-          <button type="button" class="action-btn confirm-btn" onclick="window.adjustSellerStock('${escapeAttr(item.pizzaId)}', 1)">+1</button>
+          <button type="button" class="action-btn remove-btn" ${qtd <= 0 ? "disabled" : ""} title="${qtd <= 0 ? "Sem unidades para retirar" : "Retirar 1 (venda em mãos)"}" onclick="window.adjustSellerStock('${escapeAttr(item.pizzaId)}', -1)">−1</button>
+          <button type="button" class="action-btn confirm-btn" title="Adicionar 1" onclick="window.adjustSellerStock('${escapeAttr(item.pizzaId)}', 1)">+1</button>
           <button type="button" class="action-btn edit-btn" onclick="window.customAdjustSellerStock('${escapeAttr(item.pizzaId)}', '${escapeAttr(item.nome || "Pizza")}')">Ajustar</button>
         </div></td>
-      </tr>`).join("") : '<tr><td colspan="4" class="empty-row">Nenhuma pizza encontrada.</td></tr>';
+      </tr>`;
+    }).join("") : `<tr><td colspan="5" class="empty-row">${emptyMessage}</td></tr>`;
 
-    const topStock = withStock.slice().sort((a,b) => Number(b.qtd||0)-Number(a.qtd||0)).slice(0,8);
-    quick.innerHTML = topStock.length ? topStock.map((item) => `<div class="seller-stock-quick-card"><span>${escapeHTML(item.nome || "")}${item.tamanho ? ` · ${escapeHTML(item.tamanho)}` : ""}</span><b>${Number(item.qtd || 0)} un.</b></div>`).join("") : '<div class="empty-state">Seu estoque próprio ainda está vazio.</div>';
-
-    const sugg = Array.isArray(painel.sugestoes) ? painel.sugestoes : [];
+    // --- entrada rápida ---
+    if (receiveCount) {
+      receiveCount.textContent = String(sugg.length);
+      receiveCount.classList.toggle("is-zero", sugg.length === 0);
+    }
     suggestions.innerHTML = sugg.length ? sugg.map((pedido) => {
       const items = Array.isArray(pedido.items) ? pedido.items.filter((item) => Number(item.qtd || 0) > 0) : [];
-      return `<article class="seller-stock-suggestion"><div class="seller-stock-suggestion-main"><b>Pedido ${escapeHTML(formatDateBR(pedido.dataEntrega || ""))}</b><small>Origem: estoque principal · ${escapeHTML(pedido.status || "")}</small><div class="seller-stock-suggestion-items">${items.map((item) => `<span class="seller-stock-pill">${Number(item.qtd||0)}x ${escapeHTML(item.nome || "")}${item.tamanho ? ` (${escapeHTML(item.tamanho)})` : ""}</span>`).join("")}</div></div><button type="button" class="action-btn confirm-btn" onclick="window.receiveSellerOrder('${escapeAttr(pedido.pedidoId)}')">Adicionar ao meu estoque</button></article>`;
-    }).join("") : '<div class="empty-state">Nenhum pedido aguardando recebimento no seu estoque.</div>';
+      const un = items.reduce((sum, item) => sum + Number(item.qtd || 0), 0);
+      return `<article class="seller-stock-suggestion">
+        <div class="seller-stock-suggestion-main">
+          <div class="seller-stock-suggestion-head">
+            <b>${escapeHTML(pedido.cliente || "Cliente não informado")}</b>
+            <span class="status-chip ${normalizeStatusClass(pedido.status)}">${escapeHTML(pedido.status || "")}</span>
+            ${pedido.pago ? '<span class="payment-tag paid">Pago</span>' : '<span class="payment-tag unpaid">A receber</span>'}
+          </div>
+          <small>Entrega ${escapeHTML(formatDateBR(pedido.dataEntrega || ""))} · ${un} un. · ${formatCurrency(pedido.valorFinal || 0)}</small>
+          <div class="seller-stock-suggestion-items">${items.map((item) => `<span class="seller-stock-pill">${Number(item.qtd||0)}x ${escapeHTML(item.nome || "")}${item.tamanho ? ` (${escapeHTML(item.tamanho)})` : ""}</span>`).join("")}</div>
+        </div>
+        <button type="button" class="action-btn confirm-btn seller-stock-receive-btn" onclick="window.receiveSellerOrder('${escapeAttr(pedido.pedidoId)}')">Recebi essas ${un} un.</button>
+      </article>`;
+    }).join("") : '<div class="empty-state">Nenhum pedido seu em aberto aguardando retirada do estoque principal.</div>';
 
+    // --- histórico ---
     const movements = Array.isArray(painel.movimentos) ? painel.movimentos : [];
     const movementLabel = { entrada_pedido:"Recebido do estoque principal", saida_venda:"Venda", devolucao_venda:"Devolução", ajuste_entrada:"Entrada manual", ajuste_saida:"Saída manual" };
-    history.innerHTML = movements.length ? movements.slice(0,30).map((mv) => `<div class="seller-stock-history-item"><div><b>${escapeHTML(movementLabel[mv.tipo] || mv.tipo || "Movimentação")}</b><small>${escapeHTML(mv.nome || "")}${mv.tamanho ? ` · ${escapeHTML(mv.tamanho)}` : ""}${mv.observacao ? ` · ${escapeHTML(mv.observacao)}` : ""}</small></div><div><b>${["saida_venda","ajuste_saida"].includes(mv.tipo) ? "−" : "+"}${Number(mv.qtd || 0)}</b><small>${mv.createdAt ? new Date(mv.createdAt).toLocaleString("pt-BR") : ""}</small></div></div>`).join("") : '<div class="empty-state">Nenhuma movimentação registrada.</div>';
+    // 8 em vez de 30: o histórico completo empurrava o resto da página para fora da tela.
+    history.innerHTML = movements.length ? movements.slice(0,8).map((mv) => {
+      const saida = ["saida_venda","ajuste_saida"].includes(mv.tipo);
+      return `<div class="seller-stock-history-item"><div><b>${escapeHTML(movementLabel[mv.tipo] || mv.tipo || "Movimentação")}</b><small>${escapeHTML(mv.nome || "")}${mv.tamanho ? ` · ${escapeHTML(mv.tamanho)}` : ""}${mv.observacao ? ` · ${escapeHTML(mv.observacao)}` : ""}</small></div><div class="seller-stock-history-qty ${saida ? "out" : "in"}"><b>${saida ? "−" : "+"}${Number(mv.qtd || 0)}</b><small>${mv.createdAt ? new Date(mv.createdAt).toLocaleString("pt-BR") : ""}</small></div></div>`;
+    }).join("") + (movements.length > 8 ? `<p class="small-muted seller-stock-history-more">Mostrando as 8 movimentações mais recentes de ${movements.length}.</p>` : "") : '<div class="empty-state">Nenhuma movimentação registrada.</div>';
   };
 
   const renderSellerLots = () => {
@@ -6539,6 +6691,10 @@ Lançar mesmo assim como encomenda/produção pendente?`);
     finally { hideLoader(); }
   });
   document.getElementById("seller-stock-search")?.addEventListener("input", renderSellerInventory);
+  document.querySelectorAll("[data-seller-filter]").forEach((btn) => btn.addEventListener("click", () => {
+    sellerStockFilter = btn.dataset.sellerFilter || "comigo";
+    renderSellerInventory();
+  }));
 
   // Seções de consulta/entrada rápida começam minimizadas; o botão alterna mostrar/ocultar o corpo.
   document.querySelectorAll("[data-collapse-toggle]").forEach((btn) => {

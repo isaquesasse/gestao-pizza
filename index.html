@@ -698,49 +698,69 @@
             <div class="page-heading seller-stock-heading">
                 <span class="section-eyebrow"><span class="material-symbols-rounded">inventory</span> Controle do vendedor</span>
                 <h2>Meu estoque</h2>
-                <p class="small-muted">Controle apenas as pizzas que estão fisicamente com você. O estoque principal continua separado.</p>
+                <p class="small-muted">Só as pizzas que estão fisicamente com você. O estoque principal continua separado.</p>
             </div>
 
-            <section class="card seller-stock-receive-card">
-                <div class="table-header compact-header">
-                    <div>
-                        <span class="section-eyebrow"><span class="material-symbols-rounded">add_circle</span> Entrada rápida</span>
-                        <h3>Adicionar pizzas dos meus pedidos</h3>
-                        <p class="small-muted">As pizzas que você retirou do estoque principal aparecem primeiro aqui. Confirme o recebimento para adicionar ao seu estoque próprio.</p>
-                    </div>
-                </div>
-                <div id="seller-stock-suggestions" class="seller-stock-suggestions"></div>
-            </section>
-
-            <section class="card seller-stock-status-card">
+            <section class="card seller-stock-hero">
                 <div class="seller-stock-status-main">
-                    <div>
-                        <span class="small-muted">Estoque próprio</span>
-                        <h3 id="seller-stock-title">Selecione um perfil de vendedor</h3>
-                        <p id="seller-stock-status-copy" class="small-muted">O estoque próprio só é usado pela loja quando estiver ativo.</p>
+                    <div class="seller-stock-identity">
+                        <span class="seller-stock-avatar" aria-hidden="true">👤</span>
+                        <div>
+                            <span class="small-muted">Estoque próprio</span>
+                            <h3 id="seller-stock-title">Selecione um perfil de vendedor</h3>
+                            <p id="seller-stock-status-copy" class="small-muted">O estoque próprio só é usado pela loja quando estiver ativo.</p>
+                        </div>
                     </div>
                     <button type="button" id="seller-stock-toggle" class="seller-stock-toggle">Ativar estoque próprio</button>
                 </div>
                 <div id="seller-stock-kpis" class="seller-stock-kpis"></div>
             </section>
 
-            <section class="card">
-                <div class="table-header">
-                    <div><h3>Consulta rápida do meu estoque</h3><p class="small-muted">Essa tela é somente do vendedor. A consulta do Início continua usando o estoque principal.</p></div>
-                    <input type="search" id="seller-stock-search" class="search-input" placeholder="Buscar pizza...">
+            <section class="card seller-stock-receive-card" id="seller-stock-receive-card">
+                <div class="table-header compact-header">
+                    <div>
+                        <span class="section-eyebrow"><span class="material-symbols-rounded">add_circle</span> Entrada rápida</span>
+                        <h3>Pedidos prontos para você levar <span id="seller-stock-receive-count" class="count-chip">0</span></h3>
+                        <p class="small-muted">Só aparecem pedidos seus que ainda estão em aberto e já saíram do estoque principal. Confirme o recebimento para somar ao seu estoque.</p>
+                    </div>
                 </div>
-                <div id="seller-stock-quick" class="seller-stock-quick"></div>
+                <div id="seller-stock-suggestions" class="seller-stock-suggestions"></div>
+            </section>
+
+            <section class="card">
+                <div class="table-header seller-stock-table-head">
+                    <div>
+                        <h3>Pizzas comigo</h3>
+                        <p class="small-muted">Use −1 a cada venda em mãos e +1 se devolver algo para o seu estoque.</p>
+                    </div>
+                    <div class="card-header-actions">
+                        <div class="seller-stock-filters" role="group" aria-label="Filtrar pizzas">
+                            <button type="button" class="seller-filter-chip is-active" data-seller-filter="comigo">Comigo</button>
+                            <button type="button" class="seller-filter-chip" data-seller-filter="acabando">Acabando</button>
+                            <button type="button" class="seller-filter-chip" data-seller-filter="todas">Todas</button>
+                        </div>
+                        <input type="search" id="seller-stock-search" class="search-input" placeholder="Buscar pizza...">
+                    </div>
+                </div>
                 <div class="table-container">
                     <table id="seller-stock-table">
-                        <thead><tr><th>Pizza</th><th>Tamanho</th><th>Quantidade</th><th>Ajuste rápido</th></tr></thead>
+                        <thead><tr><th>Pizza</th><th>Tamanho</th><th>Comigo</th><th>Valor em mãos</th><th>Ajuste rápido</th></tr></thead>
                         <tbody></tbody>
                     </table>
                 </div>
             </section>
 
             <section class="card">
-                <div class="table-header compact-header"><div><h3>Últimas movimentações</h3><p class="small-muted">Entradas, vendas, devoluções e ajustes do seu estoque.</p></div></div>
-                <div id="seller-stock-history" class="seller-stock-history"></div>
+                <div class="table-header compact-header">
+                    <div><h3>Últimas movimentações</h3><p class="small-muted">Entradas, vendas, devoluções e ajustes do seu estoque.</p></div>
+                    <button type="button" class="card-collapse-btn" data-collapse-toggle="seller-stock-history-body" aria-expanded="true" aria-controls="seller-stock-history-body">
+                        <span class="material-symbols-rounded" aria-hidden="true">expand_less</span>
+                        <span class="card-collapse-btn-label">Minimizar</span>
+                    </button>
+                </div>
+                <div id="seller-stock-history-body" class="card-collapsible-body">
+                    <div id="seller-stock-history" class="seller-stock-history"></div>
+                </div>
             </section>
         </div>
 
@@ -1200,6 +1220,18 @@
             </form>
         </div>
     </div>
+    <div id="pending-orders-alert" class="pending-alert" hidden role="status" aria-live="polite">
+        <span class="material-symbols-rounded pending-alert-icon" aria-hidden="true">notifications_active</span>
+        <div class="pending-alert-text">
+            <b id="pending-alert-title">Pedidos aguardando confirmação</b>
+            <small id="pending-alert-copy">Confirme para eles entrarem na produção da semana.</small>
+        </div>
+        <div class="pending-alert-actions">
+            <button type="button" id="pending-alert-open" class="pending-alert-cta">Ver pedidos</button>
+            <button type="button" id="pending-alert-close" class="pending-alert-close" aria-label="Fechar aviso">&times;</button>
+        </div>
+    </div>
+
     <button id="btn-notificacoes" class="floating-alert-btn" type="button" title="Pendências">
         <span>!</span>
         <small id="notificacoes-badge">0</small>
