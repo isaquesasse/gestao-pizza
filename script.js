@@ -100,13 +100,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     massas: [],
     massas_semanais: [],
     caixa_movimentos: [],
+    eventos: [],
     vendedores: [],
     loja_entrega_calendario: [],
     loja_entrega_recorrencia: [],
     loja_cupons: [],
     loja_config: {},
     estoque_vendedor_painel: { ativo: false, estoque: [], sugestoes: [], movimentos: [] },
-    vendedor_lotes: [],
   };
 
   const STOCK_ACTIVE_STATUSES = ["Pendente", "Confirmado", "Pronto", "Concluído"];
@@ -147,6 +147,49 @@ document.addEventListener("DOMContentLoaded", async () => {
   let pedidoEditItems = [];
 
   const getItemSecaoCliente = (item) => String(item?.secaoCliente ?? item?.clienteSecao ?? item?.cliente_secao ?? "").trim();
+
+  // Pizza de fora do cardápio: item marcado como "Outro" na hora do pedido, ou
+  // item cujo sabor não existe mais no estoque. Ela não entra em nenhuma conta
+  // automática de produção (não tem receita nem linha de estoque), então tem que
+  // aparecer destacada em tudo que diz o que produzir — senão a cozinha só
+  // descobre a pizza diferente na hora de separar o pedido.
+  const isItemNaoCadastrado = (item) => {
+    if (!item) return false;
+    if (item.isCustom === true) return true;
+    const id = String(item.pizzaId ?? "").trim();
+    if (!id || id === "outro") return true;
+    // Só acusa "sumiu do cadastro" com o estoque já carregado, senão no primeiro
+    // render (database vazio) todo item viraria não cadastrado.
+    if (!Array.isArray(database.estoque) || database.estoque.length === 0) return false;
+    return !database.estoque.some((pizza) => String(pizza.id) === id);
+  };
+
+  const ITEM_NAO_CADASTRADO_TAG = "não cadastrada";
+
+  const getItemTamanho = (item) => {
+    const direto = String(item?.tamanho ?? item?.pizzaTamanho ?? "").trim();
+    if (direto) return direto;
+    const id = String(item?.pizzaId ?? "").trim();
+    if (!id || id === "outro") return "";
+    const pizza = (database.estoque || []).find((pizza) => String(pizza.id) === id);
+    return String(pizza?.tamanho || "").trim();
+  };
+
+  // Pedido da loja online grava o tamanho num campo separado ("4 Queijos" + "G"),
+  // enquanto o da gestão já grava junto ("4 Queijos (G)"). Lendo só pizzaNome, a
+  // pizza da loja aparecia sem tamanho na tela e na folha de impressão — e G e P
+  // do mesmo sabor ficavam indistinguíveis na hora de separar.
+  const getItemNomeExibicao = (item) => {
+    const nome = String(item?.pizzaNome || "").trim() || "Item";
+    if (/\([^()]*\)\s*$/.test(nome)) return nome;
+    const tamanho = getItemTamanho(item);
+    return tamanho ? `${nome} (${tamanho})` : nome;
+  };
+  // Nome já escapado + selo, para as listas de tela. Quem só quer o texto usa o
+  // segundo argumento para trocar o selo.
+  const marcarNomeNaoCadastrado = (textoHtml, tag = ITEM_NAO_CADASTRADO_TAG) =>
+    `<b class="item-pedido-outro">${textoHtml}<span class="tag-nao-cadastrada">${tag}</span></b>`;
+
   const isPedidoGrandeAtivo = () => Boolean(document.getElementById("pedido-grande")?.checked);
   const getPedidoSecaoAtual = () => isPedidoGrandeAtivo()
     ? String(document.getElementById("pedido-secao-cliente")?.value || "").trim()
@@ -212,6 +255,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     taxa_por_km: 1,
     entrega_gratis_km: 3,
     frete_minimo: 0,
+    frete_ativo: false,
     cidades_atendidas: [],
     cidades_bloqueadas: [],
     limite_itens_pedido: 30,
@@ -224,6 +268,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     pix_key: "carlos.sasse@gmail.com",
     pix_name: "SASSES PIZZA",
     pix_city: "MASSARANDUBA",
+    pix_vendedor_id: null,
     texto_checkout: "Confira os dados antes de enviar.",
     texto_retirada: "Você busca no ponto de retirada.",
     texto_entrega: "Usar endereço de entrega.",
@@ -278,6 +323,16 @@ document.addEventListener("DOMContentLoaded", async () => {
   }[char]));
 
   const escapeAttr = (value) => escapeHTML(value);
+
+  // "2x Calabresa" já escapado, com destaque quando a pizza não é cadastrada.
+  const renderItemPedidoTexto = (item) => {
+    const texto = `${Number(item?.qtd || 0)}x ${escapeHTML(getItemNomeExibicao(item))}`;
+    return isItemNaoCadastrado(item) ? marcarNomeNaoCadastrado(texto) : texto;
+  };
+
+  const renderItemPedidoLi = (item) => isItemNaoCadastrado(item)
+    ? `<li class="item-pedido-outro">${Number(item?.qtd || 0)}x ${escapeHTML(getItemNomeExibicao(item))}<span class="tag-nao-cadastrada">${ITEM_NAO_CADASTRADO_TAG}</span></li>`
+    : `<li>${Number(item?.qtd || 0)}x ${escapeHTML(getItemNomeExibicao(item))}</li>`;
 
   const safeNumber = (value, fallback = 0) => {
     const parsed = parseFloat(String(value ?? "").replace(",", "."));
@@ -567,15 +622,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       database.estoque_vendedor_painel = { ativo:false, estoque:[], sugestoes:[], movimentos:[] };
       console.warn(error);
     }
-    try {
-      const isAdmin = sessionStorage.getItem(ADMIN_SESSION_KEY) === "true" || isSellerAdmin(seller);
-      const lotesRes = await supabaseClient.rpc("listar_lotes_vendedor_gestao", { p_vendedor_id: isAdmin ? null : (seller?.id || null) });
-      if (lotesRes.error) throw lotesRes.error;
-      database.vendedor_lotes = Array.isArray(lotesRes.data) ? lotesRes.data : [];
-    } catch (error) {
-      database.vendedor_lotes = [];
-      console.warn(error);
-    }
   };
 
   const renderSellerProfileUI = () => {
@@ -617,19 +663,35 @@ document.addEventListener("DOMContentLoaded", async () => {
     const { aguardandoConfirmacao, prontosParaConcluir, confirmar, concluir, total } = getSystemAlerts();
     const linha = (p, acoes) => {
       const info = getPedidoDiscountInfo(p);
-      const itens = (p.items || []).slice(0, 4).map((item) => `${item.qtd}x ${item.pizzaNome}`).join("<br>") || "Sem itens";
+      const itens = (p.items || []).slice(0, 4).map(renderItemPedidoTexto).join("<br>") || "Sem itens";
       const more = (p.items || []).length > 4 ? `<br><small>+${(p.items || []).length - 4} item(ns)</small>` : "";
       const data = p.dataEntrega ? new Date(p.dataEntrega + "T00:00:00").toLocaleDateString("pt-BR") : "sem data";
       const valorHtml = `<b>${formatCurrency(info.final)}</b>${renderPedidoDiscountBadge(p)}${info.amount > 0 ? `<small>Original: ${formatCurrency(info.base)}</small>` : ""}`;
       return `<tr>
-        <td data-label="Cliente"><b>${escapeHTML(p.cliente || "Cliente")}</b><br><small>${escapeHTML(p.telefone || "")}</small></td>
+        <td data-label="Cliente"><b>${escapeHTML(p.cliente || "Cliente")}</b><br><small>${escapeHTML(p.telefone || "")}</small>${renderOrigemTag(p)}</td>
         <td data-label="Data">${escapeHTML(data)}<br><small>${escapeHTML(p.cidade || "-")}</small></td>
         <td data-label="Itens">${itens}${more}</td>
         <td data-label="Valor" class="pending-value-cell">${valorHtml}</td>
         <td data-label="Ações"><div class="pending-actions">${acoes(p)}<button class="action-btn edit-btn" onclick="window.openEditPedidoModal('${escapeAttr(p.id)}')">Editar</button></div></td>
       </tr>`;
     };
-    const tabela = (pedidos, acoes) => `<div class="pending-orders-modal table-container"><table class="pending-orders-table"><thead><tr><th>Cliente</th><th>Data</th><th>Itens</th><th>Valor</th><th>Ações</th></tr></thead><tbody>${pedidos.slice(0, 60).map((p) => linha(p, acoes)).join("")}</tbody></table></div>`;
+    const linhaLote = (grupo, acoesLote) => {
+      const principal = grupo.principal;
+      const data = principal.dataEntrega ? new Date(principal.dataEntrega + "T00:00:00").toLocaleDateString("pt-BR") : "sem data";
+      const secoes = grupo.pedidos.map((pedido) => {
+        const codigo = getPedidoCodigoPublico(pedido);
+        const itens = (pedido.items || []).map(renderItemPedidoTexto).join(" · ") || "Sem itens";
+        return `<div class="pending-lote-secao"><b>${escapeHTML(pedido.cliente || "Cliente")}</b>${codigo ? ` <small>#${escapeHTML(codigo)}</small>` : ""}<br><small>${itens}</small></div>`;
+      }).join("");
+      return `<tr>
+        <td data-label="Cliente"><b>${escapeHTML(principal.vendedor || "Vendedor")}</b><br>${renderLoteSubtitulo(grupo)}</td>
+        <td data-label="Data">${escapeHTML(data)}<br><small>${escapeHTML(principal.cidade || "-")}</small></td>
+        <td data-label="Itens">${secoes}</td>
+        <td data-label="Valor" class="pending-value-cell"><b>${formatCurrency(getGrupoValor(grupo))}</b></td>
+        <td data-label="Ações"><div class="pending-actions">${acoesLote(grupo)}<button class="action-btn edit-btn" onclick="window.openLoteClientes('${escapeAttr(grupo.loteId)}')">Clientes</button></div></td>
+      </tr>`;
+    };
+    const tabela = (pedidos, acoes, acoesLote) => `<div class="pending-orders-modal table-container"><table class="pending-orders-table"><thead><tr><th>Cliente</th><th>Data</th><th>Itens</th><th>Valor</th><th>Ações</th></tr></thead><tbody>${buildPedidoGrupos(pedidos).slice(0, 60).map((grupo) => (isGrupoLote(grupo) ? linhaLote(grupo, acoesLote) : linha(grupo.principal, acoes))).join("")}</tbody></table></div>`;
 
     let contentHTML = "";
     if (total === 0) {
@@ -638,13 +700,23 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (confirmar) {
         contentHTML += `<h3 class="pending-section-title">Aguardando confirmação <span class="count-chip">${confirmar}</span></h3>`
           + `<p class="small-muted">Enquanto não forem confirmados, esses pedidos não entram na produção da semana.</p>`
-          + tabela(aguardandoConfirmacao, (p) => `<button class="action-btn confirm-btn" onclick="window.updatePedidoStatus('${escapeAttr(p.id)}', 'Confirmado')">Confirmar</button>`);
+          + tabela(
+            aguardandoConfirmacao,
+            (p) => `<button class="action-btn confirm-btn" onclick="window.updatePedidoStatus('${escapeAttr(p.id)}', 'Confirmado')">Confirmar</button>`,
+            (grupo) => `<button class="action-btn confirm-btn" onclick="window.updateLoteStatus('${escapeAttr(grupo.loteId)}', 'Confirmado')">Confirmar todos</button>`,
+          );
       }
       if (concluir) {
         contentHTML += `<h3 class="pending-section-title">Prontos para concluir <span class="count-chip">${concluir}</span></h3>`
-          + tabela(prontosParaConcluir, (p) => isPedidoPago(p)
-            ? `<button class="action-btn complete-btn" onclick="window.updatePedidoStatus('${escapeAttr(p.id)}', 'Concluído')">Concluir</button>`
-            : `<button class="action-btn paid-btn complete-btn" onclick="window.marcarPedidoPago('${escapeAttr(p.id)}')">Pago</button>`);
+          + tabela(
+            prontosParaConcluir,
+            (p) => isPedidoPago(p)
+              ? `<button class="action-btn complete-btn" onclick="window.updatePedidoStatus('${escapeAttr(p.id)}', 'Concluído')">Concluir</button>`
+              : `<button class="action-btn paid-btn complete-btn" onclick="window.marcarPedidoPago('${escapeAttr(p.id)}')">Pago</button>`,
+            (grupo) => getGrupoPago(grupo)
+              ? `<button class="action-btn complete-btn" onclick="window.updateLoteStatus('${escapeAttr(grupo.loteId)}', 'Concluído')">Concluir todos</button>`
+              : `<button class="action-btn paid-btn complete-btn" onclick="window.marcarLotePago('${escapeAttr(grupo.loteId)}')">Pago</button>`,
+          );
       }
     }
     openModal("notifications-modal", "Pendências", contentHTML);
@@ -845,6 +917,28 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     }
   };
 
+  // O PostgREST corta a resposta em 1000 linhas mesmo quando o range pede mais,
+  // e ninguem avisa: a gestao vinha ignorando os pedidos mais antigos e as
+  // contas de estoque, faturamento e historico saiam menores do que a realidade.
+  const carregarPedidosPaginado = async () => {
+    const PAGINA = 1000;
+    const linhas = [];
+    for (let inicio = 0; ; inicio += PAGINA) {
+      const { data, error } = await supabaseClient
+        .from("pedidos")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(inicio, inicio + PAGINA - 1);
+      if (error) return { data: null, error };
+      const lote = data || [];
+      linhas.push(...lote);
+      if (lote.length < PAGINA) break;
+      if (inicio > 100000) break; // trava de seguranca
+    }
+    return { data: linhas, error: null };
+  };
+
   const loadDataFromSupabase = async () => {
     showLoader();
     try {
@@ -852,7 +946,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
         supabaseClient.from("ingredientes").select("*").order("nome"),
         supabaseClient.from("estoque").select("*").order("nome"),
         supabaseClient.from("receitas").select("*"),
-        supabaseClient.from("pedidos").select("*").order("created_at", { ascending: false }).range(0, 4999),
+        carregarPedidosPaginado(),
         supabaseClient.from("clientes").select("*").order("nome"),
         supabaseClient.from("massas").select("*"),
         supabaseClient.from("massas_semanais").select("*"),
@@ -877,6 +971,16 @@ Deseja adicionar esse frete ao Valor Final?`)) {
         const caixaRes = await supabaseClient.from("caixa_movimentos").select("*").order("data", { ascending: false });
         database.caixa_movimentos = caixaRes.data || [];
       } catch { database.caixa_movimentos = []; }
+
+      // Eventos entram fora do Promise.all de proposito: se a tabela ainda nao
+      // existir num ambiente, a gestao inteira continua abrindo normalmente.
+      try {
+        const eventosRes = await supabaseClient
+          .from("eventos")
+          .select("*")
+          .order("data", { ascending: false, nullsFirst: false });
+        database.eventos = eventosRes.data || [];
+      } catch { database.eventos = []; }
 
       try {
         const vendedoresRes = await supabaseClient.from("vendedores").select("*").order("nome");
@@ -923,7 +1027,6 @@ Deseja adicionar esse frete ao Valor Final?`)) {
         .then(() => loadSellerExtras())
         .then(() => {
           try { renderSellerInventory(); } catch (error) { console.warn("Falha ao renderizar estoque do vendedor:", error); }
-          try { renderSellerLots(); } catch (error) { console.warn("Falha ao renderizar lotes do vendedor:", error); }
         })
         .catch((error) => console.warn("Recursos extras do vendedor indisponíveis:", error));
     } catch (error) {
@@ -1380,6 +1483,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     setInputValue('cfg-taxa-km', Number(cfg.taxa_por_km || 1));
     setInputValue('cfg-gratis-km', Number(cfg.entrega_gratis_km ?? 3));
     setInputValue('cfg-frete-minimo', Number(cfg.frete_minimo || 0));
+    setInputValue('cfg-frete-ativo', cfg.frete_ativo === true);
     setInputValue('cfg-limite-itens', Number(cfg.limite_itens_pedido || 30));
     setInputValue('cfg-limite-por-pizza', Number(cfg.limite_por_pizza || 20));
     setInputValue('cfg-cidades-atendidas', normalizeConfigArray(cfg.cidades_atendidas));
@@ -1392,6 +1496,14 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     setInputValue('cfg-pix-key', cfg.pix_key || '');
     setInputValue('cfg-pix-name', cfg.pix_name || '');
     setInputValue('cfg-pix-city', cfg.pix_city || '');
+    // A chave Pix cadastrada é de uma pessoa. Só os clientes dela recebem o
+    // código na loja; os outros combinam o Pix com o vendedor que os atende.
+    const pixVendorSelect = document.getElementById('cfg-pix-vendedor');
+    if (pixVendorSelect) {
+      pixVendorSelect.innerHTML = '<option value="">Todos os vendedores usam essa chave</option>'
+        + database.vendedores.map((v) => `<option value="${escapeAttr(v.id)}">${escapeHTML(v.nome || 'Vendedor')}</option>`).join('');
+      pixVendorSelect.value = cfg.pix_vendedor_id || '';
+    }
     setInputValue('cfg-texto-checkout', cfg.texto_checkout || '');
     setInputValue('cfg-texto-retirada', cfg.texto_retirada || '');
     setInputValue('cfg-texto-entrega', cfg.texto_entrega || '');
@@ -1413,6 +1525,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     taxa_por_km: getNumberValue(getInputValue('cfg-taxa-km'), 1),
     entrega_gratis_km: getNumberValue(getInputValue('cfg-gratis-km'), 3),
     frete_minimo: getNumberValue(getInputValue('cfg-frete-minimo'), 0),
+    frete_ativo: getCheckboxValue('cfg-frete-ativo'),
     limite_itens_pedido: Math.max(1, parseInt(getInputValue('cfg-limite-itens'), 10) || 30),
     limite_por_pizza: Math.max(1, parseInt(getInputValue('cfg-limite-por-pizza'), 10) || 20),
     cidades_atendidas: normalizeConfigArray(getInputValue('cfg-cidades-atendidas')),
@@ -1425,6 +1538,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     pix_key: getInputValue('cfg-pix-key').trim(),
     pix_name: getInputValue('cfg-pix-name').trim(),
     pix_city: getInputValue('cfg-pix-city').trim(),
+    pix_vendedor_id: getInputValue('cfg-pix-vendedor') || null,
     texto_checkout: getInputValue('cfg-texto-checkout').trim(),
     texto_retirada: getInputValue('cfg-texto-retirada').trim(),
     texto_entrega: getInputValue('cfg-texto-entrega').trim(),
@@ -1462,12 +1576,12 @@ Deseja adicionar esse frete ao Valor Final?`)) {
 
     confirmList.innerHTML = aguardando.length
       ? `<div class="loja-list">${aguardando.slice(0, 12).map((p) => {
-          const resumo = (p.items || []).slice(0, 3).map((it) => `${it.qtd}x ${it.pizzaNome}`).join(" · ") || "Sem itens";
+          const resumo = (p.items || []).slice(0, 3).map(renderItemPedidoTexto).join(" · ") || "Sem itens";
           return `<article class="loja-item">
             <div class="loja-item-main">
               <strong>${escapeHTML(p.cliente || "Cliente")}</strong>
               <span>${escapeHTML(formatPedidoAgenda(p))} · ${escapeHTML(getMetodoEntregaLabel(p))}</span>
-              <small>${escapeHTML(resumo)}${(p.items || []).length > 3 ? ` · +${(p.items || []).length - 3} item(ns)` : ""}</small>
+              <small>${resumo}${(p.items || []).length > 3 ? ` · +${(p.items || []).length - 3} item(ns)` : ""}</small>
             </div>
             <div class="loja-item-actions">
               <button class="action-btn confirm-btn" onclick="window.updatePedidoStatus('${p.id}', 'Confirmado')">Confirmar</button>
@@ -1523,7 +1637,6 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     renderEstoque();
     try { renderMainStockQuick(); } catch (error) { console.warn("Falha na entrada rápida de estoque:", error); }
     try { renderSellerInventory(); } catch (error) { console.warn("Falha no estoque do vendedor:", error); }
-    try { renderSellerLots(); } catch (error) { console.warn("Falha nos lotes do vendedor:", error); }
     renderReceitas();
 
     applyDefaultPedidosFilters(false);
@@ -1533,6 +1646,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     renderLogisticaAgenda();
     renderPedidoAtalhos();
     renderClientes();
+    try { renderEventos(); } catch (error) { console.warn("Falha ao desenhar os eventos:", error); }
     renderProductionDemand();
     renderWeeklyMassasPanel();
     renderConsultaRapidaSobras();
@@ -1543,6 +1657,15 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     renderDashboard(activeRange);
     refreshNotificationBadge();
     maybeAnnouncePendingOrders();
+    // O celular usa outro shell (#mobile-app) e ninguém o redesenhava aqui: depois
+    // do login a tela ficava EM BRANCO até tocar numa aba, e depois de cada
+    // salvamento continuava mostrando dados velhos. Não redesenha enquanto o
+    // usuário digita ali dentro, senão o formulário aberto perderia o que foi
+    // preenchido.
+    if (isMobileViewport() && !document.body.classList.contains("force-desktop-mobile")) {
+      const digitando = document.getElementById("mobile-screen")?.contains(document.activeElement);
+      if (!digitando) renderMobileApp();
+    }
   };
 
   const populateSelects = (selectElementId) => {
@@ -1554,8 +1677,11 @@ Deseja adicionar esse frete ao Valor Final?`)) {
 
     database.estoque.forEach((p) => {
       const label = p.tamanho ? `${p.nome} (${p.tamanho})` : p.nome;
-      const stockStyle = p.qtd <= 0 ? "color:red;" : "";
-      pizzaEstoqueSelect.innerHTML += `<option value="${p.id}" style="${stockStyle}">${label} (Estoque: ${p.qtd})</option>`;
+      // Mostra o disponivel, e nao so o estoque fisico: era a mesma palavra
+      // "Estoque" com numero diferente do que a tela de sobras mostrava.
+      const disponivel = getPizzaSobraForWeek(p.id);
+      const stockStyle = disponivel <= 0 ? "color:red;" : "";
+      pizzaEstoqueSelect.innerHTML += `<option value="${p.id}" style="${stockStyle}">${label} (disp. ${disponivel} · estoque ${p.qtd || 0})</option>`;
     });
     pizzaEstoqueSelect.innerHTML += '<option value="outro">Outro...</option>';
 
@@ -1700,6 +1826,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     if (tabId === "loja") renderLojaHub();
     if (["vendedor-rapido", "caixa", "producao", "clientes", "cozinha"].includes(tabId) && typeof renderV4Panels === "function") renderV4Panels();
     if (tabId === "cozinha") renderKitchenMode();
+    if (tabId === "eventos") renderEventos();
     if (tabId === "estoque-vendedor") renderSellerInventory();
   };
 
@@ -1900,6 +2027,9 @@ Deseja adicionar esse frete ao Valor Final?`)) {
   window.openModal = openModal;
 
   const closeModal = (modalId) => {
+    // Fechar sem salvar joga fora a foto que acabou de subir, para nao deixar
+    // arquivo solto no Storage.
+    if (modalId === "edit-modal") finalizarControleImagem(false);
     const modal = document.getElementById(modalId);
     if (modal) {
       modal.style.display = "none";
@@ -2131,7 +2261,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
                     <tbody>
             `;
       pedidosCliente.forEach((p) => {
-        const itemsHtml = (p.items || []).map((i) => `<li>${Number(i.qtd || 0)}x ${escapeHTML(i.pizzaNome || "Item")}</li>`).join("");
+        const itemsHtml = (p.items || []).map(renderItemPedidoLi).join("");
         const dateSource = p.dataEntrega || p.created_at || "";
         const startOfWeek = new Date(dateSource.includes("T") ? dateSource : dateSource + "T00:00:00");
         const weekStartFormatted = startOfWeek.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
@@ -2152,6 +2282,54 @@ Deseja adicionar esse frete ao Valor Final?`)) {
   };
 
   document.getElementById("search-clientes")?.addEventListener("input", renderClientes);
+
+  // Pedido do site fica na mesma lista dos manuais — a origem é só uma legenda,
+  // não um motivo para ter uma tela separada.
+  const isPedidoDaLoja = (pedido) => String(pedido?.origem || "").toLowerCase() === "site";
+  const renderOrigemTag = (pedido) => (isPedidoDaLoja(pedido) ? '<small class="origem-tag">Loja online</small>' : "");
+
+  // Cliente de vendedor que agrupa (todos menos o Carlos) nao tem pedido proprio na
+  // lista: o pedido aparece no nome do vendedor, um por data de entrega, e cada
+  // cliente vira uma secao com o numero do pedido dele.
+  const getPedidoLoteId = (pedido) => String(pedido?.lote_vendedor_id || "").trim();
+  const getPedidoCodigoPublico = (pedido) => String(pedido?.codigo_publico || "").trim();
+  const getLotePedidos = (loteId) => database.pedidos.filter((p) => getPedidoLoteId(p) === String(loteId || ""));
+
+  const buildPedidoGrupos = (lista) => {
+    const grupos = [];
+    const porLote = new Map();
+    (lista || []).forEach((pedido) => {
+      const loteId = getPedidoLoteId(pedido);
+      if (!loteId) {
+        grupos.push({ loteId: "", pedidos: [pedido], principal: pedido });
+        return;
+      }
+      const existente = porLote.get(loteId);
+      if (existente) { existente.pedidos.push(pedido); return; }
+      const grupo = { loteId, pedidos: [pedido], principal: pedido };
+      porLote.set(loteId, grupo);
+      grupos.push(grupo);
+    });
+    return grupos;
+  };
+
+  const isGrupoLote = (grupo) => Boolean(grupo?.loteId);
+  const getGrupoValor = (grupo) => grupo.pedidos.reduce((total, p) => total + getPedidoFinalValue(p), 0);
+  const getGrupoPago = (grupo) => {
+    const cobraveis = grupo.pedidos.filter(isPedidoAtivoFinanceiro);
+    return cobraveis.length > 0 && cobraveis.every(isPedidoPago);
+  };
+  const GRUPO_STATUS_ORDEM = ["Pendente", "Confirmado", "Pronto", "Concluído", "Cancelado", "Negado"];
+  const getGrupoStatus = (grupo) => {
+    const todos = grupo.pedidos.map((p) => normalizePedidoStatusValue(p.status) || "Pendente");
+    const emAndamento = todos.filter((status) => !["Cancelado", "Negado"].includes(status));
+    const alvo = emAndamento.length ? emAndamento : todos;
+    return alvo.slice().sort((a, b) => GRUPO_STATUS_ORDEM.indexOf(a) - GRUPO_STATUS_ORDEM.indexOf(b))[0] || "Pendente";
+  };
+  const getGrupoTitulo = (grupo) => isGrupoLote(grupo)
+    ? String(grupo.principal.vendedor || "Vendedor").trim()
+    : String(grupo.principal.cliente || "Cliente").trim();
+  const renderLoteSubtitulo = (grupo) => `<small>Pedido do vendedor · ${grupo.pedidos.length} cliente(s)</small><small class="origem-tag">Loja online</small>`;
 
   const renderPedidos = () => {
     const tbody = document.getElementById("tabela-pedidos")?.querySelector("tbody");
@@ -2211,7 +2389,9 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       updateSortHeaders("tabela-pedidos", column, direction);
       return;
     }
-    filteredData.forEach((p) => {
+    buildPedidoGrupos(filteredData).forEach((grupo) => {
+      if (isGrupoLote(grupo)) { renderLoteRow(tbody, grupo); return; }
+      const p = grupo.principal;
       const row = tbody.insertRow();
       const orderItems = Array.isArray(p.items) ? p.items : [];
       const possuiSecoes = orderItems.some((item) => getItemSecaoCliente(item));
@@ -2223,7 +2403,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       });
       const itemsHtml = Array.from(itemGroups.entries()).map(([groupName, groupItems]) => `
         ${possuiSecoes ? `<li class="pedido-table-section">${escapeHTML(groupName)}</li>` : ""}
-        ${groupItems.map((item) => `<li class="${item.isCustom ? "item-pedido-outro" : ""}">${Number(item.qtd || 0)}x ${escapeHTML(item.pizzaNome || "Item")}</li>`).join("")}
+        ${groupItems.map(renderItemPedidoLi).join("")}
       `).join("") + (p.observacoes ? `<li class="pedido-table-note"><b>Obs.:</b> ${escapeHTML(p.observacoes)}</li>` : "");
       const valorExibido = getPedidoFinalValue(p);
       const descontoInfo = getPedidoDiscountInfo(p);
@@ -2235,7 +2415,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       const freteInfo = normalizeMetodoEntrega(p) === "entrega" ? `<br><small>Frete: ${formatCurrency(p.frete || 0)}${p.distancia_km ? ` · ${Number(p.distancia_km).toFixed(1).replace('.', ',')} km` : ''}</small>` : '';
 
       row.innerHTML = `
-                <td data-label="Cliente">${escapeHTML(p.cliente)}</b><br><small>${escapeHTML(p.telefone || "N/A")}</small></td>
+                <td data-label="Cliente">${escapeHTML(p.cliente)}<br><small>${escapeHTML(p.telefone || "N/A")}</small>${renderOrigemTag(p)}</td>
                 <td data-label="Data/horário"><b>${formatPedidoAgenda(p)}</b><br><small>${p.tipo_pedido === "encomenda" ? "Por encomenda" : "Disponível agora"}</small></td>
                 <td data-label="Itens"><ul style="padding-left:15px;margin:0">${itemsHtml}</ul></td>
                 <td data-label="Entrega/Retirada">${metodoTag}<br><small>Cid.: ${escapeHTML(p.cidade || "-")}<br>${escapeHTML(p.endereco || "-")}</small>${freteInfo}</td>
@@ -2259,6 +2439,166 @@ Deseja adicionar esse frete ao Valor Final?`)) {
   document.getElementById("rota-cidade-filter")?.addEventListener("change", calcularRotaEntregas);
   document.getElementById("rota-data-filter")?.addEventListener("change", calcularRotaEntregas);
   document.getElementById("btn-calcular-rota")?.addEventListener("click", calcularRotaEntregas);
+
+  const renderLoteSecoesHtml = (grupo) => grupo.pedidos.map((p) => {
+    const itens = Array.isArray(p.items) ? p.items : [];
+    const codigo = getPedidoCodigoPublico(p);
+    const status = normalizePedidoStatusValue(p.status) || "Pendente";
+    const resumo = `${status} · ${formatCurrency(getPedidoFinalValue(p))}${isPedidoPago(p) ? " · Pago" : ""}`;
+    return `<li class="pedido-table-section">${escapeHTML(p.cliente || "Cliente")}${codigo ? ` <span class="pedido-secao-codigo">#${escapeHTML(codigo)}</span>` : ""}<small>${escapeHTML(resumo)}</small></li>`
+      + (itens.map(renderItemPedidoLi).join("") || `<li>Sem itens</li>`)
+      + (p.observacoes ? `<li class="pedido-table-note"><b>Obs.:</b> ${escapeHTML(p.observacoes)}</li>` : "");
+  }).join("");
+
+  const renderLoteActionButtons = (grupo) => {
+    const loteId = escapeAttr(grupo.loteId);
+    const pendentes = grupo.pedidos.filter((p) => normalizePedidoStatusValue(p.status) === "Pendente");
+    const podeConfirmar = pendentes.some((p) => !isFutureWeek(getPedidoDataEntrega(p)));
+    const confirmarBtn = podeConfirmar
+      ? `<button class="action-btn confirm-btn" onclick="window.updateLoteStatus('${loteId}', 'Confirmado')">Confirmar todos</button>`
+      : (pendentes.length ? `<button class="action-btn confirm-btn" type="button" disabled title="Fica pendente até a semana de entrega para preservar o estoque atual">Agendado</button>` : "");
+    const prontoBtn = grupo.pedidos.some((p) => normalizePedidoStatusValue(p.status) === "Confirmado")
+      ? `<button class="action-btn" style="background-color:var(--accent-color)" onclick="window.updateLoteStatus('${loteId}', 'Pronto')">Marcar pronto</button>` : "";
+    const pagoBtn = grupo.pedidos.some((p) => isPedidoAtivoFinanceiro(p) && !isPedidoPago(p))
+      ? `<button class="action-btn paid-btn complete-btn" onclick="window.marcarLotePago('${loteId}')">Pago</button>` : "";
+    const concluirBtn = getGrupoPago(grupo) && grupo.pedidos.some((p) => normalizePedidoStatusValue(p.status) === "Pronto")
+      ? `<button class="action-btn complete-btn" onclick="window.updateLoteStatus('${loteId}', 'Concluído')">Concluir</button>` : "";
+    const clientesBtn = `<button class="action-btn edit-btn" onclick="window.openLoteClientes('${loteId}')">Clientes (${grupo.pedidos.length})</button>`;
+    return `${confirmarBtn}${prontoBtn}${pagoBtn}${concluirBtn}${clientesBtn}`;
+  };
+
+  const renderLoteRow = (tbody, grupo) => {
+    const row = tbody.insertRow();
+    const principal = grupo.principal;
+    const statusLote = getGrupoStatus(grupo);
+    const pagoLote = getGrupoPago(grupo);
+    const pedidoMeta = getPedidoStatusMeta({ ...principal, status: statusLote, pago: pagoLote });
+    const atendimentoMeta = getAtendimentoStatusMeta(principal);
+    const metodos = new Set(grupo.pedidos.map((p) => normalizeMetodoEntrega(p)));
+    const metodoTag = metodos.size > 1
+      ? '<span class="payment-tag muted">Entrega e retirada</span>'
+      : (normalizeMetodoEntrega(principal) === "entrega" ? '<span class="payment-tag info">Entrega</span>' : '<span class="payment-tag muted">Retirada</span>');
+    const cidades = Array.from(new Set(grupo.pedidos.map((p) => String(p.cidade || "").trim()).filter(Boolean)));
+    const freteTotal = grupo.pedidos.reduce((total, p) => total + safeNumber(p.frete, 0), 0);
+    const cobraveis = grupo.pedidos.filter(isPedidoAtivoFinanceiro);
+    const pagamentoTag = !cobraveis.length
+      ? '<span class="payment-tag muted">Sem cobrança</span>'
+      : (pagoLote ? '<span class="payment-tag paid">Pago</span>'
+        : (cobraveis.some(isPedidoPago) ? '<span class="payment-tag unpaid">Pagamento parcial</span>' : '<span class="payment-tag unpaid">Pagamento pendente</span>'));
+
+    row.className = "pedido-lote-row";
+    row.innerHTML = `
+                <td data-label="Cliente"><b>${escapeHTML(getGrupoTitulo(grupo))}</b><br>${renderLoteSubtitulo(grupo)}</td>
+                <td data-label="Data/horário"><b>${formatPedidoAgenda(principal)}</b><br><small>Pedidos da loja agrupados nessa data</small></td>
+                <td data-label="Itens"><ul style="padding-left:15px;margin:0">${renderLoteSecoesHtml(grupo)}</ul></td>
+                <td data-label="Entrega/Retirada">${metodoTag}<br><small>Cid.: ${escapeHTML(cidades.join(", ") || "-")}</small>${freteTotal > 0 ? `<br><small>Frete: ${formatCurrency(freteTotal)}</small>` : ""}</td>
+                <td data-label="Valores"><b>${formatCurrency(getGrupoValor(grupo))}</b><br><small class="admin-only">${grupo.pedidos.length} pedido(s) da loja</small><br>${pagamentoTag}</td>
+                <td data-label="Situação">
+                  <div class="status-stack">
+                    <div class="status-row"><span class="status-key">${pedidoMeta.title}</span><span class="status-chip ${pedidoMeta.tone}">${pedidoMeta.label}</span></div>
+                    <div class="status-row"><span class="status-key">${atendimentoMeta.title}</span><span class="status-chip ${atendimentoMeta.tone}">${atendimentoMeta.label}</span></div>
+                  </div>
+                </td>
+                <td data-label="Ações">${renderLoteActionButtons(grupo)}</td>
+            `;
+  };
+
+  const aplicarStatusEmLote = async (pedidos, novoStatus, pergunta) => {
+    if (!pedidos.length) { showSaveStatus("Nenhum pedido desse vendedor precisa dessa mudança agora.", false); return; }
+    if (!confirm(pergunta)) return;
+    showLoader();
+    const falhas = [];
+    let ok = 0;
+    try {
+      for (const pedido of pedidos) {
+        const alvo = novoStatus === "Pronto" && isPedidoPago(pedido) ? "Concluído" : novoStatus;
+        try {
+          const { error } = await supabaseClient.rpc("atualizar_status_pedido_seguro", {
+            p_pedido_id: pedido.id,
+            p_novo_status: alvo,
+            p_pago: alvo === "Concluído" ? true : null,
+            p_motivo: null,
+          });
+          if (error) throw error;
+          ok += 1;
+        } catch (error) {
+          falhas.push(`${pedido.cliente || "Cliente"}`);
+          console.error("[Sasses Gestão] lote", error);
+        }
+      }
+      showSaveStatus(falhas.length
+        ? `${ok} pedido(s) atualizados. Falhou em: ${falhas.join(", ")}.`
+        : `${ok} pedido(s) do vendedor atualizados.`, !falhas.length);
+      await loadDataFromSupabase();
+    } finally {
+      hideLoader();
+    }
+  };
+
+  window.updateLoteStatus = async (loteId, novoStatus) => {
+    const pedidos = getLotePedidos(loteId);
+    if (!pedidos.length) { showSaveStatus("Esse pedido de vendedor não existe mais.", false); return; }
+    const vendedor = pedidos[0].vendedor || "vendedor";
+    if (novoStatus === "Confirmado") {
+      const alvos = pedidos.filter((p) => normalizePedidoStatusValue(p.status) === "Pendente" && !isFutureWeek(getPedidoDataEntrega(p)));
+      return aplicarStatusEmLote(alvos, "Confirmado", `Confirmar ${alvos.length} pedido(s) de clientes do ${vendedor}?`);
+    }
+    if (novoStatus === "Pronto") {
+      const alvos = pedidos.filter((p) => normalizePedidoStatusValue(p.status) === "Confirmado");
+      return aplicarStatusEmLote(alvos, "Pronto", `Marcar como pronto ${alvos.length} pedido(s) de clientes do ${vendedor}?`);
+    }
+    if (novoStatus === "Concluído") {
+      const alvos = pedidos.filter((p) => normalizePedidoStatusValue(p.status) === "Pronto");
+      return aplicarStatusEmLote(alvos, "Concluído", `Concluir ${alvos.length} pedido(s) de clientes do ${vendedor}?`);
+    }
+    showSaveStatus("Para negar ou cancelar, abra os clientes e escolha o pedido.", false);
+  };
+
+  window.marcarLotePago = async (loteId) => {
+    const alvos = getLotePedidos(loteId).filter((p) => isPedidoAtivoFinanceiro(p) && !isPedidoPago(p));
+    if (!alvos.length) { showSaveStatus("Todos os clientes desse vendedor já estão pagos.", false); return; }
+    const vendedor = alvos[0].vendedor || "vendedor";
+    if (!confirm(`Marcar como pago ${alvos.length} pedido(s) de clientes do ${vendedor}?`)) return;
+    showLoader();
+    try {
+      const prontos = alvos.filter((p) => p.status === "Pronto").map((p) => p.id);
+      const demais = alvos.filter((p) => p.status !== "Pronto").map((p) => p.id);
+      if (prontos.length) {
+        const { error } = await supabaseClient.from("pedidos").update({ pago: true, status: "Concluído" }).in("id", prontos);
+        if (error) throw error;
+      }
+      if (demais.length) {
+        const { error } = await supabaseClient.from("pedidos").update({ pago: true }).in("id", demais);
+        if (error) throw error;
+      }
+      showSaveStatus(`${alvos.length} pedido(s) marcados como pagos.`);
+      await loadDataFromSupabase();
+    } catch (error) {
+      showSaveStatus(formatSupabaseError(error, "Não foi possível marcar como pago"), false);
+    } finally {
+      hideLoader();
+    }
+  };
+
+  window.openLoteClientes = (loteId) => {
+    const pedidos = getLotePedidos(loteId).slice().sort((a, b) => String(a.cliente || "").localeCompare(String(b.cliente || "")));
+    if (!pedidos.length) { showSaveStatus("Esse pedido de vendedor não existe mais.", false); return; }
+    const principal = pedidos[0];
+    const cards = pedidos.map((p) => {
+      const codigo = getPedidoCodigoPublico(p);
+      const meta = getPedidoStatusMeta(p);
+      const itens = (Array.isArray(p.items) ? p.items : []).map(renderItemPedidoLi).join("") || "<li>Sem itens</li>";
+      return `<div class="lote-cliente-card">
+        <div class="lote-cliente-head"><b>${escapeHTML(p.cliente || "Cliente")}</b>${codigo ? `<span class="lote-cliente-code">#${escapeHTML(codigo)}</span>` : ""}<span class="status-chip ${meta.tone}">${meta.label}</span></div>
+        <div class="lote-cliente-meta">${escapeHTML(p.telefone || "sem telefone")} · ${escapeHTML(p.cidade || "-")} · <b>${formatCurrency(getPedidoFinalValue(p))}</b> · ${isPedidoPago(p) ? "Pago" : "Pagamento pendente"}</div>
+        <ul class="lote-cliente-itens">${itens}</ul>
+        ${p.observacoes ? `<p class="lote-cliente-obs"><b>Obs.:</b> ${escapeHTML(p.observacoes)}</p>` : ""}
+        <div class="lote-cliente-acoes">${renderActionButtons(p)}</div>
+      </div>`;
+    }).join("");
+    const conteudo = `<p class="small-muted">Cada bloco é um cliente dentro do pedido do vendedor. As ações valem só para aquele cliente.</p>${cards}`;
+    openModal("history-modal", `Pedido de ${principal.vendedor || "vendedor"} · ${formatDateBR(principal.dataEntrega)}`, conteudo);
+  };
 
   const renderActionButtons = (pedido) => {
     const cancelarBtn = STOCK_RELEASED_STATUSES.includes(pedido.status) ? "" : `<button class="action-btn remove-btn" onclick="window.cancelarPedido('${pedido.id}')">Cancelar</button>`;
@@ -2904,19 +3244,27 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       .filter((pizza) => !sizeFilter || pizza.tamanho === sizeFilter)
       .map((pizza) => {
         const pedidosSemana = Number(pizza.pedidosSemana || 0);
+        const pedidosTotais = Number(pizza.pedidosTotais || 0);
+        const jaSeparadas = Number(pizza.jaSeparadas || 0);
+        const pedidosAtrasados = Number(pizza.pedidosAtrasados || 0);
         const estoqueAtual = Number(pizza.estoqueAtual || 0);
         const quantidadeProduzir = Math.max(0, pedidosSemana - estoqueAtual);
         const sobraProjetada = estoqueAtual - pedidosSemana;
         return {
+          id: pizza.id,
           sabor: `${pizza.nome} (${pizza.tamanho})`,
           pedidosSemana,
+          pedidosTotais,
+          jaSeparadas,
+          pedidosAtrasados,
           quantidade: quantidadeProduzir,
           estoqueAtual,
           sobraProjetada,
         };
       })
-      // Mostra itens com pedido na semana ou estoque disponível. Assim a visão de sobra continua útil.
-      .filter((data) => data.pedidosSemana > 0 || data.estoqueAtual > 0 || data.quantidade > 0);
+      // Sabor pedido na semana aparece mesmo com estoque zerado: era exatamente
+      // ele que sumia da tabela, justo o que mais precisa ser produzido.
+      .filter((data) => data.pedidosTotais > 0 || data.pedidosSemana > 0 || data.estoqueAtual > 0 || data.quantidade > 0 || data.pedidosAtrasados > 0);
 
     const { column, direction } = sortState.demanda;
     productionData.sort((a, b) => {
@@ -2927,18 +3275,38 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     });
     if (direction === "desc") productionData.reverse();
 
+    // Pizza diferente (não cadastrada) não tem linha de estoque, então nunca
+    // entrava nesta tabela — justo ela, que ninguém tem pronta na prateleira.
+    // Vem primeiro e destacada, sem filtro de tamanho: o nome dela é livre.
+    const naoCadastradas = getItensNaoCadastradosDaSemana(selectedWeek);
+
     tbody.innerHTML = "";
-    if (productionData.length === 0) {
+    if (productionData.length === 0 && naoCadastradas.length === 0) {
       tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;">Nenhuma pizza encontrada para a semana selecionada.</td></tr>';
       return;
     }
 
+    naoCadastradas.forEach((data) => {
+      const row = tbody.insertRow();
+      row.classList.add("linha-nao-cadastrada");
+      row.title = "Pizza diferente: não está no cadastro de estoque, precisa ser produzida à parte.";
+      row.innerHTML = `
+                <td data-label="Sabor da Pizza">${marcarNomeNaoCadastrado(escapeHTML(data.nome))}<br><small>Pedida por: ${escapeHTML(data.clientes.join(", "))}</small></td>
+                <td data-label="Quantidade a Produzir" class="low-stock"><b>${data.qtd}x</b></td>
+                <td data-label="Estoque Atual">—</td>
+                <td data-label="Sobra Projetada">—</td>
+            `;
+    });
+
     productionData.forEach((data) => {
       const row = tbody.insertRow();
+      row.dataset.pizzaId = data.id;
+      row.classList.add("linha-clicavel");
+      row.title = "Ver quais pedidos estão com esse estoque";
       const surplusClass = data.sobraProjetada < 0 ? "low-stock" : "";
       const produzirClass = data.quantidade > 0 ? "low-stock" : "";
       row.innerHTML = `
-                <td data-label="Sabor da Pizza">${data.sabor}<br><small>Pedidos na semana: ${data.pedidosSemana}x</small></td>
+                <td data-label="Sabor da Pizza">${data.sabor}<br><small>Pedidos na semana: ${data.pedidosTotais}x${data.jaSeparadas ? ` · ${data.jaSeparadas} já saíram do estoque` : ""}${data.pedidosAtrasados ? ` · <b class="low-stock">${data.pedidosAtrasados} reservada(s) para pedido atrasado</b>` : ""}</small></td>
                 <td data-label="Quantidade a Produzir" class="${produzirClass}"><b>${data.quantidade}x</b></td>
                 <td data-label="Estoque Atual">${data.estoqueAtual}</td>
                 <td data-label="Sobra Projetada" class="${surplusClass}"><b>${data.sobraProjetada}</b></td>
@@ -2957,6 +3325,11 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
         document.getElementById("pedido-endereco").value = cliente.endereco || "";
       }
     }
+  });
+
+  document.getElementById("tabela-demanda-producao")?.querySelector("tbody")?.addEventListener("click", (event) => {
+    const linha = event.target.closest("tr[data-pizza-id]");
+    if (linha) window.openEstoqueReserva(linha.dataset.pizzaId);
   });
 
   document.getElementById("filter-demanda-tamanho")?.addEventListener("input", renderProductionDemand);
@@ -3105,11 +3478,12 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
 
     box.innerHTML = pizzas.map((item) => {
       const qtd = Number(item.qtd || 0);
+      const disponivel = getPizzaSobraForWeek(item.id);
       const tamanho = item.tamanho ? escapeHTML(item.tamanho) : "Tamanho único";
       return `<article class="main-stock-quick-item ${qtd <= 0 ? "is-empty" : ""}">
         <div class="main-stock-quick-copy">
           <b title="${escapeAttr(item.nome || "")}">${escapeHTML(item.nome || "")}</b>
-          <small>${tamanho} · estoque atual: <strong>${qtd}</strong></small>
+          <small>${tamanho} · estoque atual: <strong>${qtd}</strong>${disponivel !== qtd ? ` · disponível: <strong>${disponivel}</strong>` : ""}</small>
         </div>
         <div class="main-stock-quick-actions" aria-label="Adicionar ${escapeAttr(item.nome || "")} ao estoque">
           <button type="button" class="secondary-btn" onclick="window.quickAddMainStock('${escapeAttr(item.id)}', 1)">+1</button>
@@ -3172,6 +3546,10 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     });
     if (direction === "desc") filteredData.reverse();
 
+    // Mesma conta da aba Início e da mensagem de disponíveis: estoque físico
+    // menos o que já está prometido para a semana e ainda não baixou.
+    const demandaSemana = computePizzaDemandForWeek(getWeekStart());
+
     tbody.innerHTML = "";
     filteredData.forEach((item) => {
       const custo = calculatePizzaCost(item.id);
@@ -3180,10 +3558,11 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       if (item.qtd <= 0) row.classList.add("low-stock");
       // O selo de visibilidade é um botão: alternar visível/oculto era o ajuste
       // mais repetido da tela e exigia abrir o modal de edição só para isso.
+      const disponivel = Number(item.qtd || 0) - Number(demandaSemana[item.id] || 0);
       const visivel = item.visivel_loja !== false;
       const lojaTag = `<button type="button" class="payment-tag toggle-tag ${visivel ? "paid" : "unpaid"}" onclick="window.toggleVisivelLoja('${item.id}')" title="${visivel ? "Clique para ocultar da loja" : "Clique para mostrar na loja"}" aria-pressed="${visivel}">${visivel ? "Visível" : "Oculto"}</button>`;
       const imgTag = item.imagem_url ? '<span class="payment-tag info">Imagem</span>' : '';
-      row.innerHTML = `<td data-label="Sabor da Pizza">${escapeHTML(item.nome)}</td><td data-label="Tamanho">${escapeHTML(item.tamanho || "N/A")}</td><td data-label="Qtd.">${item.qtd}</td><td data-label="Custo Produção" class="admin-only">${formatCurrency(custo)}</td><td data-label="Preço Venda">${formatCurrency(item.precoVenda)}</td><td data-label="Loja">${lojaTag}${imgTag}<small class="shop-meta-preview">${escapeHTML(item.categoria_loja || "Pizzas")}</small></td><td data-label="Lucro Bruto" class="admin-only" style="color:${lucro >= 0 ? "green" : "red"};font-weight:bold;">${formatCurrency(lucro)}</td><td data-label="Ações"><button class="action-btn edit-btn" onclick="window.editEstoque('${item.id}')">Editar</button><button class="action-btn remove-btn" onclick="window.removeEstoque('${item.id}')">Remover</button></td>`;
+      row.innerHTML = `<td data-label="Sabor da Pizza">${escapeHTML(item.nome)}</td><td data-label="Tamanho">${escapeHTML(item.tamanho || "N/A")}</td><td data-label="Qtd.">${item.qtd}</td><td data-label="Disponível" class="${disponivel < 0 ? "low-stock" : ""}"><b>${disponivel}</b></td><td data-label="Custo Produção" class="admin-only">${formatCurrency(custo)}</td><td data-label="Preço Venda">${formatCurrency(item.precoVenda)}</td><td data-label="Loja">${lojaTag}${imgTag}<small class="shop-meta-preview">${escapeHTML(item.categoria_loja || "Pizzas")}</small></td><td data-label="Lucro Bruto" class="admin-only" style="color:${lucro >= 0 ? "green" : "red"};font-weight:bold;">${formatCurrency(lucro)}</td><td data-label="Ações"><button class="action-btn edit-btn" onclick="window.editEstoque('${item.id}')">Editar</button><button class="action-btn remove-btn" onclick="window.removeEstoque('${item.id}')">Remover</button></td>`;
     });
     updateSortHeaders("tabela-estoque", column, direction);
   };
@@ -3245,6 +3624,240 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     }
   });
 
+  // === Foto do produto ============================================
+  // O arquivo vive no Storage do Supabase (cota separada do banco); a tabela
+  // estoque guarda so a URL. Link colado de fora e baixado pela funcao
+  // importar-imagem-produto e regravado aqui, senao a loja recusa por seguranca.
+  const IMAGEM_BUCKET = "produtos";
+  const IMAGEM_LADO_MAX = 900;
+  const IMAGEM_QUALIDADE = 0.82;
+  let descartarImagemPendente = null;
+
+  const caminhoNoBucket = (url) => {
+    const marca = `/storage/v1/object/public/${IMAGEM_BUCKET}/`;
+    const texto = String(url || "");
+    const pos = texto.indexOf(marca);
+    return pos === -1 ? "" : decodeURIComponent(texto.slice(pos + marca.length).split("?")[0]);
+  };
+
+  const apagarDoBucket = async (caminhos) => {
+    const lista = [...new Set((caminhos || []).filter(Boolean))];
+    if (!lista.length) return;
+    try {
+      await supabaseClient.storage.from(IMAGEM_BUCKET).remove(lista);
+    } catch (_) {
+      /* arquivo orfao nao pode travar o fluxo do usuario */
+    }
+  };
+
+  const nomeArquivoImagem = (nome, extensao) => {
+    const base = String(nome || "produto")
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "produto";
+    return `${base}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}.${extensao}`;
+  };
+
+  const carregarImagemDoArquivo = async (file) => {
+    if (typeof createImageBitmap === "function") {
+      try {
+        return await createImageBitmap(file, { imageOrientation: "from-image" });
+      } catch (_) {
+        /* navegador antigo: cai no <img> abaixo */
+      }
+    }
+    return await new Promise((resolve, reject) => {
+      const endereco = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => { URL.revokeObjectURL(endereco); resolve(img); };
+      img.onerror = () => { URL.revokeObjectURL(endereco); reject(new Error("Não consegui abrir esse arquivo como imagem.")); };
+      img.src = endereco;
+    });
+  };
+
+  const gerarBlob = (canvas, tipo) => new Promise((resolve) => canvas.toBlob(resolve, tipo, IMAGEM_QUALIDADE));
+
+  const comprimirImagem = async (file) => {
+    const fonte = await carregarImagemDoArquivo(file);
+    const largura = fonte.width || fonte.naturalWidth;
+    const altura = fonte.height || fonte.naturalHeight;
+    if (!largura || !altura) throw new Error("Não consegui ler as medidas dessa imagem.");
+    const escala = Math.min(1, IMAGEM_LADO_MAX / Math.max(largura, altura));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(largura * escala);
+    canvas.height = Math.round(altura * escala);
+    canvas.getContext("2d").drawImage(fonte, 0, 0, canvas.width, canvas.height);
+    if (typeof fonte.close === "function") fonte.close();
+    let blob = await gerarBlob(canvas, "image/webp");
+    if (!blob || blob.type !== "image/webp") blob = await gerarBlob(canvas, "image/jpeg");
+    if (!blob) throw new Error("Não consegui preparar essa imagem.");
+    return { blob, extensao: blob.type === "image/webp" ? "webp" : "jpg" };
+  };
+
+  const finalizarControleImagem = async (salvou) => {
+    const descartar = descartarImagemPendente;
+    descartarImagemPendente = null;
+    if (descartar) await descartar(salvou);
+  };
+
+  const montarControleImagem = (item) => {
+    const raiz = document.getElementById("imagem-produto");
+    if (!raiz) return;
+    const valor = document.getElementById("imagem-produto-valor");
+    const foto = raiz.querySelector(".imagem-produto-preview img");
+    const vazio = raiz.querySelector(".imagem-produto-vazio");
+    const status = document.getElementById("imagem-produto-status");
+    const botaoRemover = document.getElementById("imagem-produto-remover");
+    const campoArquivo = document.getElementById("imagem-produto-arquivo");
+    const campoUrl = document.getElementById("imagem-produto-url");
+    const original = String(item.imagem_url || "").trim();
+    const enviados = [];
+
+    const avisar = (texto, tipo = "") => {
+      status.textContent = texto || "";
+      status.className = `imagem-produto-status${tipo ? " " + tipo : ""}`;
+    };
+
+    const mostrar = (url) => {
+      valor.value = url || "";
+      if (url) {
+        foto.src = url;
+        foto.hidden = false;
+        vazio.hidden = true;
+      } else {
+        foto.removeAttribute("src");
+        foto.hidden = true;
+        vazio.hidden = false;
+      }
+      botaoRemover.hidden = !url;
+    };
+
+    const travar = (ocupado) => {
+      raiz.querySelectorAll("button, input").forEach((el) => {
+        if (el !== valor) el.disabled = ocupado;
+      });
+      raiz.classList.toggle("is-ocupado", ocupado);
+    };
+
+    // Arquivo escolhido e link importado terminam no mesmo lugar: reduzidos
+    // para no maximo 900px e gravados no bucket em webp.
+    const guardarImagem = async (origem, rotulo) => {
+      avisar("Preparando a foto…");
+      const { blob, extensao } = await comprimirImagem(origem);
+      const kb = Math.max(1, Math.round(blob.size / 1024));
+      avisar(`Enviando ${kb} KB…`);
+      const caminho = nomeArquivoImagem(item.nome, extensao);
+      const { error } = await supabaseClient.storage
+        .from(IMAGEM_BUCKET)
+        .upload(caminho, blob, { contentType: blob.type, cacheControl: "31536000", upsert: false });
+      if (error) throw new Error(error.message || "Falha ao enviar.");
+      enviados.push(caminho);
+      const { data } = supabaseClient.storage.from(IMAGEM_BUCKET).getPublicUrl(caminho);
+      mostrar(data.publicUrl);
+      avisar(`${rotulo} · ${kb} KB. Agora salve a pizza.`, "ok");
+    };
+
+    const enviarArquivo = async (file) => {
+      if (!file) return;
+      travar(true);
+      try {
+        await guardarImagem(file, "Foto pronta");
+      } catch (erro) {
+        avisar(erro.message || "Não consegui enviar essa foto.", "erro");
+      } finally {
+        travar(false);
+        campoArquivo.value = "";
+      }
+    };
+
+    // O navegador nao consegue ler os pixels de uma imagem de outro site (CORS),
+    // por isso quem baixa e a funcao importar-imagem-produto.
+    const importarLink = async () => {
+      const endereco = String(campoUrl.value || "").trim();
+      if (!endereco) {
+        avisar("Cole o endereço da imagem primeiro.", "erro");
+        return;
+      }
+      travar(true);
+      avisar("Buscando a imagem nesse endereço…");
+      try {
+        const { data: sessao } = await supabaseClient.auth.getSession();
+        const token = sessao?.session?.access_token;
+        if (!token) throw new Error("Sua sessão expirou. Entre de novo.");
+        const resposta = await fetch(`${window.SASSES_SUPABASE_CONFIG.url}/functions/v1/importar-imagem-produto`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            apikey: window.SASSES_SUPABASE_CONFIG.anonKey,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ url: endereco }),
+        });
+        if (!resposta.ok) {
+          let mensagem = "";
+          try {
+            mensagem = (await resposta.json())?.erro || "";
+          } catch (_) {
+            /* resposta sem corpo JSON */
+          }
+          throw new Error(mensagem || "Não consegui buscar essa imagem.");
+        }
+        await guardarImagem(await resposta.blob(), "Imagem copiada para a loja");
+        campoUrl.value = "";
+      } catch (erro) {
+        avisar(erro.message || "Não consegui buscar essa imagem.", "erro");
+      } finally {
+        travar(false);
+      }
+    };
+
+    raiz.querySelectorAll(".imagem-modo").forEach((botao) => {
+      botao.addEventListener("click", () => {
+        const modo = botao.dataset.modo;
+        raiz.querySelectorAll(".imagem-modo").forEach((b) => b.classList.toggle("is-active", b === botao));
+        raiz.querySelectorAll(".imagem-produto-campo").forEach((campo) => {
+          campo.hidden = campo.dataset.campo !== modo;
+        });
+        avisar("");
+      });
+    });
+
+    document.getElementById("imagem-produto-escolher").addEventListener("click", () => campoArquivo.click());
+    campoArquivo.addEventListener("change", () => enviarArquivo(campoArquivo.files?.[0]));
+    document.getElementById("imagem-produto-buscar").addEventListener("click", importarLink);
+    campoUrl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        importarLink();
+      }
+    });
+    botaoRemover.addEventListener("click", () => {
+      mostrar("");
+      avisar("A foto sai do cardápio quando você salvar a pizza.");
+    });
+    foto.addEventListener("error", () => {
+      if (!status.textContent) avisar("Essa imagem não abriu. Envie a foto ou cole outro endereço.", "erro");
+    });
+
+    mostrar(original);
+    if (original && !caminhoNoBucket(original)) {
+      avisar("Essa foto está hospedada fora da loja, e por isso o cardápio não mostra ela. Envie o arquivo ou cole o link direto da imagem para trazer ela para cá.", "erro");
+    } else {
+      avisar("");
+    }
+
+    descartarImagemPendente = async (salvou) => {
+      if (!salvou) {
+        await apagarDoBucket(enviados);
+        return;
+      }
+      const atual = caminhoNoBucket(valor.value);
+      const lixo = enviados.filter((caminho) => caminho !== atual);
+      const antigo = caminhoNoBucket(original);
+      if (antigo && antigo !== atual) lixo.push(antigo);
+      await apagarDoBucket(lixo);
+    };
+  };
+
   window.editEstoque = (id) => {
     const item = database.estoque.find((p) => p.id === id);
     if (!item) return;
@@ -3291,9 +3904,36 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
             <label class="edit-wide">Descrição curta
               <textarea name="descricao_loja" rows="3" maxlength="240" placeholder="Ex.: Molho artesanal, queijo e calabresa.">${escapeHTML(item.descricao_loja || "")}</textarea>
             </label>
-            <label class="edit-wide">Imagem do produto (URL)
-              <input type="url" name="imagem_url" value="${escapeAttr(item.imagem_url || "")}" placeholder="https://...">
-            </label>
+            <div class="edit-wide imagem-produto" id="imagem-produto">
+              <span class="imagem-produto-titulo">Foto do sabor <small>É ela que aparece no cardápio da loja</small></span>
+              <div class="imagem-produto-corpo">
+                <div class="imagem-produto-preview">
+                  <img alt="" hidden>
+                  <span class="imagem-produto-vazio">Sem foto</span>
+                </div>
+                <div class="imagem-produto-controles">
+                  <div class="imagem-produto-modos" role="group" aria-label="Como colocar a foto">
+                    <button type="button" class="imagem-modo is-active" data-modo="arquivo">Enviar foto</button>
+                    <button type="button" class="imagem-modo" data-modo="url">Colar link</button>
+                  </div>
+                  <div class="imagem-produto-campo" data-campo="arquivo">
+                    <input type="file" id="imagem-produto-arquivo" accept="image/jpeg,image/png,image/webp" hidden>
+                    <button type="button" class="action-btn info-btn" id="imagem-produto-escolher">Escolher foto</button>
+                    <small>Do computador ou do celular. A foto é reduzida antes de subir.</small>
+                  </div>
+                  <div class="imagem-produto-campo" data-campo="url" hidden>
+                    <div class="imagem-produto-url-linha">
+                      <input type="url" id="imagem-produto-url" placeholder="https://.../foto.jpg" autocomplete="off">
+                      <button type="button" class="action-btn info-btn" id="imagem-produto-buscar">Usar</button>
+                    </div>
+                    <small>Precisa ser o endereço da imagem em si (termina em .jpg, .png ou .webp), não o da página.</small>
+                  </div>
+                  <p class="imagem-produto-status" id="imagem-produto-status" role="status" aria-live="polite"></p>
+                  <button type="button" class="action-btn danger-btn" id="imagem-produto-remover" hidden>Remover foto</button>
+                </div>
+              </div>
+              <input type="hidden" name="imagem_url" id="imagem-produto-valor" value="${escapeAttr(item.imagem_url || "")}">
+            </div>
           </div>
           <div class="edit-grid two loja-checks">
             <label class="check-row"><input type="checkbox" name="visivel_loja" ${item.visivel_loja === false ? "" : "checked"}> <span>Mostrar este sabor na loja</span></label>
@@ -3309,6 +3949,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       </form>
     `;
     openModal("edit-modal", `Editar pizza · ${item.nome || ""}`, formHTML, () => {
+      montarControleImagem(item);
       const precoInput = document.querySelector("#edit-estoque-form [name='precoVenda']");
       const updatePreview = () => {
         const preco = safeNumber(precoInput?.value);
@@ -3346,6 +3987,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
           showSaveStatus("Erro ao atualizar: " + error.message, false);
         } else {
           showSaveStatus("Pizza salva!");
+          await finalizarControleImagem(true);
           closeModal("edit-modal");
           await loadDataFromSupabase();
         }
@@ -3791,7 +4433,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     container.innerHTML = pedidoEditItems.map((item, index) => `
       <div class="edit-line-item order-line">
         <label>Item
-          <input type="text" value="${escapeAttr(item.pizzaNome || "")}" onchange="window.updateEditItemField(${index}, 'pizzaNome', this.value)">
+          <input type="text" value="${escapeAttr(getItemNomeExibicao(item))}" onchange="window.updateEditItemField(${index}, 'pizzaNome', this.value)">
         </label>
         <label>Qtd
           <input type="number" value="${Number(item.qtd || 1)}" min="1" onchange="window.updateEditItemField(${index}, 'qtd', this.value)">
@@ -3996,53 +4638,189 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     }
   };
 
-  const computePizzaDemandForWeek = (weekStart, options = {}) => {
+  // Um lugar so decide se o pedido entra na conta da semana. A tabela, a sobra e o
+  // modal "quem esta segurando" leem daqui, senao os tres voltam a divergir.
+  const filtrarPedidosDaDemanda = (weekStart, options = {}) => {
     const {
       statuses = ORDER_STATUSES_HOLDING_AVAILABILITY,
-      asMap = false,
+      // Por padrão só conta o que ainda vai sair do estoque (base da sobra).
+      // Com incluirBaixados a conta vira "quanto foi pedido nessa semana",
+      // que é o número que a tabela de produção e o histórico precisam.
+      incluirBaixados = false,
+      // Com false a conta fica so na semana escolhida: e assim que a gente
+      // descobre quanto do "falta separar" vem de pedido atrasado.
+      incluirAtrasados = true,
     } = options;
 
     const allowedStatuses = new Set(statuses);
     const normalizedWeek = getWeekStart(weekStart);
-    const demand = {};
+    const semanaAtual = normalizedWeek === getWeekStart();
 
-    database.pedidos
-      .filter((p) => {
-        if (!getPedidoDataEntrega(p)) return false;
-        const status = normalizePedidoStatusValue(p.status);
-        if (!allowedStatuses.has(status)) return false;
-        // Pedido já reservado (estoque_baixado) já foi descontado direto de estoque.qtd
-        // na hora da reserva. Contar de novo aqui subtrairia a mesma pizza duas vezes
-        // da disponibilidade/sobra e inflava "precisa produzir".
-        if (p.estoque_baixado === true) return false;
-        // Pedido atendido pelo estoque próprio do vendedor não consome o estoque principal.
-        if (String(p.estoque_origem || "principal").toLowerCase() === "vendedor") return false;
-        return getPedidoWeekStart(p) === normalizedWeek;
-      })
-      .forEach((p) => {
-        (p.items || []).forEach((item) => {
-          if (item.isCustom || !item.pizzaId) return;
-          const qtd = Number(item.qtd || 0);
-          if (!Number.isFinite(qtd) || qtd <= 0) return;
-          demand[item.pizzaId] = (demand[item.pizzaId] || 0) + qtd;
-        });
+    return database.pedidos.filter((p) => {
+      if (!getPedidoDataEntrega(p)) return false;
+      const status = normalizePedidoStatusValue(p.status);
+      if (!allowedStatuses.has(status)) return false;
+      // Pedido já reservado (estoque_baixado) já foi descontado direto de estoque.qtd
+      // na hora da reserva. Contar de novo aqui subtrairia a mesma pizza duas vezes
+      // da disponibilidade/sobra e inflava "precisa produzir".
+      if (!incluirBaixados && p.estoque_baixado === true) return false;
+      // Pedido atendido pelo estoque próprio do vendedor não consome o estoque principal.
+      if (String(p.estoque_origem || "principal").toLowerCase() === "vendedor") return false;
+      const semanaPedido = getPedidoWeekStart(p);
+      if (semanaPedido === normalizedWeek) return true;
+      // Pedido de semana passada que continua ativo e nunca baixou estoque:
+      // a pizza ainda e devida ao cliente, entao ela nao pode aparecer como
+      // livre na semana de hoje. Sem isso o pedido atrasado sumia da conta e
+      // a loja e a mensagem ofereciam pizza que ja tinha dono.
+      return incluirAtrasados && !incluirBaixados && semanaAtual && semanaPedido && semanaPedido < normalizedWeek;
+    });
+  };
+
+  const computePizzaDemandForWeek = (weekStart, options = {}) => {
+    const { asMap = false } = options;
+    const demand = {};
+    filtrarPedidosDaDemanda(weekStart, options).forEach((p) => {
+      (p.items || []).forEach((item) => {
+        if (item.isCustom || !item.pizzaId) return;
+        const qtd = Number(item.qtd || 0);
+        if (!Number.isFinite(qtd) || qtd <= 0) return;
+        demand[item.pizzaId] = (demand[item.pizzaId] || 0) + qtd;
       });
+    });
 
     if (asMap) return new Map(Object.entries(demand));
     return demand;
   };
 
+  // As pizzas não cadastradas da semana, agrupadas por nome — é o equivalente,
+  // para elas, da linha que a tabela de produção monta a partir do estoque.
+  // Usa o mesmo filtro de pedidos da demanda, então some da lista pelo mesmo
+  // motivo que a pizza normal some: o pedido foi separado ou saiu do ar.
+  const getItensNaoCadastradosDaSemana = (weekStart, options = {}) => {
+    const grupos = new Map();
+    filtrarPedidosDaDemanda(weekStart, options).forEach((pedido) => {
+      (pedido.items || []).forEach((item) => {
+        if (!isItemNaoCadastrado(item)) return;
+        const qtd = Number(item.qtd || 0);
+        if (!Number.isFinite(qtd) || qtd <= 0) return;
+        const nome = getItemNomeExibicao(item);
+        const chave = nome.toLowerCase();
+        const grupo = grupos.get(chave) || { nome, qtd: 0, clientes: [], pedidos: 0 };
+        grupo.qtd += qtd;
+        grupo.pedidos += 1;
+        const cliente = String(pedido.cliente || "Cliente").trim();
+        if (!grupo.clientes.includes(cliente)) grupo.clientes.push(cliente);
+        grupos.set(chave, grupo);
+      });
+    });
+    return Array.from(grupos.values()).sort((a, b) => b.qtd - a.qtd || a.nome.localeCompare(b.nome));
+  };
+
+  // Quantas unidades desse sabor o pedido leva (item personalizado nao conta,
+  // ele nao esta amarrado a nenhuma linha do estoque).
+  const contarPizzaNoPedido = (pedido, pizzaId) =>
+    (pedido?.items || []).reduce((soma, item) => {
+      if (item.isCustom || String(item.pizzaId || "") !== String(pizzaId)) return soma;
+      const qtd = Number(item.qtd || 0);
+      return Number.isFinite(qtd) && qtd > 0 ? soma + qtd : soma;
+    }, 0);
+
   const getPizzaWeekStats = (weekStart = getWeekStart(), options = {}) => {
     const statuses = options.statuses || ORDER_STATUSES_HOLDING_AVAILABILITY;
-    const demandByPizza = computePizzaDemandForWeek(weekStart, {
+    const demandByPizza = computePizzaDemandForWeek(weekStart, { statuses });
+    // pedidosTotais = tudo que o cliente pediu para a semana, inclusive o que
+    // já foi separado. Sem ele a tabela de produção mostrava "0 pedidos" numa
+    // semana cheia, porque o pedido some da conta assim que baixa o estoque.
+    const totaisPorPizza = computePizzaDemandForWeek(weekStart, {
+      statuses: STOCK_ACTIVE_STATUSES,
+      incluirBaixados: true,
+    });
+    // Mesma conta do pedidosSemana, mas sem puxar o pedido atrasado. A diferenca
+    // entre os dois e exatamente quanto do estoque esta preso em semana passada.
+    const abertosDaSemana = computePizzaDemandForWeek(weekStart, {
       statuses,
+      incluirAtrasados: false,
     });
     return database.estoque.map((pizza) => {
       const pedidosSemana = Number(demandByPizza[pizza.id] || 0);
+      const pedidosTotais = Number(totaisPorPizza[pizza.id] || 0);
+      const abertosSemana = Number(abertosDaSemana[pizza.id] || 0);
+      const pedidosAtrasados = Math.max(0, pedidosSemana - abertosSemana);
       const estoqueAtual = Number(pizza.qtd || 0);
       const sobraProj = estoqueAtual - pedidosSemana;
-      return { ...pizza, pedidosSemana, estoqueAtual, sobraProj };
+      // jaSeparadas compara com o que e da semana. Usando pedidosSemana cru o
+      // atrasado abatia a conta e escondia pizza que ja tinha saido do estoque.
+      return { ...pizza, pedidosSemana, pedidosTotais, pedidosAtrasados, jaSeparadas: Math.max(0, pedidosTotais - abertosSemana), estoqueAtual, sobraProj };
     });
+  };
+
+  // Clicar no sabor da tabela de produção abre a lista de quem está com aquele
+  // estoque reservado. Era a pergunta que a tabela deixava no ar: "tem 2 em
+  // estoque e sobra 0, então onde estão essas duas?".
+  window.openEstoqueReserva = (pizzaId, weekStart) => {
+    const pizza = database.estoque.find((item) => String(item.id) === String(pizzaId));
+    if (!pizza) {
+      showSaveStatus("Esse sabor não está mais no estoque.", false);
+      return;
+    }
+    const semana = getWeekStart(weekStart || document.getElementById("filter-demanda-semana")?.value || getWeekStart());
+    const nome = `${pizza.nome} (${pizza.tamanho || "?"})`;
+    const comEssaPizza = (lista) => lista
+      .map((pedido) => ({ pedido, qtd: contarPizzaNoPedido(pedido, pizza.id) }))
+      .filter((linha) => linha.qtd > 0);
+
+    // Mesmo filtro da tabela: o que ainda vai sair do estoque nessa semana.
+    const segurando = comEssaPizza(filtrarPedidosDaDemanda(semana))
+      .sort((a, b) => String(getPedidoDataEntrega(a.pedido)).localeCompare(String(getPedidoDataEntrega(b.pedido))));
+    // Já baixados: não seguram mais nada, mas explicam por que o estoque caiu.
+    const jaSairam = comEssaPizza(filtrarPedidosDaDemanda(semana, { statuses: STOCK_ACTIVE_STATUSES, incluirBaixados: true }))
+      .filter((linha) => linha.pedido.estoque_baixado === true)
+      .sort((a, b) => String(getPedidoDataEntrega(a.pedido)).localeCompare(String(getPedidoDataEntrega(b.pedido))));
+    // Vendedor tira do estoque dele, não do principal. Aparece só para não
+    // parecer que o pedido sumiu.
+    const doVendedor = comEssaPizza(database.pedidos.filter((pedido) =>
+      String(pedido.estoque_origem || "principal").toLowerCase() === "vendedor"
+      && ORDER_STATUSES_HOLDING_AVAILABILITY.includes(normalizePedidoStatusValue(pedido.status))
+      && getPedidoWeekStart(pedido) === semana));
+
+    const soma = (lista) => lista.reduce((total, linha) => total + linha.qtd, 0);
+    const estoqueAtual = Number(pizza.qtd || 0);
+    const reservado = soma(segurando);
+    const disponivel = estoqueAtual - reservado;
+
+    const card = (linha) => {
+      const pedido = linha.pedido;
+      const meta = getPedidoStatusMeta(pedido);
+      const codigo = getPedidoCodigoPublico(pedido);
+      const atrasado = getPedidoWeekStart(pedido) < semana;
+      return `<div class="reserva-card${atrasado ? " atrasado" : ""}">
+        <div class="reserva-head">
+          <b class="reserva-qtd">${linha.qtd}x</b>
+          <span class="reserva-cliente">${escapeHTML(pedido.cliente || "Cliente")}</span>
+          ${codigo ? `<span class="lote-cliente-code">#${escapeHTML(codigo)}</span>` : ""}
+          <span class="status-chip ${meta.tone}">${escapeHTML(meta.label)}</span>
+        </div>
+        <div class="reserva-meta">Entrega ${escapeHTML(formatDateBR(getPedidoDataEntrega(pedido)))} · ${escapeHTML(pedido.cidade || "sem cidade")}${atrasado ? " · <b>de semana anterior</b>" : ""}${pedido.vendedor ? ` · vendedor ${escapeHTML(pedido.vendedor)}` : ""}</div>
+      </div>`;
+    };
+
+    const bloco = (titulo, lista, vazio) => `<h3 class="reserva-titulo">${titulo}${lista.length ? ` <small>${soma(lista)} pizza(s) em ${lista.length} pedido(s)</small>` : ""}</h3>`
+      + (lista.length ? lista.map(card).join("") : `<p class="empty-state compact">${vazio}</p>`);
+
+    const conteudo = `
+      <div class="reserva-resumo">
+        <div><span>Estoque físico</span><b>${estoqueAtual}</b></div>
+        <div><span>Reservado</span><b>${reservado}</b></div>
+        <div${disponivel < 0 ? ' class="negativo"' : ""}><span>Disponível</span><b>${disponivel}</b></div>
+      </div>
+      ${bloco("Segurando o estoque", segurando, estoqueAtual > 0
+        ? `Nenhum pedido está segurando esse estoque. ${estoqueAtual} unidade(s) livre(s) para vender.`
+        : "Nenhum pedido está segurando esse estoque.")}
+      ${jaSairam.length ? bloco("Já saíram do estoque nesta semana", jaSairam, "") : ""}
+      ${doVendedor.length ? bloco("Estoque do vendedor (não sai do principal)", doVendedor, "") : ""}
+      <p class="small-muted reserva-rodape">Semana de referência: ${escapeHTML(formatDateBR(semana))}. Pedido de semana anterior que ainda não baixou estoque continua reservado aqui.</p>`;
+
+    openModal("history-modal", `${nome} · quem está com esse estoque`, conteudo);
   };
 
   const getPizzaSobraForWeek = (pizzaId, weekStart = getWeekStart()) => {
@@ -4057,7 +4835,9 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     const pizza = database.estoque.find((p) => p.id === pizzaId);
     const estoque = Number(pizza?.qtd || 0);
     const sobra = getPizzaSobraForWeek(pizzaId, weekStart);
-    return `disp. ${Math.max(0, sobra)} · estoque ${estoque}`;
+    // Sem clamp: se o disponivel esta negativo a venda rapida precisa mostrar
+    // o mesmo numero das outras telas, senao vira um terceiro numero.
+    return `disp. ${sobra} · estoque ${estoque}`;
   };
 
   const generateSobrasMessage = (weekStart = getWeekStart()) => {
@@ -4120,7 +4900,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       if (cardsBox) {
         const top = disponiveis.slice(0, cardLimit);
         cardsBox.innerHTML = top.length
-          ? top.map((p) => `<div class="sobra-card"><strong>${escapeHTML(p.nome)} <span>${escapeHTML(p.tamanho || "")}</span></strong><b>${p.sobraProj}</b><small>estoque ${p.estoqueAtual} · reservado ${p.pedidosSemana}</small></div>`).join("")
+          ? top.map((p) => `<div class="sobra-card"><strong>${escapeHTML(p.nome)} <span>${escapeHTML(p.tamanho || "")}</span></strong><b>${p.sobraProj}</b><small>estoque ${p.estoqueAtual} · falta separar ${p.pedidosSemana}</small></div>`).join("")
           : `<div class="empty-state compact">Nenhuma pizza sobrando para essa semana.</div>`;
       }
 
@@ -4136,7 +4916,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
           return `<tr class="${state}">
             <td data-label="Pizza"><b>${escapeHTML(e.nome)} (${escapeHTML(e.tamanho || "")})</b><br><small>${tag}</small></td>
             <td data-label="Estoque">${e.estoqueAtual}</td>
-            <td data-label="Reservado">${e.pedidosSemana}</td>
+            <td data-label="Falta separar">${e.pedidosSemana}</td>
             <td data-label="Disponível"><b>${e.sobraProj}</b></td>
           </tr>`;
         }).join("") || `<tr><td colspan="4">Nada encontrado.</td></tr>`;
@@ -4403,7 +5183,8 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       if (e.isCustom || !e.pizzaNome) return t;
       const a = Number(calculatePizzaCost(e.pizzaId) || 0);
       const r = (Number(e.preco || 0) - a) * Number(e.qtd || 0);
-      t[e.pizzaNome] = (t[e.pizzaNome] || 0) + r;
+      const nome = getItemNomeExibicao(e);
+      t[nome] = (t[nome] || 0) + r;
       return t;
     }, {});
     const a = Object.keys(e).sort((t, a) => e[a] - e[t]).slice(0, 10);
@@ -4550,7 +5331,10 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       .flatMap((p) => p.items || [])
       .reduce((acc, item) => {
         if (!item.isCustom && item.pizzaNome) {
-          acc[item.pizzaNome] = (acc[item.pizzaNome] || 0) + Number(item.qtd || 0);
+          // Com o tamanho no nome, a Calabresa G da loja para de virar a mesma
+          // linha da Calabresa P lançada pela gestão.
+          const nome = getItemNomeExibicao(item);
+          acc[nome] = (acc[nome] || 0) + Number(item.qtd || 0);
         }
         return acc;
       }, {});
@@ -4666,7 +5450,8 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       orders.forEach(p => {
         p.items?.forEach(i => {
           if (!i.isCustom && i.pizzaNome) {
-            vendas[i.pizzaNome] = (vendas[i.pizzaNome] || 0) + Number(i.qtd || 0);
+            const nome = getItemNomeExibicao(i);
+            vendas[nome] = (vendas[nome] || 0) + Number(i.qtd || 0);
           }
         });
       });
@@ -4843,7 +5628,14 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     const { listTag = "div" } = options;
     return getPedidoItemGroups(pedido).map((group) => {
       const sectionTitle = group.nome ? `<div class="print-section-title">${escapeHTML(group.nome)}</div>` : "";
-      const itemsHtml = group.items.map((item) => `<div>${Number(item.qtd || 0)}x ${escapeHTML(item.pizzaNome || "Item")}</div>`).join("");
+      // No papel a pizza diferente sai em negrito com selo: é a única que não
+      // está pronta em lugar nenhum e a que mais some no meio da lista.
+      const itemsHtml = group.items.map((item) => {
+        const texto = `${Number(item.qtd || 0)}x ${escapeHTML(getItemNomeExibicao(item))}`;
+        return isItemNaoCadastrado(item)
+          ? `<div class="print-item-novo">${texto}<span class="print-item-tag">${ITEM_NAO_CADASTRADO_TAG}</span></div>`
+          : `<div>${texto}</div>`;
+      }).join("");
       return `<${listTag} class="print-order-section">${sectionTitle}${itemsHtml}</${listTag}>`;
     }).join("");
   };
@@ -4891,16 +5683,24 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     const totais = new Map();
     const porMassa = { G: 0, P: 0, PC: 0, Outro: 0 };
     pedidos.forEach((p) => (p.items || []).forEach((item) => {
-      const nome = item.pizzaNome || "Item sem nome";
-      totais.set(nome, (totais.get(nome) || 0) + Number(item.qtd || 0));
+      const nome = getItemNomeExibicao(item);
+      const naoCadastrada = isItemNaoCadastrado(item);
+      const atual = totais.get(nome) || { qtd: 0, naoCadastrada: false };
+      atual.qtd += Number(item.qtd || 0);
+      atual.naoCadastrada = atual.naoCadastrada || naoCadastrada;
+      totais.set(nome, atual);
       const pizza = database.estoque.find((e) => e.id === item.pizzaId);
-      const massa = item.isCustom ? "Outro" : (mapPizzaToDough(pizza) || "Outro");
+      const massa = naoCadastrada ? "Outro" : (mapPizzaToDough(pizza) || "Outro");
       porMassa[massa] = (porMassa[massa] || 0) + Number(item.qtd || 0);
     }));
 
+    // Pizza diferente sobe para o topo da lista e sai em negrito: sem cadastro,
+    // ela não tem massa reservada nem estoque, é produção do zero.
     const pizzasHtml = Array.from(totais.entries())
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .map(([nome, qtd]) => `<tr><td>${escapeHTML(nome)}</td><td>${qtd}</td></tr>`).join("");
+      .sort((a, b) => Number(b[1].naoCadastrada) - Number(a[1].naoCadastrada) || b[1].qtd - a[1].qtd || a[0].localeCompare(b[0]))
+      .map(([nome, info]) => info.naoCadastrada
+        ? `<tr><td class="print-item-novo">${escapeHTML(nome)}<span class="print-item-tag">${ITEM_NAO_CADASTRADO_TAG}</span></td><td class="print-item-novo">${info.qtd}</td></tr>`
+        : `<tr><td>${escapeHTML(nome)}</td><td>${info.qtd}</td></tr>`).join("");
 
     const clientesHtml = pedidos
       .sort((a, b) => String(a.cliente || "").localeCompare(String(b.cliente || "")))
@@ -4920,7 +5720,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
 
     const periodo = document.getElementById("filter-modal-semana")?.selectedOptions?.[0]?.textContent || "Histórico filtrado";
     const html = `<html><head><title>Produção - Sasse's Pizza</title><style>
-      body{font-family:Arial,sans-serif;padding:22px;color:#111;font-size:13px}h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin-top:22px;border-bottom:1px solid #111;padding-bottom:6px}.meta{color:#444;margin-bottom:14px}table{width:100%;border-collapse:collapse;margin-top:8px}th,td{border-bottom:1px solid #ddd;padding:7px;text-align:left;vertical-align:top}th{background:#f1f1f1;text-transform:uppercase;font-size:11px}.qtd{font-size:18px;font-weight:bold}.massas{display:flex;gap:10px;flex-wrap:wrap}.box{border:1px solid #111;padding:10px;min-width:110px}.page-break{page-break-before:always}.print-order-section{margin:0 0 8px}.print-section-title{font-weight:700;background:#f3f3f3;border-left:3px solid #111;padding:3px 6px;margin-bottom:3px}.print-note{margin-top:8px;padding-top:6px;border-top:1px dashed #aaa;font-size:12px}.print-badge{display:inline-block;margin:4px 0 2px;padding:2px 6px;border:1px solid #777;border-radius:999px;font-size:10px;text-transform:uppercase}small{color:#555}@media print{button{display:none}body{padding:0}}
+      body{font-family:Arial,sans-serif;padding:22px;color:#111;font-size:13px}h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin-top:22px;border-bottom:1px solid #111;padding-bottom:6px}.meta{color:#444;margin-bottom:14px}table{width:100%;border-collapse:collapse;margin-top:8px}th,td{border-bottom:1px solid #ddd;padding:7px;text-align:left;vertical-align:top}th{background:#f1f1f1;text-transform:uppercase;font-size:11px}.qtd{font-size:18px;font-weight:bold}.massas{display:flex;gap:10px;flex-wrap:wrap}.box{border:1px solid #111;padding:10px;min-width:110px}.page-break{page-break-before:always}.print-order-section{margin:0 0 8px}.print-section-title{font-weight:700;background:#f3f3f3;border-left:3px solid #111;padding:3px 6px;margin-bottom:3px}.print-note{margin-top:8px;padding-top:6px;border-top:1px dashed #aaa;font-size:12px}.print-badge{display:inline-block;margin:4px 0 2px;padding:2px 6px;border:1px solid #777;border-radius:999px;font-size:10px;text-transform:uppercase}.print-item-novo{font-weight:bold;text-decoration:underline}.print-item-tag{display:inline-block;margin-left:4px;padding:1px 5px;border:1px solid #111;border-radius:999px;font-size:9px;font-weight:bold;text-transform:uppercase;text-decoration:none;letter-spacing:.4px}small{color:#555}@media print{button{display:none}body{padding:0}}
     </style></head><body>
       <h1>Sasse's Pizza — Lista de Produção</h1><div class="meta">${periodo} • ${pedidos.length} pedido(s) • impresso em ${new Date().toLocaleString("pt-BR")}</div>
       <h2>Resumo de massas</h2><div class="massas"><div class="box">G<br><span class="qtd">${porMassa.G}</span></div><div class="box">P<br><span class="qtd">${porMassa.P}</span></div><div class="box">P Chocolate<br><span class="qtd">${porMassa.PC}</span></div><div class="box">Outro<br><span class="qtd">${porMassa.Outro}</span></div></div>
@@ -5011,16 +5811,32 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     const sizeFilter = document.getElementById("filter-demanda-tamanho")?.value || "";
     const dataForExcel = getPizzaWeekStats(weekStart)
       .filter((pizza) => !sizeFilter || pizza.tamanho === sizeFilter)
-      .filter((pizza) => pizza.pedidosSemana > 0 || pizza.estoqueAtual > 0)
+      .filter((pizza) => pizza.pedidosTotais > 0 || pizza.pedidosSemana > 0 || pizza.estoqueAtual > 0)
       .map((pizza) => ({
         Pizza: pizza.nome,
         Tamanho: pizza.tamanho,
+        "Pedidos na semana": pizza.pedidosTotais,
+        "Reservado p/ atrasado": pizza.pedidosAtrasados,
+        "Já saíram do estoque": pizza.jaSeparadas,
         Estoque: pizza.estoqueAtual,
-        Reservado: pizza.pedidosSemana,
+        "Ainda sai do estoque": pizza.pedidosSemana,
         Disponível: pizza.sobraProj,
         "Produzir agora": Math.max(0, pizza.pedidosSemana - pizza.estoqueAtual),
       }));
-    exportToExcel(dataForExcel, "demanda_de_producao");
+    // Mesma regra da tabela: a pizza diferente vai junto, marcada, senão a
+    // planilha diz que a semana está resolvida quando não está.
+    const naoCadastradas = getItensNaoCadastradosDaSemana(weekStart).map((item) => ({
+      Pizza: `${item.nome} [${ITEM_NAO_CADASTRADO_TAG.toUpperCase()}]`,
+      Tamanho: "-",
+      "Pedidos na semana": item.qtd,
+      "Reservado p/ atrasado": 0,
+      "Já saíram do estoque": 0,
+      Estoque: 0,
+      "Ainda sai do estoque": item.qtd,
+      Disponível: 0,
+      "Produzir agora": item.qtd,
+    }));
+    exportToExcel([...naoCadastradas, ...dataForExcel], "demanda_de_producao");
   });
 
   document.getElementById("btn-notificacoes")?.addEventListener("click", window.openNotificationsModal);
@@ -5061,7 +5877,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     const dataLabel = p.dataEntrega ? new Date(p.dataEntrega + "T00:00:00").toLocaleDateString("pt-BR") : "-";
     const semanaLabel = p.dataEntrega ? formatWeekRangeLabel(getWeekStart(p.dataEntrega)) : "-";
     const observacoes = p.observacoes ? `<p class="note"><b>Observações:</b><br>${escapeHTML(p.observacoes)}</p>` : "";
-    const html = `<html><head><title>Pedido</title><style>body{font-family:Arial;padding:20px;font-size:14px}.ticket{max-width:420px}.line{border-top:1px dashed #999;margin:12px 0}h2{margin:0 0 8px}.big{font-size:18px;font-weight:bold}.print-order-section{margin:0 0 10px}.print-section-title{font-weight:700;background:#f1f1f1;border-left:3px solid #111;padding:4px 7px;margin-bottom:4px}.note{padding:8px;background:#f6f6f6}</style></head><body><div class="ticket"><h2>Sasse's Pizza</h2><div class="line"></div><p><b>Cliente:</b> ${escapeHTML(p.cliente || "-")}<br><b>Tel:</b> ${escapeHTML(p.telefone || "-")}<br><b>Cidade:</b> ${escapeHTML(p.cidade || "-")}<br><b>Endereço:</b> ${escapeHTML(p.endereco || "-")}<br><b>Vendedor:</b> ${escapeHTML(p.vendedor || "-")}<br><b>Tipo:</b> ${escapeHTML(getMetodoEntregaLabel(p))}<br><b>Data:</b> ${dataLabel}<br><b>Semana:</b> ${semanaLabel}</p><div class="line"></div>${itens}${observacoes}<div class="line"></div><p class="big">Total: ${formatCurrency(p.valorFinal || p.valorTotal)}</p><p>Pagamento: ${escapeHTML(p.pagamento || "-")} | ${p.pago ? "PAGO" : "PENDENTE"}</p></div><script>window.print(); setTimeout(()=>window.close(),300);<\/script></body></html>`;
+    const html = `<html><head><title>Pedido</title><style>body{font-family:Arial;padding:20px;font-size:14px}.ticket{max-width:420px}.line{border-top:1px dashed #999;margin:12px 0}h2{margin:0 0 8px}.big{font-size:18px;font-weight:bold}.print-order-section{margin:0 0 10px}.print-section-title{font-weight:700;background:#f1f1f1;border-left:3px solid #111;padding:4px 7px;margin-bottom:4px}.print-item-novo{font-weight:bold;text-decoration:underline}.print-item-tag{display:inline-block;margin-left:4px;padding:1px 5px;border:1px solid #111;border-radius:999px;font-size:9px;font-weight:bold;text-transform:uppercase;text-decoration:none;letter-spacing:.4px}.note{padding:8px;background:#f6f6f6}</style></head><body><div class="ticket"><h2>Sasse's Pizza</h2><div class="line"></div><p><b>Cliente:</b> ${escapeHTML(p.cliente || "-")}<br><b>Tel:</b> ${escapeHTML(p.telefone || "-")}<br><b>Cidade:</b> ${escapeHTML(p.cidade || "-")}<br><b>Endereço:</b> ${escapeHTML(p.endereco || "-")}<br><b>Vendedor:</b> ${escapeHTML(p.vendedor || "-")}<br><b>Tipo:</b> ${escapeHTML(getMetodoEntregaLabel(p))}<br><b>Data:</b> ${dataLabel}<br><b>Semana:</b> ${semanaLabel}</p><div class="line"></div>${itens}${observacoes}<div class="line"></div><p class="big">Total: ${formatCurrency(p.valorFinal || p.valorTotal)}</p><p>Pagamento: ${escapeHTML(p.pagamento || "-")} | ${p.pago ? "PAGO" : "PENDENTE"}</p></div><script>window.print(); setTimeout(()=>window.close(),300);<\/script></body></html>`;
     const w = window.open("", "", "width=480,height=760");
     w.document.write(html);
     w.document.close();
@@ -5378,21 +6194,584 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
     exportToExcel(data, "sasses_caixa");
   });
 
-  const getWeeklyPizzaSales = (weekStart) => {
-    const totals = {};
-    database.pedidos
-      .filter((pedido) => {
-        if (!pedido.dataEntrega) return false;
-        return getWeekStart(pedido.dataEntrega) === weekStart && pedidoStatusIn(pedido.status, ["Pendente", "Confirmado", "Pronto", "Concluído"]);
-      })
-      .forEach((pedido) => {
-        (pedido.items || []).forEach((item) => {
-          if (item.isCustom || !item.pizzaId) return;
-          totals[item.pizzaId] = (totals[item.pizzaId] || 0) + Number(item.qtd || 0);
-        });
-      });
-    return totals;
+  /* ==================== EVENTOS ====================
+     Registro livre de festa, casamento, formatura e afins. Nenhum campo e
+     obrigatorio: a ideia e conseguir anotar o evento no momento em que o
+     cliente liga, mesmo sabendo so a data. Pizza de evento NAO mexe no
+     estoque, porque na pratica ela nao passa pelo controle semanal. */
+
+  const EVENTO_STATUS = ["Orçamento", "Confirmado", "Realizado", "Cancelado"];
+  const EVENTO_STATUS_TOM = {
+    "Orçamento": "warning",
+    "Confirmado": "info",
+    "Realizado": "success",
+    "Cancelado": "muted",
   };
+  let eventoMesAtual = null;   // 'YYYY-MM' que o calendario esta mostrando
+  let eventoEditandoId = null;
+
+  // Campo vazio vira null: mandar "" para uma coluna date/int/numeric do
+  // Postgres estoura erro, e o formulario inteiro e opcional.
+  const eventoTexto = (valor) => {
+    const texto = String(valor ?? "").trim();
+    return texto ? texto : null;
+  };
+  const eventoNumero = (valor) => {
+    const texto = String(valor ?? "").trim();
+    if (!texto) return null;
+    const numero = Number(texto.replace(",", "."));
+    return Number.isFinite(numero) ? numero : null;
+  };
+  const eventoInteiro = (valor) => {
+    const numero = eventoNumero(valor);
+    return numero === null ? null : Math.round(numero);
+  };
+  const eventoHora = (valor) => String(valor || "").slice(0, 5) || null;
+  const eventoLista = (evento) => (Array.isArray(evento?.checklist) ? evento.checklist : []);
+  // 0,75 e nao 0.75: o resto do sistema todo usa virgula.
+  const eventoDecimal = (numero) => Number(numero || 0).toFixed(2).replace(".", ",");
+
+  const getEventoNome = (evento) =>
+    eventoTexto(evento?.nome)
+    || eventoTexto(evento?.cliente)
+    || eventoTexto(evento?.tipo)
+    || "Evento sem nome";
+
+  const getEventoStatus = (evento) => {
+    const status = String(evento?.status || "").trim();
+    return EVENTO_STATUS.includes(status) ? status : "Orçamento";
+  };
+
+  const getEventoAReceber = (evento) => {
+    if (evento?.pago === true) return 0;
+    const valor = safeNumber(evento?.valor);
+    if (valor <= 0) return 0;
+    return Math.max(0, valor - safeNumber(evento?.sinal));
+  };
+
+  const formatEventoQuando = (evento) => {
+    if (!evento?.data) return "Sem data";
+    const partes = [formatDateBR(evento.data)];
+    const inicio = eventoHora(evento.hora);
+    const fim = eventoHora(evento.hora_fim);
+    if (inicio && fim) partes.push(`${inicio} às ${fim}`);
+    else if (inicio) partes.push(`a partir das ${inicio}`);
+    else if (fim) partes.push(`até ${fim}`);
+    return partes.join(" · ");
+  };
+
+  const getEventoDiasRestantes = (evento) => {
+    if (!evento?.data) return null;
+    const hoje = parseSafeDate(formatDateToYYYYMMDD(new Date()));
+    const dia = parseSafeDate(evento.data);
+    return Math.round((dia - hoje) / 86400000);
+  };
+
+  const formatEventoContagem = (dias) => {
+    if (dias === null) return "";
+    if (dias === 0) return "é hoje";
+    if (dias === 1) return "é amanhã";
+    if (dias === -1) return "foi ontem";
+    return dias > 0 ? `faltam ${dias} dias` : `foi há ${Math.abs(dias)} dias`;
+  };
+
+  // Todo numero derivado do evento sai daqui, para a tela, o modal e o resumo
+  // do WhatsApp nunca contarem de jeitos diferentes.
+  const getEventoContas = (evento) => {
+    const pessoas = safeNumber(evento?.pessoas);
+    const pizzas = safeNumber(evento?.pizzas);
+    const valor = safeNumber(evento?.valor);
+    const custo = safeNumber(evento?.custo);
+    return {
+      pessoas,
+      pizzas,
+      valor,
+      custo,
+      sinal: safeNumber(evento?.sinal),
+      aReceber: getEventoAReceber(evento),
+      pizzaPorPessoa: pessoas > 0 && pizzas > 0 ? pizzas / pessoas : null,
+      valorPorPessoa: pessoas > 0 && valor > 0 ? valor / pessoas : null,
+      valorPorPizza: pizzas > 0 && valor > 0 ? valor / pizzas : null,
+      lucro: valor > 0 && custo > 0 ? valor - custo : null,
+      margem: valor > 0 && custo > 0 ? (valor - custo) / valor : null,
+    };
+  };
+
+  const renderEventoConta = () => {
+    const box = document.getElementById("evento-conta");
+    if (!box) return;
+    const rascunho = {
+      pessoas: document.getElementById("evento-pessoas")?.value,
+      pizzas: document.getElementById("evento-pizzas")?.value,
+      valor: document.getElementById("evento-valor")?.value,
+      sinal: document.getElementById("evento-sinal")?.value,
+      custo: document.getElementById("evento-custo")?.value,
+      pago: document.getElementById("evento-pago")?.checked,
+    };
+    const c = getEventoContas(rascunho);
+    const partes = [];
+    if (c.pizzaPorPessoa !== null) partes.push(`<span><small>Pizza por pessoa</small><b>${eventoDecimal(c.pizzaPorPessoa)}</b></span>`);
+    if (c.valorPorPessoa !== null) partes.push(`<span><small>Valor por pessoa</small><b>${formatCurrency(c.valorPorPessoa)}</b></span>`);
+    if (c.valorPorPizza !== null) partes.push(`<span><small>Valor por pizza</small><b>${formatCurrency(c.valorPorPizza)}</b></span>`);
+    if (c.aReceber > 0) partes.push(`<span class="alerta"><small>Falta receber</small><b>${formatCurrency(c.aReceber)}</b></span>`);
+    if (c.lucro !== null) partes.push(`<span class="${c.lucro < 0 ? "alerta" : "bom"}"><small>Sobra estimada</small><b>${formatCurrency(c.lucro)} · ${(c.margem * 100).toFixed(0)}%</b></span>`);
+    box.innerHTML = partes.length
+      ? partes.join("")
+      : '<span class="vazio">Preencha pessoas, pizzas ou valor e a conta aparece aqui.</span>';
+  };
+
+  const preencherFormularioEvento = (evento) => {
+    const definir = (id, valor) => {
+      const campo = document.getElementById(id);
+      if (campo) campo.value = valor ?? "";
+    };
+    eventoEditandoId = evento?.id || null;
+    definir("evento-id", evento?.id || "");
+    definir("evento-nome", evento?.nome);
+    definir("evento-tipo", evento?.tipo);
+    definir("evento-status", getEventoStatus(evento || {}));
+    definir("evento-data", evento?.data);
+    definir("evento-hora", eventoHora(evento?.hora));
+    definir("evento-hora-fim", eventoHora(evento?.hora_fim));
+    definir("evento-formato", evento?.formato);
+    definir("evento-cliente", evento?.cliente);
+    definir("evento-telefone", evento?.telefone);
+    definir("evento-local", evento?.local);
+    definir("evento-cidade", evento?.cidade);
+    definir("evento-pessoas", evento?.pessoas);
+    definir("evento-pizzas", evento?.pizzas);
+    definir("evento-valor", evento?.valor);
+    definir("evento-sinal", evento?.sinal);
+    definir("evento-custo", evento?.custo);
+    definir("evento-responsavel", evento?.responsavel);
+    definir("evento-origem", evento?.origem_contato);
+    definir("evento-avaliacao", evento?.avaliacao);
+    definir("evento-sabores", evento?.sabores);
+    definir("evento-observacoes", evento?.observacoes);
+    const pago = document.getElementById("evento-pago");
+    if (pago) pago.checked = evento?.pago === true;
+
+    const titulo = document.getElementById("evento-form-titulo");
+    if (titulo) titulo.textContent = evento?.id ? `Editando: ${getEventoNome(evento)}` : "Novo evento";
+    const salvar = document.getElementById("evento-salvar");
+    if (salvar) salvar.textContent = evento?.id ? "Salvar alterações" : "Salvar evento";
+    document.getElementById("evento-cancelar-edicao")?.classList.toggle("hidden", !evento?.id);
+    renderEventoConta();
+  };
+
+  const limparFormularioEvento = () => preencherFormularioEvento(null);
+
+  const lerFormularioEvento = () => ({
+    nome: eventoTexto(document.getElementById("evento-nome")?.value),
+    tipo: eventoTexto(document.getElementById("evento-tipo")?.value),
+    status: getEventoStatus({ status: document.getElementById("evento-status")?.value }),
+    data: eventoTexto(document.getElementById("evento-data")?.value),
+    hora: eventoHora(document.getElementById("evento-hora")?.value),
+    hora_fim: eventoHora(document.getElementById("evento-hora-fim")?.value),
+    formato: eventoTexto(document.getElementById("evento-formato")?.value),
+    cliente: eventoTexto(document.getElementById("evento-cliente")?.value),
+    telefone: eventoTexto(document.getElementById("evento-telefone")?.value),
+    local: eventoTexto(document.getElementById("evento-local")?.value),
+    cidade: eventoTexto(document.getElementById("evento-cidade")?.value),
+    pessoas: eventoInteiro(document.getElementById("evento-pessoas")?.value),
+    pizzas: eventoInteiro(document.getElementById("evento-pizzas")?.value),
+    valor: eventoNumero(document.getElementById("evento-valor")?.value),
+    sinal: eventoNumero(document.getElementById("evento-sinal")?.value),
+    custo: eventoNumero(document.getElementById("evento-custo")?.value),
+    pago: document.getElementById("evento-pago")?.checked === true,
+    responsavel: eventoTexto(document.getElementById("evento-responsavel")?.value),
+    origem_contato: eventoTexto(document.getElementById("evento-origem")?.value),
+    avaliacao: eventoInteiro(document.getElementById("evento-avaliacao")?.value),
+    sabores: eventoTexto(document.getElementById("evento-sabores")?.value),
+    observacoes: eventoTexto(document.getElementById("evento-observacoes")?.value),
+  });
+
+  const ordenarEventos = (lista) => lista.slice().sort((a, b) => {
+    // Sem data vai para o fim: normalmente e evento que ainda esta sendo
+    // negociado, nao um evento antigo.
+    if (!a.data && !b.data) return getEventoNome(a).localeCompare(getEventoNome(b));
+    if (!a.data) return 1;
+    if (!b.data) return -1;
+    if (a.data !== b.data) return a.data < b.data ? -1 : 1;
+    return String(a.hora || "").localeCompare(String(b.hora || ""));
+  });
+
+  const getEventosFiltrados = () => {
+    const termo = (document.getElementById("evento-busca")?.value || "").toLowerCase().trim();
+    const status = document.getElementById("evento-filtro-status")?.value || "";
+    const periodo = document.getElementById("evento-filtro-periodo")?.value || "proximos";
+    const hoje = formatDateToYYYYMMDD(new Date());
+    return ordenarEventos((database.eventos || []).filter((evento) => {
+      if (status && getEventoStatus(evento) !== status) return false;
+      if (periodo === "proximos" && evento.data && evento.data < hoje) return false;
+      if (periodo === "passados" && (!evento.data || evento.data >= hoje)) return false;
+      if (!termo) return true;
+      return [evento.nome, evento.cliente, evento.local, evento.cidade, evento.tipo,
+              evento.responsavel, evento.sabores, evento.observacoes]
+        .some((campo) => String(campo || "").toLowerCase().includes(termo));
+    }));
+  };
+
+  const renderEventosKpis = () => {
+    const box = document.getElementById("eventos-kpis");
+    if (!box) return;
+    const eventos = database.eventos || [];
+    const hoje = formatDateToYYYYMMDD(new Date());
+    const ano = hoje.slice(0, 4);
+    const vivos = eventos.filter((e) => getEventoStatus(e) !== "Cancelado");
+    const futuros = ordenarEventos(vivos.filter((e) => e.data && e.data >= hoje));
+    const proximo = futuros[0];
+    const confirmados = futuros.filter((e) => getEventoStatus(e) === "Confirmado");
+    const pessoasConfirmadas = confirmados.reduce((total, e) => total + safeNumber(e.pessoas), 0);
+    const pizzasConfirmadas = confirmados.reduce((total, e) => total + safeNumber(e.pizzas), 0);
+    const aReceber = vivos.reduce((total, e) => total + getEventoAReceber(e), 0);
+    const realizadosAno = vivos.filter((e) => getEventoStatus(e) === "Realizado" && String(e.data || "").startsWith(ano));
+    const receitaAno = realizadosAno.reduce((total, e) => total + safeNumber(e.valor), 0);
+    const pessoasAno = realizadosAno.reduce((total, e) => total + safeNumber(e.pessoas), 0);
+
+    const cartoes = [
+      proximo
+        ? `<div class="kpi-card"><span>Próximo evento</span><b>${escapeHTML(getEventoNome(proximo))}</b><small>${escapeHTML(formatEventoQuando(proximo))} · ${escapeHTML(formatEventoContagem(getEventoDiasRestantes(proximo)))}</small></div>`
+        : `<div class="kpi-card"><span>Próximo evento</span><b>—</b><small>Nada agendado</small></div>`,
+      `<div class="kpi-card"><span>Confirmados à frente</span><b>${confirmados.length}</b><small>${pessoasConfirmadas} pessoa(s) · ${pizzasConfirmadas} pizza(s)</small></div>`,
+      `<div class="kpi-card"><span>Falta receber</span><b>${formatCurrency(aReceber)}</b><small>Somando sinal já pago</small></div>`,
+      `<div class="kpi-card"><span>Realizados em ${ano}</span><b>${formatCurrency(receitaAno)}</b><small>${realizadosAno.length} evento(s) · ${pessoasAno} pessoa(s)</small></div>`,
+      `<div class="kpi-card"><span>Eventos registrados</span><b>${eventos.length}</b><small>${eventos.filter((e) => getEventoStatus(e) === "Orçamento").length} ainda em orçamento</small></div>`,
+    ];
+    box.innerHTML = cartoes.join("");
+  };
+
+  const renderEventosCalendario = () => {
+    const box = document.getElementById("evento-calendario");
+    if (!box) return;
+    const hoje = formatDateToYYYYMMDD(new Date());
+    if (!eventoMesAtual) eventoMesAtual = hoje.slice(0, 7);
+    const [ano, mes] = eventoMesAtual.split("-").map(Number);
+    const primeiro = new Date(ano, mes - 1, 1);
+    const label = document.getElementById("evento-mes-label");
+    if (label) {
+      const nome = primeiro.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+      label.textContent = nome.charAt(0).toUpperCase() + nome.slice(1);
+    }
+
+    // Semana comeca na segunda, igual ao resto do sistema.
+    const diaSemana = primeiro.getDay();
+    const recuo = diaSemana === 0 ? 6 : diaSemana - 1;
+    const inicioGrade = new Date(ano, mes - 1, 1 - recuo);
+
+    const porDia = {};
+    (database.eventos || []).forEach((evento) => {
+      if (!evento.data) return;
+      (porDia[evento.data] = porDia[evento.data] || []).push(evento);
+    });
+
+    const cabecalho = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+      .map((dia) => `<div class="evento-cal-cabecalho">${dia}</div>`).join("");
+
+    const celulas = [];
+    for (let i = 0; i < 42; i += 1) {
+      const dia = new Date(inicioGrade.getFullYear(), inicioGrade.getMonth(), inicioGrade.getDate() + i);
+      const iso = formatDateToYYYYMMDD(dia);
+      const foraDoMes = dia.getMonth() !== mes - 1;
+      if (foraDoMes && i >= 35) continue;
+      const doDia = ordenarEventos(porDia[iso] || []);
+      const chips = doDia.map((evento) => {
+        const status = getEventoStatus(evento);
+        const hora = eventoHora(evento.hora);
+        return `<button type="button" class="evento-chip ${EVENTO_STATUS_TOM[status]}" data-evento-id="${escapeAttr(evento.id)}" title="${escapeAttr(`${getEventoNome(evento)} · ${status}`)}">${hora ? `<small>${escapeHTML(hora)}</small>` : ""}${escapeHTML(getEventoNome(evento))}</button>`;
+      }).join("");
+      celulas.push(`<div class="evento-cal-dia${foraDoMes ? " fora" : ""}${iso === hoje ? " hoje" : ""}${doDia.length ? " tem-evento" : ""}">
+        <span class="evento-cal-numero">${dia.getDate()}</span>
+        <div class="evento-cal-lista">${chips}</div>
+      </div>`);
+    }
+
+    box.innerHTML = `<div class="evento-cal-grade">${cabecalho}${celulas.join("")}</div>`;
+  };
+
+  const renderEventosTabela = () => {
+    const tbody = document.querySelector("#tabela-eventos tbody");
+    if (!tbody) return;
+    const lista = getEventosFiltrados();
+    const resumo = document.getElementById("evento-lista-resumo");
+    if (resumo) {
+      const pessoas = lista.reduce((total, e) => total + safeNumber(e.pessoas), 0);
+      const pizzas = lista.reduce((total, e) => total + safeNumber(e.pizzas), 0);
+      const valor = lista.reduce((total, e) => total + safeNumber(e.valor), 0);
+      resumo.textContent = lista.length
+        ? `${lista.length} evento(s) · ${pessoas} pessoa(s) · ${pizzas} pizza(s) · ${formatCurrency(valor)}`
+        : "Nenhum evento com esses filtros.";
+    }
+    if (!lista.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty-row">Nenhum evento por aqui. Registre o primeiro no formulário acima.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = lista.map((evento) => {
+      const status = getEventoStatus(evento);
+      const dias = getEventoDiasRestantes(evento);
+      const aReceber = getEventoAReceber(evento);
+      const contagem = dias !== null && dias >= 0 && status !== "Realizado" ? formatEventoContagem(dias) : "";
+      return `<tr>
+        <td data-label="Evento"><b>${escapeHTML(getEventoNome(evento))}</b>${evento.tipo ? `<br><small>${escapeHTML(evento.tipo)}</small>` : ""}${evento.local || evento.cidade ? `<br><small>${escapeHTML([evento.local, evento.cidade].filter(Boolean).join(" · "))}</small>` : ""}</td>
+        <td data-label="Quando">${escapeHTML(formatEventoQuando(evento))}${contagem ? `<br><small>${escapeHTML(contagem)}</small>` : ""}</td>
+        <td data-label="Pessoas">${evento.pessoas ?? "—"}</td>
+        <td data-label="Pizzas">${evento.pizzas ?? "—"}</td>
+        <td data-label="Valor">${evento.valor === null || evento.valor === undefined ? "—" : formatCurrency(evento.valor)}${aReceber > 0 ? `<br><small class="low-stock">falta ${formatCurrency(aReceber)}</small>` : (evento.pago ? '<br><small>pago</small>' : "")}</td>
+        <td data-label="Situação"><span class="status-chip ${EVENTO_STATUS_TOM[status]}">${escapeHTML(status)}</span></td>
+        <td data-label="Ações">
+          <button class="action-btn info-btn" onclick="window.openEventoDetalhe('${escapeAttr(evento.id)}')">Detalhes</button>
+          <button class="action-btn edit-btn" onclick="window.editEvento('${escapeAttr(evento.id)}')">Editar</button>
+          <button class="action-btn remove-btn" onclick="window.removeEvento('${escapeAttr(evento.id)}')">Remover</button>
+        </td>
+      </tr>`;
+    }).join("");
+  };
+
+  const renderEventos = () => {
+    renderEventosKpis();
+    renderEventosCalendario();
+    renderEventosTabela();
+  };
+
+  const montarResumoEvento = (evento) => {
+    const c = getEventoContas(evento);
+    const linhas = [`*${getEventoNome(evento)}*`];
+    if (evento.tipo) linhas.push(`Tipo: ${evento.tipo}`);
+    linhas.push(`Quando: ${formatEventoQuando(evento)}`);
+    if (evento.local || evento.cidade) linhas.push(`Local: ${[evento.local, evento.cidade].filter(Boolean).join(" · ")}`);
+    if (evento.cliente) linhas.push(`Contratante: ${evento.cliente}${evento.telefone ? ` (${evento.telefone})` : ""}`);
+    if (evento.pessoas) linhas.push(`Pessoas: ${evento.pessoas}`);
+    if (evento.pizzas) linhas.push(`Pizzas: ${evento.pizzas}${c.pizzaPorPessoa !== null ? ` (${eventoDecimal(c.pizzaPorPessoa)} por pessoa)` : ""}`);
+    if (evento.formato) linhas.push(`Formato: ${evento.formato}`);
+    if (evento.sabores) linhas.push(`Sabores: ${evento.sabores}`);
+    if (c.valor > 0) {
+      linhas.push(`Valor: ${formatCurrency(c.valor)}`);
+      if (c.sinal > 0) linhas.push(`Sinal recebido: ${formatCurrency(c.sinal)}`);
+      if (c.aReceber > 0) linhas.push(`Falta receber: ${formatCurrency(c.aReceber)}`);
+      if (evento.pago) linhas.push("Pagamento: quitado");
+    }
+    if (evento.observacoes) linhas.push(`Obs.: ${evento.observacoes}`);
+    return linhas.join("\n");
+  };
+
+  window.openEventoDetalhe = (id) => {
+    const evento = (database.eventos || []).find((e) => String(e.id) === String(id));
+    if (!evento) return showSaveStatus("Esse evento não existe mais.", false);
+    const c = getEventoContas(evento);
+    const status = getEventoStatus(evento);
+    const dias = getEventoDiasRestantes(evento);
+
+    const dado = (rotulo, valor) => (valor === null || valor === undefined || valor === "" || valor === "—")
+      ? ""
+      : `<div class="evento-dado"><small>${rotulo}</small><b>${valor}</b></div>`;
+
+    const numeros = [
+      c.pizzaPorPessoa !== null ? `<span><small>Pizza por pessoa</small><b>${eventoDecimal(c.pizzaPorPessoa)}</b></span>` : "",
+      c.valorPorPessoa !== null ? `<span><small>Valor por pessoa</small><b>${formatCurrency(c.valorPorPessoa)}</b></span>` : "",
+      c.aReceber > 0 ? `<span class="alerta"><small>Falta receber</small><b>${formatCurrency(c.aReceber)}</b></span>` : "",
+      c.lucro !== null ? `<span class="${c.lucro < 0 ? "alerta" : "bom"}"><small>Sobra estimada</small><b>${formatCurrency(c.lucro)}</b></span>` : "",
+    ].filter(Boolean).join("");
+
+    const itens = eventoLista(evento);
+    const feitos = itens.filter((item) => item?.feito).length;
+    const checklist = itens.map((item, indice) => `<label class="evento-check-item${item?.feito ? " feito" : ""}">
+      <input type="checkbox" ${item?.feito ? "checked" : ""} onchange="window.toggleEventoChecklist('${escapeAttr(evento.id)}', ${indice})">
+      <span>${escapeHTML(item?.texto || "")}</span>
+      <button type="button" class="evento-check-remove" title="Remover item" onclick="window.removeEventoChecklist('${escapeAttr(evento.id)}', ${indice})">×</button>
+    </label>`).join("");
+
+    const conteudo = `
+      <div class="evento-detalhe">
+        <div class="evento-detalhe-topo">
+          <span class="status-chip ${EVENTO_STATUS_TOM[status]}">${escapeHTML(status)}</span>
+          <span class="evento-detalhe-quando">${escapeHTML(formatEventoQuando(evento))}${dias !== null ? ` · ${escapeHTML(formatEventoContagem(dias))}` : ""}</span>
+        </div>
+        ${numeros ? `<div class="evento-conta">${numeros}</div>` : ""}
+        <div class="evento-dados">
+          ${dado("Tipo", escapeHTML(evento.tipo || ""))}
+          ${dado("Contratante", escapeHTML(evento.cliente || ""))}
+          ${dado("Telefone", escapeHTML(evento.telefone || ""))}
+          ${dado("Local", escapeHTML(evento.local || ""))}
+          ${dado("Cidade", escapeHTML(evento.cidade || ""))}
+          ${dado("Pessoas", evento.pessoas ?? "")}
+          ${dado("Pizzas", evento.pizzas ?? "")}
+          ${dado("Formato", escapeHTML(evento.formato || ""))}
+          ${dado("Valor combinado", c.valor > 0 ? formatCurrency(c.valor) : "")}
+          ${dado("Sinal recebido", c.sinal > 0 ? formatCurrency(c.sinal) : "")}
+          ${dado("Custo estimado", c.custo > 0 ? formatCurrency(c.custo) : "")}
+          ${dado("Pagamento", evento.pago ? "Quitado" : (c.valor > 0 ? "Em aberto" : ""))}
+          ${dado("Responsável", escapeHTML(evento.responsavel || ""))}
+          ${dado("Como chegou", escapeHTML(evento.origem_contato || ""))}
+          ${dado("Avaliação", evento.avaliacao ? "★".repeat(evento.avaliacao) + "☆".repeat(5 - evento.avaliacao) : "")}
+        </div>
+        ${evento.sabores ? `<div class="evento-bloco"><h4>Sabores combinados</h4><p>${escapeHTML(evento.sabores)}</p></div>` : ""}
+        ${evento.observacoes ? `<div class="evento-bloco"><h4>Observações</h4><p>${escapeHTML(evento.observacoes)}</p></div>` : ""}
+        <div class="evento-bloco">
+          <h4>Preparativos${itens.length ? ` <small>${feitos} de ${itens.length} prontos</small>` : ""}</h4>
+          <div class="evento-checklist">${checklist || '<p class="small-muted">Nenhum item ainda.</p>'}</div>
+          <div class="evento-check-novo">
+            <input type="text" id="evento-check-texto" placeholder="Ex.: confirmar forno, levar toalhas..." maxlength="120">
+            <button type="button" class="action-btn" onclick="window.addEventoChecklist('${escapeAttr(evento.id)}')">Adicionar</button>
+          </div>
+        </div>
+        <div class="evento-detalhe-acoes">
+          <button type="button" class="action-btn info-btn" onclick="window.copiarResumoEvento('${escapeAttr(evento.id)}')">Copiar resumo</button>
+          <button type="button" class="action-btn edit-btn" onclick="window.editEvento('${escapeAttr(evento.id)}')">Editar</button>
+        </div>
+      </div>`;
+    openModal("history-modal", getEventoNome(evento), conteudo);
+  };
+
+  window.copiarResumoEvento = (id) => {
+    const evento = (database.eventos || []).find((e) => String(e.id) === String(id));
+    if (!evento) return;
+    copyTextToClipboard(montarResumoEvento(evento));
+  };
+
+  const salvarChecklistEvento = async (id, itens) => {
+    showLoader();
+    const { error } = await supabaseClient.from("eventos").update({ checklist: itens }).eq("id", id);
+    hideLoader();
+    if (error) return showSaveStatus(formatSupabaseError(error, "Não foi possível salvar o preparativo"), false);
+    const evento = (database.eventos || []).find((e) => String(e.id) === String(id));
+    if (evento) evento.checklist = itens;
+    renderEventos();
+    window.openEventoDetalhe(id);
+  };
+
+  window.toggleEventoChecklist = async (id, indice) => {
+    const evento = (database.eventos || []).find((e) => String(e.id) === String(id));
+    if (!evento) return;
+    const itens = eventoLista(evento).map((item, i) => (i === indice ? { ...item, feito: !item?.feito } : item));
+    await salvarChecklistEvento(id, itens);
+  };
+
+  window.removeEventoChecklist = async (id, indice) => {
+    const evento = (database.eventos || []).find((e) => String(e.id) === String(id));
+    if (!evento) return;
+    await salvarChecklistEvento(id, eventoLista(evento).filter((_, i) => i !== indice));
+  };
+
+  window.addEventoChecklist = async (id) => {
+    const evento = (database.eventos || []).find((e) => String(e.id) === String(id));
+    if (!evento) return;
+    const texto = String(document.getElementById("evento-check-texto")?.value || "").trim();
+    if (!texto) return;
+    await salvarChecklistEvento(id, [...eventoLista(evento), { texto, feito: false }]);
+  };
+
+  window.editEvento = (id) => {
+    const evento = (database.eventos || []).find((e) => String(e.id) === String(id));
+    if (!evento) return showSaveStatus("Esse evento não existe mais.", false);
+    closeModal("history-modal");
+    preencherFormularioEvento(evento);
+    openTab("eventos");
+    document.getElementById("evento-nome")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    document.getElementById("evento-nome")?.focus();
+  };
+
+  window.removeEvento = async (id) => {
+    const evento = (database.eventos || []).find((e) => String(e.id) === String(id));
+    if (!evento) return;
+    if (!confirm(`Remover o evento "${getEventoNome(evento)}"? Isso não pode ser desfeito.`)) return;
+    showLoader();
+    const { error } = await supabaseClient.from("eventos").delete().eq("id", id);
+    hideLoader();
+    if (error) return showSaveStatus(formatSupabaseError(error, "Não foi possível remover o evento"), false);
+    if (eventoEditandoId === id) limparFormularioEvento();
+    showSaveStatus("Evento removido.");
+    await loadDataFromSupabase();
+  };
+
+  document.getElementById("form-evento")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const dados = lerFormularioEvento();
+    // Salvar um evento totalmente em branco so criaria lixo na lista.
+    const temAlgo = Object.entries(dados).some(([campo, valor]) => {
+      if (campo === "status") return false;
+      if (campo === "pago") return valor === true;
+      return valor !== null;
+    });
+    if (!temAlgo) return showSaveStatus("Preencha pelo menos um campo do evento.", false);
+
+    showLoader();
+    const { error } = eventoEditandoId
+      ? await supabaseClient.from("eventos").update(dados).eq("id", eventoEditandoId)
+      : await supabaseClient.from("eventos").insert(dados);
+    hideLoader();
+    if (error) return showSaveStatus(formatSupabaseError(error, "Não foi possível salvar o evento"), false);
+    showSaveStatus(eventoEditandoId ? "Evento atualizado." : "Evento registrado.");
+    if (dados.data) eventoMesAtual = dados.data.slice(0, 7);
+    limparFormularioEvento();
+    await loadDataFromSupabase();
+  });
+
+  document.getElementById("evento-limpar")?.addEventListener("click", limparFormularioEvento);
+  document.getElementById("evento-cancelar-edicao")?.addEventListener("click", limparFormularioEvento);
+  ["evento-pessoas", "evento-pizzas", "evento-valor", "evento-sinal", "evento-custo"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("input", renderEventoConta);
+  });
+  document.getElementById("evento-pago")?.addEventListener("change", renderEventoConta);
+  ["evento-busca", "evento-filtro-status", "evento-filtro-periodo"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("input", renderEventosTabela);
+  });
+
+  const moverMesEventos = (passo) => {
+    const [ano, mes] = (eventoMesAtual || formatDateToYYYYMMDD(new Date()).slice(0, 7)).split("-").map(Number);
+    const alvo = new Date(ano, mes - 1 + passo, 1);
+    eventoMesAtual = `${alvo.getFullYear()}-${String(alvo.getMonth() + 1).padStart(2, "0")}`;
+    renderEventosCalendario();
+  };
+  document.getElementById("evento-mes-anterior")?.addEventListener("click", () => moverMesEventos(-1));
+  document.getElementById("evento-mes-proximo")?.addEventListener("click", () => moverMesEventos(1));
+  document.getElementById("evento-mes-hoje")?.addEventListener("click", () => {
+    eventoMesAtual = formatDateToYYYYMMDD(new Date()).slice(0, 7);
+    renderEventosCalendario();
+  });
+  document.getElementById("evento-calendario")?.addEventListener("click", (event) => {
+    const chip = event.target.closest("[data-evento-id]");
+    if (chip) window.openEventoDetalhe(chip.dataset.eventoId);
+  });
+
+  document.getElementById("export-eventos")?.addEventListener("click", () => {
+    const dados = getEventosFiltrados().map((evento) => {
+      const c = getEventoContas(evento);
+      return {
+        Evento: getEventoNome(evento),
+        Tipo: evento.tipo || "",
+        Situacao: getEventoStatus(evento),
+        Data: evento.data || "",
+        Inicio: eventoHora(evento.hora) || "",
+        Fim: eventoHora(evento.hora_fim) || "",
+        Contratante: evento.cliente || "",
+        Telefone: evento.telefone || "",
+        Local: evento.local || "",
+        Cidade: evento.cidade || "",
+        Pessoas: evento.pessoas ?? "",
+        Pizzas: evento.pizzas ?? "",
+        "Pizza por pessoa": c.pizzaPorPessoa !== null ? Number(c.pizzaPorPessoa.toFixed(2)) : "",
+        Formato: evento.formato || "",
+        Valor: evento.valor ?? "",
+        Sinal: evento.sinal ?? "",
+        "Falta receber": c.aReceber,
+        Custo: evento.custo ?? "",
+        Pago: evento.pago ? "Sim" : "Não",
+        Responsavel: evento.responsavel || "",
+        "Como chegou": evento.origem_contato || "",
+        Avaliacao: evento.avaliacao ?? "",
+        Sabores: evento.sabores || "",
+        Observacoes: evento.observacoes || "",
+      };
+    });
+    exportToExcel(dados, "sasses_eventos");
+  });
+
+  // Mesma regra da semana atual, senão a média de 4 semanas (que contava tudo)
+  // era comparada com um número da semana atual que contava só parte.
+  const getWeeklyPizzaSales = (weekStart) => computePizzaDemandForWeek(weekStart, {
+    statuses: STOCK_ACTIVE_STATUSES,
+    incluirBaixados: true,
+  });
 
   const getPreviousWeekStarts = (weekStart, count = 4) => {
     const base = new Date(weekStart + "T00:00:00");
@@ -5407,20 +6786,27 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
     const demand = computePizzaDemandForWeek(weekStart, {
       statuses: ORDER_STATUSES_HOLDING_AVAILABILITY,
     });
+    const demandTotal = computePizzaDemandForWeek(weekStart, {
+      statuses: STOCK_ACTIVE_STATUSES,
+      incluirBaixados: true,
+    });
     const previousWeeks = getPreviousWeekStarts(weekStart, 4).map((ws) => getWeeklyPizzaSales(ws));
 
     return database.estoque.map((pizza) => {
-      const pedidos = Number(demand[pizza.id] || 0);
+      // aReservar = o que ainda precisa sair do estoque; pedidos = tudo que foi
+      // pedido na semana, que é o número comparável com a média das 4 semanas.
+      const aReservar = Number(demand[pizza.id] || 0);
+      const pedidos = Number(demandTotal[pizza.id] || 0);
       const historico = previousWeeks.map((weekMap) => Number(weekMap[pizza.id] || 0));
       const mediaAnterior = historico.length ? historico.reduce((a, b) => a + b, 0) / historico.length : 0;
       const maiorSemana = Math.max(0, ...historico);
       const estoque = Number(pizza.qtd || 0);
-      const produzirPedidos = Math.max(0, pedidos - estoque);
+      const produzirPedidos = Math.max(0, aReservar - estoque);
       const alvoSugerido = Math.ceil(Math.max(pedidos, mediaAnterior));
       const produzirSugerido = Math.max(0, alvoSugerido - estoque);
-      return { pizza, pedidos, estoque, sobra: estoque - pedidos, mediaAnterior, maiorSemana, produzirPedidos, produzirSugerido };
+      return { pizza, pedidos, aReservar, estoque, sobra: estoque - aReservar, mediaAnterior, maiorSemana, produzirPedidos, produzirSugerido };
     })
-      .filter((x) => x.pedidos > 0 || x.produzirPedidos > 0 || x.produzirSugerido > 0 || x.mediaAnterior >= 1)
+      .filter((x) => x.pedidos > 0 || x.aReservar > 0 || x.produzirPedidos > 0 || x.produzirSugerido > 0 || x.mediaAnterior >= 1)
       .sort((a, b) => b.produzirPedidos - a.produzirPedidos || b.produzirSugerido - a.produzirSugerido || b.pedidos - a.pedidos);
   };
 
@@ -5437,15 +6823,26 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
     const data = getProductionSuggestion(week);
     const precisaProduzir = data.filter((x) => x.produzirPedidos > 0);
     const sugerida = data.filter((x) => x.produzirSugerido > 0);
+    // Pizza diferente: sem cadastro, a sugestão automática não enxerga. Abre a
+    // lista destacada para a cozinha não perder o pedido especial.
+    const naoCadastradas = getItensNaoCadastradosDaSemana(week);
     const tbody = document.querySelector("#tabela-producao-auto tbody");
     if (tbody) {
-      tbody.innerHTML = precisaProduzir.map((x) => `<tr class="low-stock">
+      const linhasNaoCadastradas = naoCadastradas.map((x) => `<tr class="low-stock linha-nao-cadastrada">
+        <td data-label="Pizza">${marcarNomeNaoCadastrado(escapeHTML(x.nome))}<br><small>Pedida por: ${escapeHTML(x.clientes.join(", "))}</small></td>
+        <td data-label="Pedidos">${x.qtd}</td>
+        <td data-label="Estoque">—</td>
+        <td data-label="Sobra">—</td>
+        <td data-label="Produzir agora"><b>${x.qtd}</b></td>
+      </tr>`).join("");
+      const linhasCadastradas = precisaProduzir.map((x) => `<tr class="low-stock">
         <td data-label="Pizza"><b>${x.pizza.nome} (${x.pizza.tamanho})</b><br><small>Média 4 sem.: ${x.mediaAnterior.toFixed(1)} · pico: ${x.maiorSemana}</small></td>
         <td data-label="Pedidos">${x.pedidos}</td>
         <td data-label="Estoque">${x.estoque}</td>
         <td data-label="Sobra">${x.sobra}</td>
         <td data-label="Produzir agora"><b>${x.produzirPedidos}</b></td>
-      </tr>`).join("") || `<tr><td colspan="5">Nenhuma pizza precisa ser produzida para os pedidos pendentes dessa semana.</td></tr>`;
+      </tr>`).join("");
+      tbody.innerHTML = (linhasNaoCadastradas + linhasCadastradas) || `<tr><td colspan="5">Nenhuma pizza precisa ser produzida para os pedidos pendentes dessa semana.</td></tr>`;
     }
 
     const tbodySug = document.querySelector("#tabela-producao-sugerida tbody");
@@ -5484,6 +6881,9 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
         `<span>Produzir por pedido: ${precisaProduzir.reduce((a, x) => a + x.produzirPedidos, 0)}</span>`,
         `<span>Sugestão pela média: ${sugerida.reduce((a, x) => a + x.produzirSugerido, 0)}</span>`,
       ];
+      if (naoCadastradas.length) {
+        cards.unshift(`<span class="item-pedido-outro">Pizzas diferentes: ${naoCadastradas.reduce((a, x) => a + x.qtd, 0)}</span>`);
+      }
       alertas.innerHTML = cards.join("");
     }
   };
@@ -5632,11 +7032,14 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
       <div class="kpi-tile"><span>Receita já paga</span><b>${formatCurrency(faturamentoSemana)}</b><small>Pagamentos confirmados</small></div>
       <div class="kpi-tile"><span>Pendências</span><b>${pendencias.total}</b><small>${pendencias.confirmar} a confirmar · ${pendencias.concluir} a concluir</small></div>`;
 
-    pendingBox.innerHTML = `<div class="home-list">${pendentes.slice(0,6).map((p) => `<div class="home-list-item"><b>${escapeHTML(p.cliente || 'Cliente')}</b><span class="badge-inline ${isPedidoAtrasado(p) ? 'danger' : (isPedidoPago(p)?'success':'warning')}">${isPedidoAtrasado(p) ? 'Atrasado' : escapeHTML(p.status || 'Pendente')}</span><small>${escapeHTML((p.items || []).map((it) => `${Number(it.qtd || 0)}x ${it.pizzaNome || "Item"}`).join(' · ') || 'Sem itens')}<br>${formatCurrency(p.valorFinal || p.valorTotal || 0)}</small></div>`).join('') || '<p class="empty-state compact">Sem pedidos pendentes na semana.</p>'}</div>`;
+    pendingBox.innerHTML = `<div class="home-list">${pendentes.slice(0,6).map((p) => `<div class="home-list-item"><b>${escapeHTML(p.cliente || 'Cliente')}</b><span class="badge-inline ${isPedidoAtrasado(p) ? 'danger' : (isPedidoPago(p)?'success':'warning')}">${isPedidoAtrasado(p) ? 'Atrasado' : escapeHTML(p.status || 'Pendente')}</span><small>${(p.items || []).map(renderItemPedidoTexto).join(' · ') || 'Sem itens'}<br>${formatCurrency(p.valorFinal || p.valorTotal || 0)}</small></div>`).join('') || '<p class="empty-state compact">Sem pedidos pendentes na semana.</p>'}</div>`;
 
-    prodBox.innerHTML = `<div class="home-list">${precisaProduzir.slice(0,6).map((x) => `<div class="home-list-item"><b>${escapeHTML(x.pizza.nome)} (${escapeHTML(x.pizza.tamanho)})</b><span class="badge-inline danger">Produzir ${x.produzirPedidos}</span><small>Pedidos: ${x.pedidos} · Estoque: ${x.estoque} · Média 4 semanas: ${x.mediaAnterior.toFixed(1)}</small></div>`).join('') || '<p class="empty-state compact">Nada urgente para produzir.</p>'}</div>`;
+    const naoCadastradasHome = getItensNaoCadastradosDaSemana(week);
+    const prodNaoCadastradas = naoCadastradasHome.slice(0,6).map((x) => `<div class="home-list-item linha-nao-cadastrada">${marcarNomeNaoCadastrado(escapeHTML(x.nome))}<span class="badge-inline danger">Produzir ${x.qtd}</span><small>Pedida por: ${escapeHTML(x.clientes.join(', '))} · fora do cadastro de estoque</small></div>`).join('');
+    const prodCadastradas = precisaProduzir.slice(0,6).map((x) => `<div class="home-list-item"><b>${escapeHTML(x.pizza.nome)} (${escapeHTML(x.pizza.tamanho)})</b><span class="badge-inline danger">Produzir ${x.produzirPedidos}</span><small>Pedidos: ${x.pedidos} · Estoque: ${x.estoque} · Média 4 semanas: ${x.mediaAnterior.toFixed(1)}</small></div>`).join('');
+    prodBox.innerHTML = `<div class="home-list">${(prodNaoCadastradas + prodCadastradas) || '<p class="empty-state compact">Nada urgente para produzir.</p>'}</div>`;
 
-    sobraBox.innerHTML = `<div class="home-list">${sobras.map((x) => `<div class="home-list-item"><b>${escapeHTML(x.pizza.nome)} (${escapeHTML(x.pizza.tamanho)})</b><span class="badge-inline success">${x.sobra} disponível</span><small>Estoque: ${x.estoqueAtual} · reservado na semana: ${x.pedidosSemana || 0}</small></div>`).join('') || '<p class="empty-state compact">Sem pizzas disponíveis nesta semana.</p>'}</div>`;
+    sobraBox.innerHTML = `<div class="home-list">${sobras.map((x) => `<div class="home-list-item"><b>${escapeHTML(x.pizza.nome)} (${escapeHTML(x.pizza.tamanho)})</b><span class="badge-inline success">${x.sobra} disponível</span><small>Estoque: ${x.estoqueAtual} · falta separar: ${x.pedidosSemana || 0}</small></div>`).join('') || '<p class="empty-state compact">Sem pizzas disponíveis nesta semana.</p>'}</div>`;
 
     alertBox.innerHTML = `<div class="home-list">
       <div class="home-list-item"><b>Aguardando confirmação</b><span class="badge-inline ${pendencias.confirmar ? 'danger' : 'success'}">${pendencias.confirmar}</span><small>${pendencias.aguardandoConfirmacao.slice(0,4).map((p) => `${escapeHTML(p.cliente || "Cliente")} · ${formatCurrency(p.valorFinal || p.valorTotal || 0)}`).join('<br>') || 'Nenhum pedido esperando confirmação.'}</small></div>
@@ -5657,13 +7060,24 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
     const week = select.value || getWeekStart();
     select.onchange = renderKitchenMode;
     const data = getProductionSuggestion(week).filter((x) => x.produzirPedidos > 0 || x.produzirSugerido > 0);
-    list.innerHTML = data.map((x) => `<div class="kitchen-item ${x.produzirPedidos > 0 ? 'low-stock' : ''}">
+    // Pizza diferente encabeça a lista da cozinha: é a que ninguém tem de
+    // memória e a que não sai de nenhum estoque pronto.
+    const naoCadastradas = getItensNaoCadastradosDaSemana(week);
+    const itensNaoCadastrados = naoCadastradas.map((x) => `<div class="kitchen-item low-stock linha-nao-cadastrada">
+      <div class="kitchen-item-main">
+        ${marcarNomeNaoCadastrado(escapeHTML(x.nome))}
+        <small>Pedida por: ${escapeHTML(x.clientes.join(", "))} · não está no estoque, produzir à parte</small>
+      </div>
+      <div class="kitchen-qty">${x.qtd}</div>
+    </div>`).join('');
+    const itensCadastrados = data.map((x) => `<div class="kitchen-item ${x.produzirPedidos > 0 ? 'low-stock' : ''}">
       <div class="kitchen-item-main">
         <b>${escapeHTML(x.pizza.nome)} (${escapeHTML(x.pizza.tamanho)})</b>
         <small>Pedidos: ${x.pedidos} · Estoque: ${x.estoque} · Sobra: ${x.sobra} · Sugestão: ${x.produzirSugerido}</small>
       </div>
       <div class="kitchen-qty">${Math.max(x.produzirPedidos, x.produzirSugerido)}</div>
-    </div>`).join('') || `<p class="empty-state">Nenhuma pizza para produzir nessa semana.</p>`;
+    </div>`).join('');
+    list.innerHTML = (itensNaoCadastrados + itensCadastrados) || `<p class="empty-state">Nenhuma pizza para produzir nessa semana.</p>`;
   };
 
   document.getElementById("print-cozinha")?.addEventListener("click", () => {
@@ -5745,8 +7159,8 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
     const pizzas = database.estoque.filter((p) => [p.nome, p.tamanho].some((v) => String(v || '').toLowerCase().includes(term))).slice(0,8);
     box.innerHTML = `<div class="search-results-groups">
       <div class="search-group"><h3>Clientes</h3>${clientes.map((c) => `<div class="search-result-item"><div><b>${escapeHTML(c.nome)}</b><small>${escapeHTML(c.cidade || 'Sem cidade')} · ${escapeHTML(c.telefone || 'Sem telefone')}</small></div><button class="home-action" data-open-tab="clientes">Abrir</button></div>`).join('') || '<p class="empty-state compact">Nenhum cliente.</p>'}</div>
-      <div class="search-group"><h3>Pedidos</h3>${pedidos.map((p) => `<div class="search-result-item"><div><b>${escapeHTML(p.cliente || 'Cliente')}</b><small>${escapeHTML((p.items || []).map((it) => `${it.qtd}x ${it.pizzaNome}`).join(' · '))}<br>${formatCurrency(p.valorFinal || p.valorTotal || 0)} · ${escapeHTML(p.status || '')}</small></div><button class="home-action" data-open-pedido="${p.id}">Abrir pedido</button></div>`).join('') || '<p class="empty-state compact">Nenhum pedido.</p>'}</div>
-      <div class="search-group"><h3>Pizzas</h3>${pizzas.map((p) => `<div class="search-result-item"><div><b>${escapeHTML(p.nome)} (${escapeHTML(p.tamanho)})</b><small>Estoque ${p.qtd} · Preço ${formatCurrency(p.precoVenda)}</small></div><button class="home-action" data-open-tab="estoque">Abrir</button></div>`).join('') || '<p class="empty-state compact">Nenhuma pizza.</p>'}</div>
+      <div class="search-group"><h3>Pedidos</h3>${pedidos.map((p) => `<div class="search-result-item"><div><b>${escapeHTML(p.cliente || 'Cliente')}</b><small>${(p.items || []).map(renderItemPedidoTexto).join(' · ')}<br>${formatCurrency(p.valorFinal || p.valorTotal || 0)} · ${escapeHTML(p.status || '')}</small></div><button class="home-action" data-open-pedido="${p.id}">Abrir pedido</button></div>`).join('') || '<p class="empty-state compact">Nenhum pedido.</p>'}</div>
+      <div class="search-group"><h3>Pizzas</h3>${pizzas.map((p) => `<div class="search-result-item"><div><b>${escapeHTML(p.nome)} (${escapeHTML(p.tamanho)})</b><small>Disponível ${getPizzaSobraForWeek(p.id)} · estoque ${p.qtd} · ${formatCurrency(p.precoVenda)}</small></div><button class="home-action" data-open-tab="estoque">Abrir</button></div>`).join('') || '<p class="empty-state compact">Nenhuma pizza.</p>'}</div>
     </div>`;
     openModal('global-search-modal', 'Busca global', box.innerHTML, () => {
       document.querySelectorAll('#global-search-modal [data-open-tab]').forEach((btn) => btn.onclick = () => { closeModal('global-search-modal'); openTab(btn.dataset.openTab); });
@@ -5803,7 +7217,9 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
     }));
   };
 
-  const mPizzaOptions = () => database.estoque.map((p) => `<option value="${p.id}">${escapeHTML(p.nome)} (${escapeHTML(p.tamanho || "")}) · Est. ${p.qtd}</option>`).join("");
+  // Mesmo numero da tela de sobras: "Est." sozinho fazia o celular oferecer
+  // pizza que ja estava prometida em outro pedido.
+  const mPizzaOptions = () => database.estoque.map((p) => `<option value="${p.id}">${escapeHTML(p.nome)} (${escapeHTML(p.tamanho || "")}) · disp. ${getPizzaSobraForWeek(p.id)} · est. ${p.qtd}</option>`).join("");
 
   const renderMobilePixPreview = (containerId, amount, title = "Pix") => {
     const box = document.getElementById(containerId);
@@ -5899,10 +7315,11 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
     });
   };
 
+  // Devolve HTML já escapado, com a pizza não cadastrada destacada.
   const summarizeMobileItems = (items, max = 3) => {
-    const list = (items || []).map((it) => `${it.qtd}x ${it.pizzaNome}`);
-    if (list.length <= max) return escapeHTML(list.join(" · "));
-    return escapeHTML(list.slice(0, max).join(" · ") + ` · +${list.length - max} item(ns)`);
+    const list = (items || []).map(renderItemPedidoTexto);
+    if (list.length <= max) return list.join(" · ");
+    return list.slice(0, max).join(" · ") + ` · +${list.length - max} item(ns)`;
   };
 
   const renderMobileInicio = () => {
@@ -5914,6 +7331,10 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
     const receitaPaga = pedidosSemana.filter(isPedidoPago).reduce((a, p) => a + Number(p.valorFinal || p.valorTotal || 0), 0);
     const pizzasSemana = pedidosSemana.reduce((a, p) => a + (p.items || []).reduce((n, it) => n + Number(it.qtd || 0), 0), 0);
     const prod = getProductionSuggestion(week).filter((x) => x.produzirPedidos > 0).slice(0, 5);
+    // Pizza diferente encabeça o "Produzir agora" do celular: nenhuma conta
+    // automática a enxerga, então ela precisa ser vista aqui.
+    const prodNaoCadastradas = getItensNaoCadastradosDaSemana(week).slice(0, 5)
+      .map((x) => `<div class="m-item linha-nao-cadastrada"><div class="m-item-head">${marcarNomeNaoCadastrado(escapeHTML(x.nome))}<span class="m-badge bad">${x.qtd}</span></div><div class="m-line">Pedida por: ${escapeHTML(x.clientes.join(", "))} · fora do cadastro de estoque</div></div>`).join("");
     const disponiveis = getPizzaWeekStats(week)
       .filter((pizza) => pizza.sobraProj > 0)
       .sort((a, b) => b.sobraProj - a.sobraProj || String(a.nome).localeCompare(String(b.nome)))
@@ -5928,9 +7349,9 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
         <div class="m-kpi"><span>Alertas</span><b>${alerts.total}</b></div>
       </div>
       <div class="m-actions"><button class="m-btn" data-mobile-page-go="venda">Venda rápida</button><button class="m-btn secondary" data-mobile-page-go="pedido">Novo pedido</button></div>
-      <div class="m-card"><div class="m-card-heading"><h3>Disponíveis para retirada</h3><button type="button" class="m-mini-btn" id="m-home-copy-sobras">Copiar</button></div><div class="m-list">${disponiveis.map((pizza) => `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(pizza.nome)} (${escapeHTML(pizza.tamanho || "")})</b><span class="m-badge ok">${pizza.sobraProj}</span></div><div class="m-line">Estoque ${pizza.estoqueAtual} · reservado ${pizza.pedidosSemana}</div></div>`).join("") || `<p class="m-muted">Sem pizzas disponíveis nesta semana.</p>`}</div></div>
-      <div class="m-card"><h3>Pedidos pendentes${atrasados.length ? ` · ${atrasados.length} atrasado(s)` : ""}</h3><div class="m-list">${pendentes.slice(0, 5).map((p) => { const items = (p.items || []); const resumo = items.slice(0, 2).map((it) => `${it.qtd}x ${it.pizzaNome}`).join(" · ") + (items.length > 2 ? ` · +${items.length - 2} item(ns)` : ""); const atrasado = isPedidoAtrasado(p); return `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(p.cliente || "Cliente")}</b><span class="m-badge ${atrasado ? "bad" : "warn"}">${atrasado ? "Atrasado" : escapeHTML(p.status || "Pendente")}</span></div><div class="m-line">${escapeHTML(resumo)}</div><div class="m-line"><b>${formatCurrency(p.valorFinal || p.valorTotal || 0)}</b></div></div>`; }).join("") || `<p class="m-muted">Sem pedidos pendentes.</p>`}</div></div>
-      <div class="m-card"><h3>Produzir agora</h3><div class="m-list">${prod.map((x) => `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(x.pizza.nome)} (${escapeHTML(x.pizza.tamanho)})</b><span class="m-badge bad">${x.produzirPedidos}</span></div><div class="m-line">Pedidos: ${x.pedidos} · Estoque: ${x.estoque} · Sobra: ${x.sobra}</div></div>`).join("") || `<p class="m-muted">Nada urgente para produzir.</p>`}</div></div>
+      <div class="m-card"><div class="m-card-heading"><h3>Disponíveis para retirada</h3><button type="button" class="m-mini-btn" id="m-home-copy-sobras">Copiar</button></div><div class="m-list">${disponiveis.map((pizza) => `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(pizza.nome)} (${escapeHTML(pizza.tamanho || "")})</b><span class="m-badge ok">${pizza.sobraProj}</span></div><div class="m-line">Estoque ${pizza.estoqueAtual} · falta separar ${pizza.pedidosSemana}</div></div>`).join("") || `<p class="m-muted">Sem pizzas disponíveis nesta semana.</p>`}</div></div>
+      <div class="m-card"><h3>Pedidos pendentes${atrasados.length ? ` · ${atrasados.length} atrasado(s)` : ""}</h3><div class="m-list">${buildPedidoGrupos(pendentes).slice(0, 5).map((grupo) => { const p = grupo.principal; const lote = isGrupoLote(grupo); const items = lote ? grupo.pedidos.flatMap((x) => x.items || []) : (p.items || []); const resumo = lote ? escapeHTML(grupo.pedidos.map((x) => x.cliente || "Cliente").join(" · ")) : items.slice(0, 2).map(renderItemPedidoTexto).join(" · ") + (items.length > 2 ? ` · +${items.length - 2} item(ns)` : ""); const atrasado = grupo.pedidos.some(isPedidoAtrasado); const status = lote ? getGrupoStatus(grupo) : (p.status || "Pendente"); const valor = lote ? getGrupoValor(grupo) : Number(p.valorFinal || p.valorTotal || 0); return `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(getGrupoTitulo(grupo))}</b><span class="m-badge ${atrasado ? "bad" : "warn"}">${atrasado ? "Atrasado" : escapeHTML(status)}</span></div><div class="m-line">${resumo}</div><div class="m-line"><b>${formatCurrency(valor)}</b>${lote ? `<small class="origem-tag">Loja online · ${grupo.pedidos.length} cliente(s)</small>` : renderOrigemTag(p)}</div></div>`; }).join("") || `<p class="m-muted">Sem pedidos pendentes.</p>`}</div></div>
+      <div class="m-card"><h3>Produzir agora</h3><div class="m-list">${(prodNaoCadastradas + prod.map((x) => `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(x.pizza.nome)} (${escapeHTML(x.pizza.tamanho)})</b><span class="m-badge bad">${x.produzirPedidos}</span></div><div class="m-line">Pedidos: ${x.pedidos} · Estoque: ${x.estoque} · Sobra: ${x.sobra}</div></div>`).join("")) || `<p class="m-muted">Nada urgente para produzir.</p>`}</div></div>
     </section>`);
     document.getElementById("m-home-copy-sobras")?.addEventListener("click", () => copyTextToClipboard(generateSobrasMessage(week)));
   };
@@ -5940,20 +7361,28 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
       <div class="m-card"><h2>Novo pedido</h2><p class="m-muted">Cadastro rápido otimizado para celular.</p></div>
       <div class="m-card"><form class="m-form" id="m-pedido-form">
         <input id="m-pedido-cliente" placeholder="Cliente" list="clientes-list" required>
-        <input id="m-pedido-telefone" placeholder="Telefone">
-        <input id="m-pedido-cidade" placeholder="Cidade" required>
+        <div class="m-form-pair">
+          <input id="m-pedido-telefone" placeholder="Telefone">
+          <input id="m-pedido-cidade" placeholder="Cidade" required>
+        </div>
         <input id="m-pedido-endereco" placeholder="Endereço">
-        <input id="m-pedido-vendedor" placeholder="Vendedor" value="${escapeAttr(getMobileSellerName())}" required>
-        <select id="m-pedido-pagamento"><option value="Pix">Pix</option><option value="Dinheiro">Dinheiro</option><option value="Cartão de Crédito">Cartão de Crédito</option><option value="Cartão de Débito">Cartão de Débito</option></select>
-        <input id="m-pedido-semana" type="date" value="${formatDateToYYYYMMDD(new Date())}" required>
-        <select id="m-pedido-metodo"><option value="retirada">Retirada</option><option value="entrega">Entrega</option></select>
+        <div class="m-form-pair">
+          <input id="m-pedido-vendedor" placeholder="Vendedor" value="${escapeAttr(getMobileSellerName())}" required>
+          <select id="m-pedido-pagamento"><option value="Pix">Pix</option><option value="Dinheiro">Dinheiro</option><option value="Cartão de Crédito">Cartão de Crédito</option><option value="Cartão de Débito">Cartão de Débito</option></select>
+        </div>
+        <div class="m-form-pair">
+          <input id="m-pedido-semana" type="date" value="${formatDateToYYYYMMDD(new Date())}" required>
+          <select id="m-pedido-metodo"><option value="retirada">Retirada</option><option value="entrega">Entrega</option></select>
+        </div>
         <label class="m-order-big-toggle"><input type="checkbox" id="m-pedido-grande"> <span><b>Pedido grande</b><small>Separar pizzas por cliente</small></span></label>
         <div id="m-pedido-grande-box" class="m-order-big-box hidden"><input id="m-pedido-secao" placeholder="Cliente da seção atual"><small>Troque o nome para adicionar pizzas em outra seção.</small></div>
         <div class="m-two"><select id="m-pedido-pizza"><option value="">Pizza...</option>${mPizzaOptions()}</select><input id="m-pedido-qtd" type="number" min="1" value="1"></div>
         <button type="button" id="m-add-pizza" class="m-btn secondary">Adicionar pizza</button>
         <div id="m-pedido-carrinho" class="m-cart"></div>
-        <input id="m-pedido-desconto" placeholder="Desconto %" inputmode="decimal">
-        <input id="m-pedido-valor-final" placeholder="Valor final" inputmode="decimal">
+        <div class="m-form-pair">
+          <input id="m-pedido-desconto" placeholder="Desconto %" inputmode="decimal">
+          <input id="m-pedido-valor-final" placeholder="Valor final" inputmode="decimal">
+        </div>
         <textarea id="m-pedido-observacoes" rows="3" placeholder="Observações do pedido"></textarea>
         <div class="m-total-sticky"><span>Total</span><b id="m-pedido-total">R$ 0,00</b></div>
         <button type="button" id="m-pedido-pix" class="m-btn secondary">Gerar QR Pix</button>
@@ -6125,8 +7554,10 @@ Lançar mesmo assim como encomenda/produção pendente?`);
       <div class="m-card"><form class="m-form" id="m-venda-form">
         <input id="m-venda-cliente" placeholder="Cliente" list="clientes-list" required>
         <input id="m-venda-cidade" placeholder="Cidade" required>
-        <input id="m-venda-vendedor" placeholder="Vendedor" value="${escapeAttr(getMobileSellerName())}" required>
-        <select id="m-venda-pagamento"><option value="Pix">Pix</option><option value="Dinheiro">Dinheiro</option><option value="Cartão de Crédito">Cartão de Crédito</option><option value="Cartão de Débito">Cartão de Débito</option></select>
+        <div class="m-form-pair">
+          <input id="m-venda-vendedor" placeholder="Vendedor" value="${escapeAttr(getMobileSellerName())}" required>
+          <select id="m-venda-pagamento"><option value="Pix">Pix</option><option value="Dinheiro">Dinheiro</option><option value="Cartão de Crédito">Cartão de Crédito</option><option value="Cartão de Débito">Cartão de Débito</option></select>
+        </div>
         <select id="m-venda-semana">${mobileWeekOptionsHTML(24)}</select>
         <input id="m-venda-busca-pizza" placeholder="Buscar pizza...">
         <div id="m-venda-pizzas" class="m-pizza-grid"></div>
@@ -6146,7 +7577,7 @@ Lançar mesmo assim como encomenda/produção pendente?`);
         const qty = Number(mobileSaleItems[p.id] || 0);
         const disponivel = getPizzaSobraForWeek(p.id, selectedWeek);
         mobileSaleItems[p.id] = qty;
-        return `<div class="m-pizza-row"><div><b>${escapeHTML(p.nome)} (${escapeHTML(p.tamanho)})</b><div class="m-line">Disponível ${Math.max(0, disponivel)} · estoque ${Number(p.qtd || 0)} · ${formatCurrency(getPrecoPorPagamento(p.precoVenda, pay))}</div></div><button type="button" class="m-mini-btn" data-pizza-minus="${p.id}">−</button><input type="number" min="0" value="${qty}" data-pizza-qty="${p.id}"><button type="button" class="m-mini-btn" data-pizza-plus="${p.id}">+</button></div>`;
+        return `<div class="m-pizza-row"><div><b>${escapeHTML(p.nome)} (${escapeHTML(p.tamanho)})</b><div class="m-line"><span>Disp. ${Math.max(0, disponivel)}</span> · <span>Est. ${Number(p.qtd || 0)}</span> · <span>${formatCurrency(getPrecoPorPagamento(p.precoVenda, pay))}</span></div></div><button type="button" class="m-mini-btn" data-pizza-minus="${p.id}">−</button><input type="number" min="0" value="${qty}" data-pizza-qty="${p.id}"><button type="button" class="m-mini-btn" data-pizza-plus="${p.id}">+</button></div>`;
       }).join("");
       box.querySelectorAll("[data-pizza-plus]").forEach((btn) => btn.onclick = () => {
         mobileSaleItems[btn.dataset.pizzaPlus] = Number(mobileSaleItems[btn.dataset.pizzaPlus] || 0) + 1;
@@ -6202,7 +7633,10 @@ Lançar mesmo assim como encomenda/produção pendente?`);
   const renderMobileProducao = () => {
     const week = getWeekStart();
     const data = getProductionSuggestion(week).filter((x) => x.produzirPedidos > 0 || x.produzirSugerido > 0);
-    renderMobileShell(`<section class="m-section"><div class="m-card"><h2>Produção</h2><p class="m-muted">Semana atual. Quantidade grande = sugestão mais segura.</p></div><div class="m-list">${data.map((x) => `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(x.pizza.nome)} (${escapeHTML(x.pizza.tamanho)})</b><span class="m-badge ${x.produzirPedidos > 0 ? 'bad' : 'warn'}">${Math.max(x.produzirPedidos, x.produzirSugerido)}</span></div><div class="m-line">Pedidos: ${x.pedidos} · Estoque: ${x.estoque} · Sobra: ${x.sobra} · Média: ${x.mediaAnterior.toFixed(1)}</div></div>`).join("") || `<div class="m-card"><p class="m-muted">Nada para produzir agora.</p></div>`}</div></section>`);
+    const naoCadastradas = getItensNaoCadastradosDaSemana(week);
+    const itensNaoCadastrados = naoCadastradas.map((x) => `<div class="m-item linha-nao-cadastrada"><div class="m-item-head">${marcarNomeNaoCadastrado(escapeHTML(x.nome))}<span class="m-badge bad">${x.qtd}</span></div><div class="m-line">Pedida por: ${escapeHTML(x.clientes.join(", "))} · fora do cadastro de estoque</div></div>`).join("");
+    const itensCadastrados = data.map((x) => `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(x.pizza.nome)} (${escapeHTML(x.pizza.tamanho)})</b><span class="m-badge ${x.produzirPedidos > 0 ? 'bad' : 'warn'}">${Math.max(x.produzirPedidos, x.produzirSugerido)}</span></div><div class="m-line">Pedidos: ${x.pedidos} · Estoque: ${x.estoque} · Sobra: ${x.sobra} · Média: ${x.mediaAnterior.toFixed(1)}</div></div>`).join("");
+    renderMobileShell(`<section class="m-section"><div class="m-card"><h2>Produção</h2><p class="m-muted">Semana atual. Quantidade grande = sugestão mais segura.</p></div><div class="m-list">${(itensNaoCadastrados + itensCadastrados) || `<div class="m-card"><p class="m-muted">Nada para produzir agora.</p></div>`}</div></section>`);
   };
 
   const renderMobileLoja = () => {
@@ -6219,7 +7653,7 @@ Lançar mesmo assim como encomenda/produção pendente?`);
       </div>
       <div class="m-card"><h3>Confirmações</h3><div class="m-list">${aguardando.slice(0, 10).map((p) => {
         const resumo = summarizeMobileItems(p.items, 2);
-        return `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(p.cliente || "Cliente")}</b><span class="m-badge warn">A confirmar</span></div><div class="m-line">${escapeHTML(getMetodoEntregaLabel(p))} · ${escapeHTML(formatPedidoAgenda(p))}</div><div class="m-line">${escapeHTML(resumo)}</div><div class="m-actions"><button class="m-mini-btn green" data-confirm-id="${p.id}">Confirmar</button><button class="m-mini-btn danger" data-reject-id="${p.id}">Rejeitar</button></div></div>`;
+        return `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(p.cliente || "Cliente")}</b><span class="m-badge warn">A confirmar</span></div><div class="m-line">${escapeHTML(getMetodoEntregaLabel(p))} · ${escapeHTML(formatPedidoAgenda(p))}</div><div class="m-line">${resumo}</div><div class="m-actions"><button class="m-mini-btn green" data-confirm-id="${p.id}">Confirmar</button><button class="m-mini-btn danger" data-reject-id="${p.id}">Rejeitar</button></div></div>`;
       }).join("") || `<p class="m-muted">Sem pedidos para confirmar.</p>`}</div></div>
       <div class="m-card"><h3>Próximas entregas e retiradas</h3><div class="m-list">${proximos.map((p) => `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(p.cliente || "Cliente")}</b><span class="m-badge ${isPedidoAtrasado(p) ? "bad" : (normalizeMetodoEntrega(p) === "entrega" ? "ok" : "muted")}">${isPedidoAtrasado(p) ? "Atrasado" : escapeHTML(getMetodoEntregaLabel(p))}</span></div><div class="m-line">${escapeHTML(formatPedidoAgenda(p))} · ${escapeHTML(p.cidade || "-")}</div></div>`).join("") || `<p class="m-muted">Nada agendado.</p>`}</div></div>
     </section>`);
@@ -6246,10 +7680,11 @@ Lançar mesmo assim como encomenda/produção pendente?`);
     // simplesmente nao tinha como chegar em "Meu estoque" pelo telefone.
     const isVendorOnly = !!getCurrentSeller() && !document.body.classList.contains("admin-mode");
     const sobras = getPizzaWeekStats(week).filter((p) => Number(p.sobraProj || 0) > 0).sort((a, b) => b.sobraProj - a.sobraProj || String(a.nome).localeCompare(String(b.nome))).slice(0, 12);
-    renderMobileShell(`<section class="m-section"><div class="m-card"><h2>Mais</h2><div class="m-actions single"><button class="m-btn secondary" id="m-open-profile">Perfil do vendedor</button><button class="m-btn secondary" data-mobile-page-go="venda">Venda rápida</button><button class="m-btn secondary" id="m-open-desktop-agenda">Agenda completa</button>${isVendorOnly ? '<button class="m-btn secondary" id="m-open-meu-estoque">Meu estoque</button>' : '<button class="m-btn secondary" id="m-open-desktop-estoque">Sabores e estoque</button>'}<button class="m-btn secondary" id="m-open-desktop-pedidos">Pedidos completos</button><button class="m-btn secondary" id="m-copy-sobras">Copiar disponíveis</button></div></div><div class="m-card"><h3>Disponíveis para retirada</h3><div class="m-list">${sobras.map((p) => `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(p.nome)} (${escapeHTML(p.tamanho)})</b><span class="m-badge ok">${p.sobraProj}</span></div><div class="m-line">Estoque: ${p.estoqueAtual} · pedidos: ${p.pedidosSemana}</div></div>`).join("") || `<p class="m-muted">Sem sobras positivas nesta semana.</p>`}</div></div></section>`);
+    renderMobileShell(`<section class="m-section"><div class="m-card"><h2>Mais</h2><div class="m-actions single"><button class="m-btn secondary" id="m-open-profile">Perfil do vendedor</button><button class="m-btn secondary" data-mobile-page-go="venda">Venda rápida</button><button class="m-btn secondary" id="m-open-desktop-agenda">Agenda completa</button><button class="m-btn secondary" id="m-open-desktop-eventos">Eventos</button>${isVendorOnly ? '<button class="m-btn secondary" id="m-open-meu-estoque">Meu estoque</button>' : '<button class="m-btn secondary" id="m-open-desktop-estoque">Sabores e estoque</button>'}<button class="m-btn secondary" id="m-open-desktop-pedidos">Pedidos completos</button><button class="m-btn secondary" id="m-copy-sobras">Copiar disponíveis</button></div></div><div class="m-card"><h3>Disponíveis para retirada</h3><div class="m-list">${sobras.map((p) => `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(p.nome)} (${escapeHTML(p.tamanho)})</b><span class="m-badge ok">${p.sobraProj}</span></div><div class="m-line">Estoque: ${p.estoqueAtual} · falta separar: ${p.pedidosSemana}</div></div>`).join("") || `<p class="m-muted">Sem sobras positivas nesta semana.</p>`}</div></div></section>`);
     document.getElementById("m-open-profile")?.addEventListener("click", openSellerProfileModal);
     document.getElementById("m-open-desktop-pedidos")?.addEventListener("click", () => openDesktopTabOnMobile('pedidos'));
     document.getElementById("m-open-desktop-agenda")?.addEventListener("click", () => openDesktopTabOnMobile('logistica'));
+    document.getElementById("m-open-desktop-eventos")?.addEventListener("click", () => openDesktopTabOnMobile('eventos'));
     document.getElementById("m-open-desktop-estoque")?.addEventListener("click", () => openDesktopTabOnMobile('estoque'));
     document.getElementById("m-open-meu-estoque")?.addEventListener("click", () => openDesktopTabOnMobile('estoque-vendedor'));
     document.getElementById("m-copy-sobras")?.addEventListener("click", () => copyTextToClipboard(generateSobrasMessage(week)));
@@ -6262,7 +7697,7 @@ Lançar mesmo assim como encomenda/produção pendente?`);
     const clientes = database.clientes.filter((c) => [c.nome,c.cidade,c.telefone].some((v) => String(v||"").toLowerCase().includes(term))).slice(0,8);
     const pedidos = database.pedidos.filter((p) => [p.cliente,p.cidade,p.vendedor,...(p.items||[]).map(i=>i.pizzaNome)].some((v) => String(v||"").toLowerCase().includes(term))).slice(0,8);
     const pizzas = database.estoque.filter((p) => [p.nome,p.tamanho].some((v) => String(v||"").toLowerCase().includes(term))).slice(0,8);
-    renderMobileShell(`<section class="m-section"><div class="m-card"><h2>Busca</h2><p class="m-muted">Resultados para: <b>${escapeHTML(term)}</b></p></div><div class="m-card"><h3>Clientes</h3><div class="m-list">${clientes.map(c=>`<div class="m-item"><b>${escapeHTML(c.nome)}</b><div class="m-line">${escapeHTML(c.cidade||'')} · ${escapeHTML(c.telefone||'')}</div></div>`).join('') || '<p class="m-muted">Nenhum cliente.</p>'}</div></div><div class="m-card"><h3>Pedidos</h3><div class="m-list">${pedidos.map(p=>`<div class="m-item"><b>${escapeHTML(p.cliente)}</b><div class="m-line">${summarizeMobileItems(p.items, 3)}</div><div class="m-line">${formatCurrency(p.valorFinal||p.valorTotal||0)} · ${escapeHTML(p.status||'')}</div></div>`).join('') || '<p class="m-muted">Nenhum pedido.</p>'}</div></div><div class="m-card"><h3>Pizzas</h3><div class="m-list">${pizzas.map(p=>`<div class="m-item"><b>${escapeHTML(p.nome)} (${escapeHTML(p.tamanho)})</b><div class="m-line">Estoque ${p.qtd} · ${formatCurrency(p.precoVenda)}</div></div>`).join('') || '<p class="m-muted">Nenhuma pizza.</p>'}</div></div></section>`);
+    renderMobileShell(`<section class="m-section"><div class="m-card"><h2>Busca</h2><p class="m-muted">Resultados para: <b>${escapeHTML(term)}</b></p></div><div class="m-card"><h3>Clientes</h3><div class="m-list">${clientes.map(c=>`<div class="m-item"><b>${escapeHTML(c.nome)}</b><div class="m-line">${escapeHTML(c.cidade||'')} · ${escapeHTML(c.telefone||'')}</div></div>`).join('') || '<p class="m-muted">Nenhum cliente.</p>'}</div></div><div class="m-card"><h3>Pedidos</h3><div class="m-list">${pedidos.map(p=>`<div class="m-item"><b>${escapeHTML(p.cliente)}</b><div class="m-line">${summarizeMobileItems(p.items, 3)}</div><div class="m-line">${formatCurrency(p.valorFinal||p.valorTotal||0)} · ${escapeHTML(p.status||'')}</div></div>`).join('') || '<p class="m-muted">Nenhum pedido.</p>'}</div></div><div class="m-card"><h3>Pizzas</h3><div class="m-list">${pizzas.map(p=>`<div class="m-item"><b>${escapeHTML(p.nome)} (${escapeHTML(p.tamanho)})</b><div class="m-line">Disponível ${getPizzaSobraForWeek(p.id)} · estoque ${p.qtd} · ${formatCurrency(p.precoVenda)}</div></div>`).join('') || '<p class="m-muted">Nenhuma pizza.</p>'}</div></div></section>`);
   };
 
   const renderMobileApp = () => {
@@ -6621,21 +8056,6 @@ Lançar mesmo assim como encomenda/produção pendente?`);
       const saida = ["saida_venda","ajuste_saida"].includes(mv.tipo);
       return `<div class="seller-stock-history-item"><div><b>${escapeHTML(movementLabel[mv.tipo] || mv.tipo || "Movimentação")}</b><small>${escapeHTML(mv.nome || "")}${mv.tamanho ? ` · ${escapeHTML(mv.tamanho)}` : ""}${mv.observacao ? ` · ${escapeHTML(mv.observacao)}` : ""}</small></div><div class="seller-stock-history-qty ${saida ? "out" : "in"}"><b>${saida ? "−" : "+"}${Number(mv.qtd || 0)}</b><small>${mv.createdAt ? new Date(mv.createdAt).toLocaleString("pt-BR") : ""}</small></div></div>`;
     }).join("") + (movements.length > 8 ? `<p class="small-muted seller-stock-history-more">Mostrando as 8 movimentações mais recentes de ${movements.length}.</p>` : "") : '<div class="empty-state">Nenhuma movimentação registrada.</div>';
-  };
-
-  const renderSellerLots = () => {
-    const container = document.getElementById("seller-lotes-list");
-    const card = document.getElementById("seller-lotes-card");
-    if (!container || !card) return;
-    const seller = getCurrentSeller();
-    const isAdmin = sessionStorage.getItem(ADMIN_SESSION_KEY) === "true" || isSellerAdmin(seller);
-    const lots = Array.isArray(database.vendedor_lotes) ? database.vendedor_lotes : [];
-    card.hidden = !isAdmin && !seller;
-    if (card.hidden) return;
-    container.innerHTML = lots.length ? lots.map((lot) => {
-      const sections = Array.isArray(lot.secoes) ? lot.secoes : [];
-      return `<article class="seller-lote"><header class="seller-lote-head"><div><b>${escapeHTML(lot.vendedor || "Vendedor")}</b><small>${escapeHTML(formatDateBR(lot.dataEntrega || ""))} · ${sections.length} cliente(s)</small></div><div><span class="status-chip ${String(lot.status||"").toLowerCase()==="pronto" ? "success" : "warning"}">${escapeHTML(lot.status || "Pendente")}</span><b>${formatCurrency(lot.valorTotal || 0)}</b></div></header><div class="seller-lote-secoes">${sections.map((section) => `<section class="seller-lote-secao"><div class="seller-lote-secao-head"><div><b>${escapeHTML(section.cliente || "Cliente")}</b><small>${escapeHTML(section.pagamento || "A combinar")} · ${escapeHTML(section.codigo || "")}</small></div><div>${section.pago ? '<span class="payment-tag paid">Pago</span>' : '<span class="payment-tag unpaid">Aguardando pagamento</span>'}</div></div><ul class="seller-lote-items">${(Array.isArray(section.items)?section.items:[]).map((item) => `<li>${Number(item.qtd||0)}x ${escapeHTML(item.pizzaNome || "Item")}</li>`).join("")}</ul><div class="seller-lote-actions">${section.status !== "Concluído" && section.status !== "Cancelado" && section.status !== "Negado" ? `<button class="action-btn paid-btn" type="button" onclick="window.marcarPedidoPago('${escapeAttr(section.pedidoId)}')">Marcar pago</button><button class="action-btn complete-btn" type="button" onclick="window.updatePedidoStatus('${escapeAttr(section.pedidoId)}','Concluído')">Concluir</button>` : ""}<button class="action-btn edit-btn" type="button" onclick="window.openEditPedidoModal('${escapeAttr(section.pedidoId)}')">Editar pedido</button></div></section>`).join("")}</div></article>`;
-    }).join("") : '<div class="empty-state">Nenhum pedido agrupado de vendedor ainda.</div>';
   };
 
   window.adjustSellerStock = async (pizzaId, delta) => {

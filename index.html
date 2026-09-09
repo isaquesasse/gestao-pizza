@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestão Sasse's Pizza</title>
-    <link rel="stylesheet" href="style.css?v=69">
+    <link rel="stylesheet" href="style.css?v=93">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0,0&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -103,6 +103,7 @@
             <button type="button" id="btn-more-tabs" class="tab-more-btn" aria-expanded="false" aria-controls="more-tabs-menu">Mais áreas</button>
             <div id="more-tabs-menu" class="more-tabs-menu" hidden>
                 <button class="tab-link" data-tab="logistica"><span class="material-symbols-rounded">calendar_month</span><span>Agenda</span></button>
+                <button class="tab-link" data-tab="eventos"><span class="material-symbols-rounded">celebration</span><span>Eventos</span></button>
                 <button class="tab-link" data-tab="cozinha"><span class="material-symbols-rounded">skillet</span><span>Modo cozinha</span></button>
                 <div class="sidebar-section-label">Gestão</div>
                 <button class="tab-link" data-tab="caixa"><span class="material-symbols-rounded">payments</span><span>Caixa</span></button>
@@ -211,6 +212,7 @@
                         <div class="settings-block">
                             <h4>Entrega</h4>
                             <div class="settings-grid">
+                                <label class="toggle-line"><input type="checkbox" id="cfg-frete-ativo"> Cobrar frete na loja</label>
                                 <label>Valor por km<input type="number" id="cfg-taxa-km" min="0" step="0.01"></label>
                                 <label>Entrega grátis até km<input type="number" id="cfg-gratis-km" min="0" step="0.1"></label>
                                 <label>Frete mínimo<input type="number" id="cfg-frete-minimo" min="0" step="0.01"></label>
@@ -231,6 +233,7 @@
                                 <label>Chave Pix<input type="text" id="cfg-pix-key" placeholder="chave pix"></label>
                                 <label>Nome do Pix<input type="text" id="cfg-pix-name" placeholder="SASSES PIZZA"></label>
                                 <label>Cidade do Pix<input type="text" id="cfg-pix-city" placeholder="MASSARANDUBA"></label>
+                                <label>Vendedor dono da chave Pix<select id="cfg-pix-vendedor"></select><small class="field-hint">Só os clientes desse vendedor veem o QR Code e o copia e cola. Os demais combinam o Pix com quem os atende.</small></label>
                             </div>
                         </div>
                         <div class="settings-block">
@@ -495,7 +498,7 @@
                                         <tr>
                                             <th>Pizza</th>
                                             <th>Estoque</th>
-                                            <th>Reservado</th>
+                                            <th>Falta separar</th>
                                             <th>Disponível</th>
                                         </tr>
                                     </thead>
@@ -505,17 +508,6 @@
                         </div>
                     </div>
                 </div>
-            </div>
-
-            <div class="card seller-lotes-card" id="seller-lotes-card">
-                <div class="table-header compact-header">
-                    <div>
-                        <span class="section-eyebrow"><span class="material-symbols-rounded">groups</span> Pedidos agrupados</span>
-                        <h3>Pedidos por vendedor e data</h3>
-                        <p class="small-muted">Clientes da loja aparecem como seções dentro do lote do vendedor, sem perder o pedido individual.</p>
-                    </div>
-                </div>
-                <div id="seller-lotes-list" class="seller-lotes-list"></div>
             </div>
 
             <div class="card">
@@ -669,6 +661,206 @@
                 </div>
             </div>
             <div id="cozinha-lista" class="kitchen-list"></div>
+        </div>
+
+        <div id="eventos" class="tab-content">
+            <section class="dashboard-heading">
+                <div>
+                    <span class="section-eyebrow"><span class="material-symbols-rounded">celebration</span> Eventos</span>
+                    <h2>Eventos</h2>
+                    <p class="small-muted">Festas, casamentos, formaturas e confraternizações. Nenhum campo é obrigatório: registre só o que já souber e complete depois. Pizza de evento não sai do estoque.</p>
+                </div>
+            </section>
+
+            <div class="kpi-grid" id="eventos-kpis"></div>
+
+            <section class="card">
+                <div class="table-header">
+                    <div>
+                        <h3 id="evento-form-titulo">Novo evento</h3>
+                        <p class="small-muted">Pode salvar só com o nome, ou só com a data. O resto entra quando fechar.</p>
+                    </div>
+                    <div class="filters-container">
+                        <button type="button" id="evento-cancelar-edicao" class="secondary-btn hidden">Cancelar edição</button>
+                        <button type="button" id="evento-limpar" class="secondary-btn">Limpar</button>
+                    </div>
+                </div>
+                <form id="form-evento" class="evento-form" autocomplete="off">
+                    <input type="hidden" id="evento-id">
+                    <div class="evento-grid">
+                        <label class="wide">Nome do evento
+                            <input type="text" id="evento-nome" placeholder="Ex.: Aniversário de 40 da Marli">
+                        </label>
+                        <label>Tipo
+                            <input type="text" id="evento-tipo" list="evento-tipos" placeholder="Aniversário, casamento...">
+                        </label>
+                        <label>Situação
+                            <select id="evento-status">
+                                <option value="Orçamento">Orçamento</option>
+                                <option value="Confirmado">Confirmado</option>
+                                <option value="Realizado">Realizado</option>
+                                <option value="Cancelado">Cancelado</option>
+                            </select>
+                        </label>
+
+                        <label>Data
+                            <input type="date" id="evento-data">
+                        </label>
+                        <label>Começa
+                            <input type="time" id="evento-hora">
+                        </label>
+                        <label>Termina
+                            <input type="time" id="evento-hora-fim">
+                        </label>
+                        <label>Como vai ser servido
+                            <input type="text" id="evento-formato" list="evento-formatos" placeholder="Rodízio no local, entrega...">
+                        </label>
+
+                        <label>Cliente / contratante
+                            <input type="text" id="evento-cliente" list="clientes-list" placeholder="Nome de quem contratou">
+                        </label>
+                        <label>Telefone
+                            <input type="text" id="evento-telefone" inputmode="tel" placeholder="(47) 9...">
+                        </label>
+                        <label>Local
+                            <input type="text" id="evento-local" placeholder="Salão, chácara, endereço...">
+                        </label>
+                        <label>Cidade
+                            <input type="text" id="evento-cidade" placeholder="Massaranduba">
+                        </label>
+
+                        <label>Pessoas
+                            <input type="number" id="evento-pessoas" min="0" step="1" inputmode="numeric" placeholder="0">
+                        </label>
+                        <label>Pizzas
+                            <input type="number" id="evento-pizzas" min="0" step="1" inputmode="numeric" placeholder="0">
+                        </label>
+                        <label>Valor combinado
+                            <input type="number" id="evento-valor" min="0" step="0.01" inputmode="decimal" placeholder="0,00">
+                        </label>
+                        <label>Sinal recebido
+                            <input type="number" id="evento-sinal" min="0" step="0.01" inputmode="decimal" placeholder="0,00">
+                        </label>
+                        <label>Custo estimado
+                            <input type="number" id="evento-custo" min="0" step="0.01" inputmode="decimal" placeholder="0,00">
+                        </label>
+                        <label class="evento-check">
+                            <input type="checkbox" id="evento-pago">
+                            <span>Já foi pago por inteiro</span>
+                        </label>
+
+                        <label>Quem cuida do evento
+                            <input type="text" id="evento-responsavel" placeholder="Nome de quem fica responsável">
+                        </label>
+                        <label>Como chegou até nós
+                            <input type="text" id="evento-origem" list="evento-origens" placeholder="Indicação, Instagram...">
+                        </label>
+                        <label>Como foi (depois do evento)
+                            <select id="evento-avaliacao">
+                                <option value="">Ainda não avaliado</option>
+                                <option value="5">5 · Foi excelente</option>
+                                <option value="4">4 · Foi bom</option>
+                                <option value="3">3 · Deu pra fazer</option>
+                                <option value="2">2 · Teve problema</option>
+                                <option value="1">1 · Deu errado</option>
+                            </select>
+                        </label>
+
+                        <label class="wide">Sabores combinados
+                            <textarea id="evento-sabores" rows="2" placeholder="Ex.: 20 calabresa, 20 frango c/ catupiry, 10 doces"></textarea>
+                        </label>
+                        <label class="wide">Observações
+                            <textarea id="evento-observacoes" rows="2" placeholder="Combinações, horário de montagem, quem leva, o que for"></textarea>
+                        </label>
+                    </div>
+                    <div id="evento-conta" class="evento-conta"></div>
+                    <div class="evento-actions">
+                        <button type="submit" id="evento-salvar">Salvar evento</button>
+                    </div>
+                </form>
+                <datalist id="evento-tipos">
+                    <option value="Aniversário"></option>
+                    <option value="Casamento"></option>
+                    <option value="Formatura"></option>
+                    <option value="Confraternização"></option>
+                    <option value="Corporativo"></option>
+                    <option value="Batizado"></option>
+                    <option value="Chá de bebê"></option>
+                    <option value="Festa da igreja"></option>
+                    <option value="Outro"></option>
+                </datalist>
+                <datalist id="evento-formatos">
+                    <option value="Rodízio no local"></option>
+                    <option value="Pizzas prontas entregues"></option>
+                    <option value="Retirada pelo cliente"></option>
+                    <option value="Buffet completo"></option>
+                </datalist>
+                <datalist id="evento-origens">
+                    <option value="Indicação"></option>
+                    <option value="Instagram"></option>
+                    <option value="WhatsApp"></option>
+                    <option value="Cliente antigo"></option>
+                    <option value="Passou na frente"></option>
+                    <option value="Outro"></option>
+                </datalist>
+            </section>
+
+            <section class="card">
+                <div class="table-header">
+                    <div>
+                        <h3>Calendário de eventos</h3>
+                        <p class="small-muted">Clique num evento para abrir os detalhes.</p>
+                    </div>
+                    <div class="filters-container evento-mes-nav">
+                        <button type="button" id="evento-mes-anterior" class="secondary-btn" aria-label="Mês anterior">‹</button>
+                        <strong id="evento-mes-label">—</strong>
+                        <button type="button" id="evento-mes-proximo" class="secondary-btn" aria-label="Próximo mês">›</button>
+                        <button type="button" id="evento-mes-hoje" class="secondary-btn">Hoje</button>
+                    </div>
+                </div>
+                <div id="evento-calendario" class="evento-calendario"></div>
+            </section>
+
+            <section class="card">
+                <div class="table-header">
+                    <div>
+                        <h3>Eventos registrados</h3>
+                        <p class="small-muted" id="evento-lista-resumo"></p>
+                    </div>
+                    <div class="filters-container">
+                        <input type="search" id="evento-busca" placeholder="Buscar evento, cliente, local...">
+                        <select id="evento-filtro-status">
+                            <option value="">Todas as situações</option>
+                            <option value="Orçamento">Orçamento</option>
+                            <option value="Confirmado">Confirmado</option>
+                            <option value="Realizado">Realizado</option>
+                            <option value="Cancelado">Cancelado</option>
+                        </select>
+                        <select id="evento-filtro-periodo">
+                            <option value="proximos">Próximos e sem data</option>
+                            <option value="todos">Todos</option>
+                            <option value="passados">Já passaram</option>
+                        </select>
+                        <button type="button" id="export-eventos">⬇️ Excel</button>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table id="tabela-eventos">
+                        <thead>
+                            <tr>
+                                <th>Evento</th>
+                                <th>Quando</th>
+                                <th>Pessoas</th>
+                                <th>Pizzas</th>
+                                <th>Valor</th>
+                                <th>Situação</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </section>
         </div>
 
 <div id="clientes" class="tab-content">
@@ -835,6 +1027,7 @@
                                 <th data-sort-by="nome">Sabor da Pizza</th>
                                 <th data-sort-by="tamanho">Tamanho</th>
                                 <th data-sort-by="qtd">Qtd.</th>
+                                <th>Disponível</th>
                                 <th class="admin-only" data-sort-by="custo">Custo</th>
                                 <th data-sort-by="precoVenda">Preço Venda</th>
                                 <th>Loja</th>
@@ -1291,7 +1484,7 @@
     <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script defer src="config.js"></script>
-    <script defer src="script.js?v=69"></script>
+    <script defer src="script.js?v=93"></script>
 </body>
 
 </html>

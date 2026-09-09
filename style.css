@@ -7426,6 +7426,54 @@ body.admin-mode #estoque-vendedor { display: none !important; }
 .seller-stock-suggestion-main small { display: block; color: var(--text-light-color); margin-top: 4px; }
 .seller-stock-receive-btn { align-self: center; white-space: nowrap; font-weight: 800; }
 
+/* Pizza diferente (fora do cadastro de estoque). Não tem receita, não sai de
+   nenhuma prateleira e nenhuma conta automática a enxerga: em toda lista de
+   produção — tela, dashboard, cozinha e impressão — ela vai em negrito e com
+   selo, senão passa batida justo por ser a única que precisa ser feita do zero. */
+.tag-nao-cadastrada {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: .64rem;
+  font-weight: 800;
+  font-style: normal;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  vertical-align: middle;
+}
+
+.linha-nao-cadastrada,
+tr.linha-nao-cadastrada td {
+  background: rgba(194, 54, 22, .08);
+}
+
+tr.linha-nao-cadastrada td:first-child {
+  box-shadow: inset 3px 0 0 var(--danger-color);
+}
+
+.kitchen-item.linha-nao-cadastrada,
+.home-list-item.linha-nao-cadastrada {
+  border-left: 3px solid var(--danger-color);
+}
+
+/* No papel o fundo some por padrão; o negrito e o traço garantem o destaque. */
+@media print {
+  .item-pedido-outro,
+  .tag-nao-cadastrada {
+    color: #000;
+    font-weight: 900;
+    text-decoration: underline;
+  }
+  .tag-nao-cadastrada { text-decoration: none; }
+  .linha-nao-cadastrada,
+  tr.linha-nao-cadastrada td {
+    background: transparent;
+    border-left: 2px solid #000;
+  }
+}
+
 .seller-stock-history-qty { text-align: right; white-space: nowrap; }
 .seller-stock-history-qty.in b { color: var(--success-color); }
 .seller-stock-history-qty.out b { color: var(--danger-color); }
@@ -7591,4 +7639,802 @@ body.admin-mode #estoque-vendedor { display: none !important; }
   .pending-alert { flex-wrap: wrap; bottom: 84px; }
   .pending-alert-actions { width: 100%; justify-content: space-between; }
   .pending-alert-cta { flex: 1; }
+}
+
+/* === V70: régua única do app de celular ===
+   Os blocos "autoritativos" anteriores (V18/V19/V20) se contradiziam: em telas
+   de exatamente 390px (iPhone 12/13/14) uma regra escondida jogava KPIs e ações
+   para uma coluna só, e o botão redondo de 36px recebia rótulos como "Copiar",
+   com o texto maior que o próprio botão. Este bloco fecha o arquivo e vale uma
+   regra só: nenhum texto abaixo de ~11px, nenhum alvo de toque abaixo de 44px. */
+@media (max-width: 900px) {
+  /* Cabeçalho: era um bloco de ~120px repetido em toda página. */
+  body:not(.force-desktop-mobile) #mobile-app .mobile-brand-btn {
+    min-height: 44px !important;
+    padding: 4px 0 !important;
+  }
+  body:not(.force-desktop-mobile) #mobile-app .mobile-brand-btn strong { font-size: 1.05rem !important; }
+  body:not(.force-desktop-mobile) #mobile-app .mobile-brand-btn small { font-size: .68rem !important; }
+
+  /* Escala de texto: antes havia .58/.59/.65/.7/.75/.88rem misturados, quase
+     tudo abaixo de 12px. */
+  body:not(.force-desktop-mobile) #mobile-app .m-card h2 { font-size: 1.12rem !important; }
+  body:not(.force-desktop-mobile) #mobile-app .m-card h3 { font-size: .95rem !important; margin-bottom: 9px !important; }
+  body:not(.force-desktop-mobile) #mobile-app .m-muted,
+  body:not(.force-desktop-mobile) #mobile-app .m-line {
+    font-size: .78rem !important;
+    line-height: 1.4 !important;
+  }
+  body:not(.force-desktop-mobile) #mobile-app .m-item b,
+  body:not(.force-desktop-mobile) #mobile-app .m-cart-row b,
+  body:not(.force-desktop-mobile) #mobile-app .m-pizza-row b {
+    font-size: .88rem !important;
+    line-height: 1.25 !important;
+  }
+  body:not(.force-desktop-mobile) #mobile-app .m-badge {
+    padding: 4px 9px !important;
+    font-size: .68rem !important;
+  }
+
+  /* Título da página ocupava um cartão inteiro de ~130px. */
+  body:not(.force-desktop-mobile) #mobile-app .m-section > .m-card:first-child { padding: 12px 14px !important; }
+  body:not(.force-desktop-mobile) #mobile-app .m-section > .m-card:first-child .m-muted { font-size: .74rem !important; }
+
+  body:not(.force-desktop-mobile) #mobile-app .m-card { padding: 13px !important; }
+  body:not(.force-desktop-mobile) #mobile-app .m-section,
+  body:not(.force-desktop-mobile) #mobile-app .m-list { gap: 9px !important; }
+  body:not(.force-desktop-mobile) #mobile-app .m-item { padding: 11px !important; }
+
+  /* KPIs: duas colunas em qualquer largura e sem os 104px de altura fixa que
+     deixavam metade do cartão vazio. */
+  body:not(.force-desktop-mobile) #mobile-app .m-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 9px !important;
+  }
+  body:not(.force-desktop-mobile) #mobile-app .m-kpi {
+    min-height: 0 !important;
+    padding: 11px 12px !important;
+  }
+  body:not(.force-desktop-mobile) #mobile-app .m-kpi span {
+    font-size: .7rem !important;
+    line-height: 1.25 !important;
+  }
+  body:not(.force-desktop-mobile) #mobile-app .m-kpi b {
+    margin-top: 3px !important;
+    font-size: 1.4rem !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app .m-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 9px !important;
+  }
+  body:not(.force-desktop-mobile) #mobile-app .m-actions.single { grid-template-columns: 1fr !important; }
+  body:not(.force-desktop-mobile) #mobile-app .m-btn {
+    min-height: 48px !important;
+    padding: 10px 11px !important;
+    font-size: .88rem !important;
+    line-height: 1.2 !important;
+  }
+
+  /* O botão de 36px (34px em telas menores) com rótulo de texto dentro: agora
+     cresce com o rótulo e continua sendo um alvo de toque de 44px. */
+  body:not(.force-desktop-mobile) #mobile-app .m-mini-btn {
+    width: auto !important;
+    min-width: 44px !important;
+    max-width: none !important;
+    height: 44px !important;
+    min-height: 44px !important;
+    padding: 0 13px !important;
+    border-radius: 12px !important;
+    font-size: .8rem !important;
+  }
+  /* Nos contadores +/− o botão volta a ser quadrado, só que maior. */
+  body:not(.force-desktop-mobile) #mobile-app .m-pizza-row .m-mini-btn,
+  body:not(.force-desktop-mobile) #mobile-app .m-cart-row .m-mini-btn {
+    width: 44px !important;
+    min-width: 44px !important;
+    padding: 0 !important;
+    font-size: 1.15rem !important;
+  }
+  body:not(.force-desktop-mobile) #mobile-app .m-pizza-row {
+    grid-template-columns: minmax(0, 1fr) 44px 54px 44px !important;
+    gap: 7px !important;
+    padding: 10px !important;
+  }
+  body:not(.force-desktop-mobile) #mobile-app .m-pizza-row input,
+  body:not(.force-desktop-mobile) #mobile-app .m-cart-row input {
+    width: 54px !important;
+    min-width: 54px !important;
+    min-height: 44px !important;
+    font-size: 16px !important;
+  }
+
+  body:not(.force-desktop-mobile) #mobile-app .m-form input:not([type="checkbox"]):not([type="radio"]),
+  body:not(.force-desktop-mobile) #mobile-app .m-form select,
+  body:not(.force-desktop-mobile) #mobile-app .m-form textarea {
+    min-height: 48px !important;
+  }
+
+  /* A altura mínima de campo transformava a caixinha de "Pedido grande" num
+     quadrado de 48px no meio da linha. */
+  body:not(.force-desktop-mobile) #mobile-app .m-order-big-toggle {
+    justify-content: flex-start !important;
+    padding: 11px !important;
+  }
+  body:not(.force-desktop-mobile) #mobile-app .m-order-big-toggle input[type="checkbox"] {
+    flex: 0 0 22px !important;
+    width: 22px !important;
+    height: 22px !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    accent-color: var(--secondary-color) !important;
+  }
+
+  /* Rótulos da barra de baixo estavam em 9px. */
+  body:not(.force-desktop-mobile) #mobile-app .mobile-app-nav button,
+  body:not(.force-desktop-mobile) #mobile-app .mobile-app-nav button.active { font-size: .64rem !important; }
+  body:not(.force-desktop-mobile) #mobile-app .mobile-app-nav button .material-symbols-rounded { font-size: 22px !important; }
+}
+
+/* === V70b: formulários e contadores do celular === */
+@media (max-width: 900px) {
+  /* Campos curtos lado a lado: a Venda rápida empilhava 6 campos de largura
+     inteira antes da primeira pizza, e o Novo pedido, 8. */
+  body:not(.force-desktop-mobile) #mobile-app .m-form-pair {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 9px !important;
+  }
+  body:not(.force-desktop-mobile) #mobile-app .m-form-pair > * { min-width: 0 !important; }
+
+  /* Quebra só entre os dados, nunca no meio de "R$ 28,00". */
+  body:not(.force-desktop-mobile) #mobile-app .m-line span { white-space: nowrap !important; }
+
+  /* Uma parede de blocos vermelhos: só o "+" fica em destaque; o "−" e os
+     botões de texto viram secundários. */
+  body:not(.force-desktop-mobile) #mobile-app .m-mini-btn {
+    border: 1px solid #e2dbd4 !important;
+    background: #fff !important;
+    color: var(--primary-color) !important;
+  }
+  body:not(.force-desktop-mobile) #mobile-app .m-mini-btn[data-pizza-plus] {
+    border-color: transparent !important;
+    background: var(--secondary-color) !important;
+    color: #fff !important;
+  }
+  /* O "×" do carrinho é quadrado e sinaliza remoção. */
+  body:not(.force-desktop-mobile) #mobile-app .m-mini-btn[data-remove-mobile-order] {
+    width: 44px !important;
+    padding: 0 !important;
+    color: var(--danger-color) !important;
+    font-size: 1.25rem !important;
+  }
+}
+
+/* Origem do pedido: legenda, não separação. O pedido do site fica na mesma
+   lista dos manuais e só carrega esta marca discreta. */
+.origem-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  color: var(--text-light-color);
+  font-size: .66rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+.origem-tag::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--secondary-color);
+}
+@media (max-width: 900px) {
+  body:not(.force-desktop-mobile) #mobile-app .origem-tag {
+    margin-left: 8px;
+    margin-top: 0 !important;
+    font-size: .64rem !important;
+  }
+}
+
+
+/* === V76: pedido no nome do vendedor, cliente vira secao === */
+.pedido-lote-row > td[data-label="Cliente"] > small {
+  display: block;
+  color: var(--text-light-color);
+  font-size: .7rem;
+  font-weight: 700;
+}
+
+.pedido-table-section .pedido-secao-codigo {
+  margin-left: 4px;
+  opacity: .75;
+  font-size: .7rem;
+  font-weight: 800;
+}
+
+.pedido-table-section small {
+  display: block;
+  margin-top: 1px;
+  color: var(--text-light-color);
+  font-size: .68rem;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.pending-lote-secao + .pending-lote-secao {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed #e5ddd7;
+}
+
+.lote-cliente-card {
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border: 1px solid #e7e0da;
+  border-left: 3px solid var(--secondary-color);
+  border-radius: 12px;
+  background: #fdfbf9;
+}
+
+.lote-cliente-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.lote-cliente-head b { color: var(--primary-color); font-size: .95rem; }
+
+.lote-cliente-code {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #f1e8e2;
+  color: #6b5f57;
+  font-size: .7rem;
+  font-weight: 800;
+}
+
+.lote-cliente-meta {
+  margin-top: 4px;
+  color: var(--text-light-color);
+  font-size: .76rem;
+  font-weight: 600;
+}
+
+.lote-cliente-itens {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: .82rem;
+}
+
+.lote-cliente-obs {
+  margin: 8px 0 0;
+  color: var(--text-light-color);
+  font-size: .76rem;
+}
+
+.lote-cliente-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+@media (max-width: 900px) {
+  .lote-cliente-acoes .action-btn { min-height: 40px; }
+}
+
+
+
+/* === V82: foto do produto (upload ou link) === */
+.imagem-produto {
+  display: flex;
+  flex-direction: column;
+  gap: .6rem;
+}
+
+.imagem-produto-titulo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: .5rem;
+  font-weight: 700;
+  color: var(--text-color);
+}
+
+.imagem-produto-titulo small {
+  font-weight: 400;
+  color: var(--text-light-color);
+}
+
+.imagem-produto-corpo {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.imagem-produto-preview {
+  position: relative;
+  flex: 0 0 118px;
+  width: 118px;
+  height: 118px;
+  border-radius: var(--radius);
+  border: 1px dashed var(--border-color);
+  background: var(--subtle-bg-color);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.imagem-produto-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.imagem-produto-vazio {
+  font-size: .8rem;
+  color: var(--text-light-color);
+}
+
+.imagem-produto-controles {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .55rem;
+}
+
+.imagem-produto-modos {
+  display: inline-flex;
+  align-self: flex-start;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.imagem-produto-modos .imagem-modo {
+  border: 0;
+  background: var(--card-background);
+  color: var(--text-light-color);
+  font-family: inherit;
+  font-size: .85rem;
+  font-weight: 700;
+  padding: .45rem .9rem;
+  cursor: pointer;
+}
+
+.imagem-produto-modos .imagem-modo + .imagem-modo {
+  border-left: 1px solid var(--border-color);
+}
+
+.imagem-produto-modos .imagem-modo.is-active {
+  background: var(--accent-color);
+  color: #fff;
+}
+
+.imagem-produto-campo {
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+}
+
+.imagem-produto-campo > .action-btn {
+  align-self: flex-start;
+}
+
+.imagem-produto-campo small {
+  color: var(--text-light-color);
+  line-height: 1.35;
+}
+
+.imagem-produto-url-linha {
+  display: flex;
+  gap: .5rem;
+}
+
+.imagem-produto-url-linha input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.imagem-produto-status {
+  margin: 0;
+  min-height: 1.1em;
+  font-size: .85rem;
+  color: var(--text-light-color);
+}
+
+.imagem-produto-status.ok {
+  color: var(--success-color);
+  font-weight: 700;
+}
+
+.imagem-produto-status.erro {
+  color: var(--danger-color);
+  font-weight: 700;
+}
+
+.imagem-produto #imagem-produto-remover {
+  align-self: flex-start;
+}
+
+.imagem-produto.is-ocupado {
+  opacity: .75;
+}
+
+@media (max-width: 640px) {
+  .imagem-produto-corpo {
+    flex-direction: column;
+  }
+
+  .imagem-produto-preview {
+    width: 100%;
+    flex-basis: auto;
+    height: 150px;
+  }
+
+  .imagem-produto-url-linha {
+    flex-direction: column;
+  }
+
+  .imagem-produto-url-linha .action-btn,
+  .imagem-produto-campo > .action-btn,
+  .imagem-produto #imagem-produto-remover {
+    align-self: stretch;
+    min-height: 42px;
+  }
+}
+
+/* [hidden] tem de vencer o display do bloco acima, senao os dois modos
+   aparecem juntos e a moldura vazia fica atras da foto. */
+.imagem-produto [hidden] {
+  display: none !important;
+}
+
+/* No celular "Enviar foto" quebrava em duas linhas e o "Remover foto" ficava
+   tao chamativo quanto o "Salvar pizza". */
+.imagem-produto-modos .imagem-modo {
+  white-space: nowrap;
+}
+
+.imagem-produto #imagem-produto-remover {
+  background: transparent;
+  color: var(--danger-color);
+  border: 1px solid var(--border-color);
+  box-shadow: none;
+  font-size: .85rem;
+  padding: .4rem .8rem;
+  min-height: 0;
+}
+
+.imagem-produto #imagem-produto-remover:hover {
+  border-color: var(--danger-color);
+}
+
+/* Linha da demanda de produção abre o modal de quem está com o estoque */
+#tabela-demanda-producao tbody tr.linha-clicavel { cursor: pointer; }
+
+#tabela-demanda-producao tbody tr.linha-clicavel:hover td {
+  background: #f4f8ff;
+}
+
+.reserva-resumo {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.reserva-resumo > div {
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fbfcfe;
+  text-align: center;
+}
+
+.reserva-resumo span {
+  display: block;
+  font-size: .68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-light-color);
+}
+
+.reserva-resumo b { font-size: 1.4rem; }
+.reserva-resumo .negativo b { color: var(--danger-color); }
+
+.reserva-titulo {
+  margin: 18px 0 8px;
+  font-size: .82rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-light-color);
+}
+
+.reserva-titulo small {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+}
+
+.reserva-card {
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--secondary-color);
+  border-radius: 12px;
+  background: #fdfbf9;
+}
+
+.reserva-card.atrasado { border-left-color: var(--danger-color); }
+
+.reserva-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.reserva-qtd { color: var(--primary-color); font-size: 1rem; }
+.reserva-cliente { font-weight: 700; }
+
+.reserva-meta {
+  margin-top: 4px;
+  color: var(--text-light-color);
+  font-size: .76rem;
+  font-weight: 600;
+}
+
+.reserva-rodape { margin-top: 16px; }
+
+@media (max-width: 600px) {
+  .reserva-resumo { grid-template-columns: 1fr; }
+}
+
+/* ==================== Aba Eventos ==================== */
+/* O seletor `form` global e flex com align-items:center. Sem o stretch aqui a
+   grade encolhia ate o tamanho minimo e virava uma coluna so no meio da tela. */
+.evento-form {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1rem;
+  width: 100%;
+}
+
+.evento-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: .85rem;
+  width: 100%;
+}
+
+.evento-grid > label {
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+  font-size: .78rem;
+  font-weight: 700;
+  color: var(--text-light-color);
+}
+
+.evento-grid > label.wide { grid-column: 1 / -1; }
+
+.evento-grid input,
+.evento-grid select,
+.evento-grid textarea { width: 100%; }
+.evento-grid textarea { resize: vertical; min-height: 58px; }
+
+.evento-grid > label.evento-check {
+  flex-direction: row;
+  align-items: center;
+  gap: .55rem;
+  align-self: end;
+  padding: .7rem .85rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  background: var(--subtle-bg-color);
+}
+
+.evento-check input { width: auto; margin: 0; }
+.evento-check span { color: var(--text-color); }
+
+.evento-conta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .6rem;
+  width: 100%;
+}
+
+.evento-conta > span {
+  display: flex;
+  flex-direction: column;
+  gap: .15rem;
+  padding: .55rem .85rem;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--subtle-bg-color);
+  min-width: 130px;
+}
+
+.evento-conta small {
+  font-size: .64rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-light-color);
+}
+
+.evento-conta b { font-size: .95rem; color: var(--primary-color); }
+.evento-conta .alerta { border-color: #f0c7c3; background: #fdebea; }
+.evento-conta .alerta b { color: var(--danger-color); }
+.evento-conta .bom { border-color: #bfe0ce; background: #e9f5ef; }
+.evento-conta .bom b { color: #176248; }
+.evento-conta .vazio { border: 0; background: none; color: var(--text-light-color); font-size: .8rem; }
+
+.evento-actions { display: flex; flex-wrap: wrap; gap: .6rem; width: 100%; }
+
+.evento-mes-nav { align-items: center; gap: .5rem; }
+.evento-mes-nav strong { min-width: 150px; text-align: center; }
+
+.evento-calendario { overflow-x: auto; }
+
+.evento-cal-grade {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(112px, 1fr));
+  gap: 4px;
+  min-width: 780px;
+}
+
+.evento-cal-cabecalho {
+  padding: .4rem;
+  text-align: center;
+  font-size: .68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--text-light-color);
+}
+
+.evento-cal-dia {
+  min-height: 92px;
+  padding: .35rem;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--card-background);
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+}
+
+.evento-cal-dia.fora { background: var(--subtle-bg-color); opacity: .55; }
+.evento-cal-dia.hoje { border-color: var(--secondary-color); box-shadow: 0 0 0 1px var(--secondary-color) inset; }
+.evento-cal-dia.tem-evento { background: #fffdf9; }
+
+.evento-cal-numero {
+  font-size: .74rem;
+  font-weight: 800;
+  color: var(--text-light-color);
+}
+
+.evento-cal-dia.hoje .evento-cal-numero { color: var(--secondary-color); }
+
+.evento-cal-lista { display: flex; flex-direction: column; gap: 3px; }
+
+.evento-chip {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 3px 6px;
+  font-size: .7rem;
+  font-weight: 700;
+  line-height: 1.25;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evento-chip small { display: block; font-size: .62rem; font-weight: 600; opacity: .8; }
+.evento-chip:hover { filter: brightness(.96); }
+.evento-chip.warning { background: #fff1cf; color: #9a6200; border-color: #f2d99f; }
+.evento-chip.info { background: #deedff; color: #1d4ed8; border-color: #bcd7fb; }
+.evento-chip.success { background: #daf5e3; color: #166534; border-color: #b6e4c7; }
+.evento-chip.muted { background: #e5e7eb; color: #4b5563; border-color: #d3d6db; text-decoration: line-through; }
+
+.evento-detalhe { display: flex; flex-direction: column; gap: 1rem; }
+
+.evento-detalhe-topo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .6rem;
+}
+
+.evento-detalhe-quando { font-size: .82rem; font-weight: 700; color: var(--text-light-color); }
+
+.evento-dados {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: .55rem;
+}
+
+.evento-dado {
+  padding: .55rem .7rem;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--subtle-bg-color);
+}
+
+.evento-dado small {
+  display: block;
+  font-size: .64rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-light-color);
+}
+
+.evento-dado b { font-size: .88rem; color: var(--text-color); }
+
+.evento-bloco h4 {
+  margin: 0 0 .4rem;
+  font-size: .78rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-light-color);
+}
+
+.evento-bloco h4 small { text-transform: none; letter-spacing: 0; font-weight: 600; }
+.evento-bloco p { margin: 0; font-size: .88rem; white-space: pre-wrap; }
+
+.evento-checklist { display: flex; flex-direction: column; gap: .35rem; }
+
+.evento-check-item {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  padding: .45rem .6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--card-background);
+  font-size: .85rem;
+}
+
+.evento-check-item input { width: auto; margin: 0; }
+.evento-check-item span { flex: 1; }
+.evento-check-item.feito { background: #f2f8f4; }
+.evento-check-item.feito span { text-decoration: line-through; color: var(--text-light-color); }
+
+.evento-check-remove {
+  border: 0;
+  background: none;
+  color: var(--text-light-color);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 .25rem;
+}
+
+.evento-check-remove:hover { color: var(--danger-color); }
+
+.evento-check-novo { display: flex; gap: .5rem; margin-top: .5rem; }
+.evento-check-novo input { flex: 1; }
+
+.evento-detalhe-acoes { display: flex; flex-wrap: wrap; gap: .5rem; }
+
+@media (max-width: 900px) {
+  .evento-cal-grade { min-width: 700px; }
+  .evento-cal-dia { min-height: 78px; }
+  .evento-mes-nav strong { min-width: 120px; font-size: .9rem; }
 }
