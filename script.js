@@ -113,18 +113,28 @@ document.addEventListener("DOMContentLoaded", async () => {
   const STOCK_RELEASED_STATUSES = ["Cancelado", "Negado"];
   const ALL_ORDER_STATUSES = [...STOCK_ACTIVE_STATUSES, ...STOCK_RELEASED_STATUSES];
 
+  const STATUS_CANONICO = {
+    pendente: "Pendente",
+    confirmado: "Confirmado",
+    pronto: "Pronto",
+    concluido: "Concluído",
+    cancelado: "Cancelado",
+    negado: "Negado",
+  };
+
+  // Roda uma vez por pedido em cada painel: com 2127 pedidos sao centenas de
+  // milhares de normalizacoes por redesenho, todas sobre o mesmo punhado de
+  // textos. Funcao pura, entao o resultado fica guardado.
+  const cacheStatusPedido = new Map();
   const normalizePedidoStatusValue = (status) => {
     const raw = String(status || "Pendente").trim();
+    const salvo = cacheStatusPedido.get(raw);
+    if (salvo !== undefined) return salvo;
     const key = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-    const map = {
-      pendente: "Pendente",
-      confirmado: "Confirmado",
-      pronto: "Pronto",
-      concluido: "Concluído",
-      cancelado: "Cancelado",
-      negado: "Negado",
-    };
-    return map[key] || raw;
+    const valor = STATUS_CANONICO[key] || raw;
+    if (cacheStatusPedido.size > 500) cacheStatusPedido.clear();
+    cacheStatusPedido.set(raw, valor);
+    return valor;
   };
 
   const pedidoStatusIn = (status, list) => list.includes(normalizePedidoStatusValue(status));
@@ -442,9 +452,49 @@ document.addEventListener("DOMContentLoaded", async () => {
     return availableForWeek + Number(releaseMap.get(pizzaId) || 0) - alreadyInCart;
   };
 
+  // Índice de pedidos por cliente. Sem ele, cada tela que percorre a lista de
+  // clientes varria os 2127 pedidos para cada um dos 759 clientes — mais de um
+  // milhão de comparações por redesenho. O índice é remontado quando a lista de
+  // pedidos troca (recarga) ou quando alguém invalida na mão.
+  let indicePedidosCliente = null;
+  const invalidarIndicePedidos = () => { indicePedidosCliente = null; };
+  const getIndicePedidosCliente = () => {
+    const pedidos = database.pedidos || [];
+    if (indicePedidosCliente && indicePedidosCliente.origem === pedidos && indicePedidosCliente.tamanho === pedidos.length) {
+      return indicePedidosCliente;
+    }
+    const porId = new Map();
+    const porNome = new Map();
+    const posicao = new Map();
+    const empilhar = (mapa, chave, pedido) => {
+      if (!chave) return;
+      const lista = mapa.get(chave);
+      if (lista) lista.push(pedido);
+      else mapa.set(chave, [pedido]);
+    };
+    pedidos.forEach((pedido, index) => {
+      posicao.set(pedido, index);
+      empilhar(porId, pedido.clienteId, pedido);
+      empilhar(porNome, String(pedido.cliente || "").toLowerCase(), pedido);
+    });
+    indicePedidosCliente = { origem: pedidos, tamanho: pedidos.length, porId, porNome, posicao };
+    return indicePedidosCliente;
+  };
+
+  // Só os pedidos que podem pertencer ao cliente (mesmo id ou mesmo nome), na
+  // ordem original da lista. Quem chama continua aplicando a regra completa.
+  const getPedidosCandidatosDoCliente = (cliente) => {
+    if (!cliente) return [];
+    const indice = getIndicePedidosCliente();
+    const candidatos = new Set(indice.porNome.get(String(cliente.nome || "").toLowerCase()) || []);
+    if (cliente.id) (indice.porId.get(cliente.id) || []).forEach((pedido) => candidatos.add(pedido));
+    if (candidatos.size < 2) return [...candidatos];
+    return [...candidatos].sort((a, b) => (indice.posicao.get(a) ?? 0) - (indice.posicao.get(b) ?? 0));
+  };
+
   const getClientHasUnpaid = (cliente) => {
     if (!cliente) return false;
-    return database.pedidos.some((p) => {
+    return getPedidosCandidatosDoCliente(cliente).some((p) => {
       const sameId = cliente.id && p.clienteId === cliente.id;
       const sameNameCity = (p.cliente || "").toLowerCase() === (cliente.nome || "").toLowerCase() &&
         (p.cidade || "").toLowerCase() === (cliente.cidade || "").toLowerCase();
@@ -740,13 +790,38 @@ document.addEventListener("DOMContentLoaded", async () => {
     return `${year}-${month}-${day}`;
   };
 
-  const getWeekStart = (dateStr) => {
+  // Mesma história do status: uma chamada por pedido, em cada painel, sempre
+  // sobre as mesmas datas. Só a chamada sem data (a semana de hoje) tem prazo
+  // de validade, para a virada do dia não ficar presa num navegador aberto.
+  const cacheSemanaPorData = new Map();
+  let semanaDeHoje = null;
+  let semanaDeHojeEm = 0;
+  const calcularWeekStart = (dateStr) => {
     const d = parseSafeDate(dateStr);
     const day = d.getDay();
     const monday = new Date(d);
     monday.setHours(0, 0, 0, 0);
     monday.setDate(d.getDate() - day + (day === 0 ? -6 : 1));
     return formatDateToYYYYMMDD(monday);
+  };
+  const getWeekStart = (dateStr) => {
+    // Chamadas com Date (ou qualquer coisa que não seja texto) não entram no
+    // cache: a chave seria sempre a mesma e devolveria a semana errada.
+    if (dateStr && typeof dateStr !== "string") return calcularWeekStart(dateStr);
+    const chave = typeof dateStr === "string" ? dateStr : "";
+    if (!chave) {
+      const agora = Date.now();
+      if (semanaDeHoje !== null && agora - semanaDeHojeEm < 60000) return semanaDeHoje;
+      semanaDeHoje = calcularWeekStart(dateStr);
+      semanaDeHojeEm = agora;
+      return semanaDeHoje;
+    }
+    const salvo = cacheSemanaPorData.get(chave);
+    if (salvo !== undefined) return salvo;
+    const valor = calcularWeekStart(chave);
+    if (cacheSemanaPorData.size > 5000) cacheSemanaPorData.clear();
+    cacheSemanaPorData.set(chave, valor);
+    return valor;
   };
 
   const getPedidoDataEntrega = (pedido) => pedido?.dataEntrega || pedido?.data_entrega || pedido?.semana_entrega || pedido?.created_at || "";
@@ -920,33 +995,126 @@ Deseja adicionar esse frete ao Valor Final?`)) {
   // O PostgREST corta a resposta em 1000 linhas mesmo quando o range pede mais,
   // e ninguem avisa: a gestao vinha ignorando os pedidos mais antigos e as
   // contas de estoque, faturamento e historico saiam menores do que a realidade.
+  const paginaDePedidos = (inicio, PAGINA, extras = {}) => supabaseClient
+    .from("pedidos")
+    .select("*", extras)
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .range(inicio, inicio + PAGINA - 1);
+
   const carregarPedidosPaginado = async () => {
     const PAGINA = 1000;
-    const linhas = [];
-    for (let inicio = 0; ; inicio += PAGINA) {
-      const { data, error } = await supabaseClient
-        .from("pedidos")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .order("id", { ascending: false })
-        .range(inicio, inicio + PAGINA - 1);
-      if (error) return { data: null, error };
-      const lote = data || [];
-      linhas.push(...lote);
-      if (lote.length < PAGINA) break;
-      if (inicio > 100000) break; // trava de seguranca
+    // A primeira pagina ja traz o total, e com ele as demais podem ser pedidas
+    // todas de uma vez. Antes eram tres idas e voltas em fila, cada uma
+    // esperando a anterior terminar.
+    const primeira = await paginaDePedidos(0, PAGINA, { count: "exact" });
+    if (primeira.error) return { data: null, error: primeira.error };
+    const linhas = [...(primeira.data || [])];
+    const total = Number(primeira.count);
+    // So da para pedir as paginas de uma vez sabendo o total. Se o count nao
+    // vier, volta a paginar em fila ate uma pagina vir incompleta: pagina
+    // faltando aqui significa pedido sumindo das contas, sem aviso nenhum.
+    const totalConfiavel = Number.isFinite(total) && total >= linhas.length;
+
+    if (linhas.length >= PAGINA && totalConfiavel) {
+      const inicios = [];
+      for (let inicio = PAGINA; inicio < total && inicio <= 100000; inicio += PAGINA) inicios.push(inicio);
+      const paginas = await Promise.all(inicios.map((inicio) => paginaDePedidos(inicio, PAGINA)));
+      const falhou = paginas.find((pagina) => pagina.error);
+      if (falhou) return { data: null, error: falhou.error };
+      paginas.forEach((pagina) => linhas.push(...(pagina.data || [])));
+    } else if (linhas.length >= PAGINA) {
+      for (let inicio = PAGINA; inicio <= 100000; inicio += PAGINA) {
+        const pagina = await paginaDePedidos(inicio, PAGINA);
+        if (pagina.error) return { data: null, error: pagina.error };
+        const lote = pagina.data || [];
+        linhas.push(...lote);
+        if (lote.length < PAGINA) break;
+      }
     }
-    return { data: linhas, error: null };
+
+    // Um pedido novo entrando no meio da paginacao empurra uma linha de uma
+    // pagina para a outra: sem isso ela apareceria duas vezes na lista.
+    const vistos = new Set();
+    return { data: linhas.filter((pedido) => {
+      const id = String(pedido?.id ?? "");
+      if (!id) return true;
+      if (vistos.has(id)) return false;
+      vistos.add(id);
+      return true;
+    }), error: null };
   };
 
-  const loadDataFromSupabase = async () => {
-    showLoader();
+  // ===== Recarga incremental =====
+  // A carga completa sao 4 MB de JSON. Depois da primeira, o que interessa e so
+  // o que mudou: a coluna updated_at (preenchida por gatilho no banco) permite
+  // pedir exatamente isso. A contagem confere se nada foi apagado, porque
+  // exclusao nao aparece num delta.
+  const LIMITE_DELTA = 900;
+  let marcaDaguaPedidos = null;
+
+  const maiorUpdatedAt = (lista) => lista.reduce((maior, pedido) => {
+    const valor = String(pedido?.updated_at || "");
+    return valor > maior ? valor : maior;
+  }, "");
+
+  const carregarPedidosDelta = async () => {
+    const atuais = Array.isArray(database.pedidos) ? database.pedidos : [];
+    if (!marcaDaguaPedidos || atuais.length === 0) return null;
+
+    const [deltaRes, totalRes] = await Promise.all([
+      supabaseClient
+        .from("pedidos")
+        .select("*")
+        .gte("updated_at", marcaDaguaPedidos)
+        .order("updated_at", { ascending: false })
+        .limit(LIMITE_DELTA + 1),
+      // head: true conta no servidor sem trazer linha nenhuma.
+      supabaseClient.from("pedidos").select("id", { count: "exact", head: true }),
+    ]);
+    if (deltaRes.error || totalRes.error) return null;
+
+    const alterados = deltaRes.data || [];
+    // Delta grande demais (ou contagem indisponivel): sai mais barato recarregar.
+    if (alterados.length > LIMITE_DELTA) return null;
+    const totalServidor = Number(totalRes.count);
+    if (!Number.isFinite(totalServidor)) return null;
+
+    const porId = new Map(atuais.map((pedido) => [String(pedido.id), pedido]));
+    alterados.forEach((pedido) => porId.set(String(pedido.id), pedido));
+    // Se a conta nao fecha, algum pedido foi apagado: o delta nao ve isso.
+    if (porId.size !== totalServidor) return null;
+
+    const mesclados = [...porId.values()].sort((a, b) => {
+      const data = String(b.created_at || "").localeCompare(String(a.created_at || ""));
+      return data !== 0 ? data : String(b.id || "").localeCompare(String(a.id || ""));
+    });
+    return { data: mesclados, error: null, delta: alterados.length };
+  };
+
+  const carregarPedidos = async () => {
+    try {
+      const delta = await carregarPedidosDelta();
+      if (delta) {
+        marcaDaguaPedidos = maiorUpdatedAt(delta.data) || marcaDaguaPedidos;
+        return delta;
+      }
+    } catch (error) {
+      console.warn("Recarga incremental falhou, buscando tudo:", error);
+    }
+    const completa = await carregarPedidosPaginado();
+    if (!completa.error) marcaDaguaPedidos = maiorUpdatedAt(completa.data || []) || marcaDaguaPedidos;
+    return completa;
+  };
+
+  const loadDataFromSupabase = async ({ silencioso = false } = {}) => {
+    if (!silencioso) showLoader();
     try {
       const results = await Promise.all([
         supabaseClient.from("ingredientes").select("*").order("nome"),
         supabaseClient.from("estoque").select("*").order("nome"),
         supabaseClient.from("receitas").select("*"),
-        carregarPedidosPaginado(),
+        carregarPedidos(),
         supabaseClient.from("clientes").select("*").order("nome"),
         supabaseClient.from("massas").select("*"),
         supabaseClient.from("massas_semanais").select("*"),
@@ -967,58 +1135,35 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       database.massas = results[5].data || [];
       database.massas_semanais = results[6].data || [];
 
-      try {
-        const caixaRes = await supabaseClient.from("caixa_movimentos").select("*").order("data", { ascending: false });
-        database.caixa_movimentos = caixaRes.data || [];
-      } catch { database.caixa_movimentos = []; }
+      // Estas seis continuam fora do Promise.all principal de proposito: se uma
+      // tabela ainda nao existir num ambiente, a gestao inteira segue abrindo.
+      // Mas elas nao dependem uma da outra, entao vao juntas: em fila eram seis
+      // idas e voltas somadas ao tempo de cada salvamento.
+      const [caixaRes, eventosRes, vendedoresRes, calendarioRes, recorrenciaRes, configRes] = await Promise.allSettled([
+        supabaseClient.from("caixa_movimentos").select("*").order("data", { ascending: false }),
+        supabaseClient.from("eventos").select("*").order("data", { ascending: false, nullsFirst: false }),
+        supabaseClient.from("vendedores").select("*").order("nome"),
+        supabaseClient.from("loja_entrega_calendario").select("*").order("data", { ascending: true }).order("cidade", { ascending: true }),
+        supabaseClient.from("loja_entrega_recorrencia").select("*").order("cidade", { ascending: true }).order("dia_semana", { ascending: true }),
+        supabaseClient.from("loja_delivery_config").select("*").eq("id", true).maybeSingle(),
+      ]);
 
-      // Eventos entram fora do Promise.all de proposito: se a tabela ainda nao
-      // existir num ambiente, a gestao inteira continua abrindo normalmente.
-      try {
-        const eventosRes = await supabaseClient
-          .from("eventos")
-          .select("*")
-          .order("data", { ascending: false, nullsFirst: false });
-        database.eventos = eventosRes.data || [];
-      } catch { database.eventos = []; }
-
-      try {
-        const vendedoresRes = await supabaseClient.from("vendedores").select("*").order("nome");
-        database.vendedores = vendedoresRes.data || [];
-      } catch { database.vendedores = []; }
+      // Tabela que faltar (ou consulta que falhar) vira lista vazia, como antes.
+      const linhasDe = (resultado) => (resultado.status === "fulfilled" && !resultado.value?.error && resultado.value?.data) || [];
+      database.caixa_movimentos = linhasDe(caixaRes);
+      database.eventos = linhasDe(eventosRes);
+      database.vendedores = linhasDe(vendedoresRes);
+      database.loja_entrega_calendario = linhasDe(calendarioRes);
+      database.loja_entrega_recorrencia = linhasDe(recorrenciaRes);
+      const configData = (configRes.status === "fulfilled" && !configRes.value?.error && configRes.value?.data) || null;
+      database.loja_config = { ...DEFAULT_LOJA_CONFIG, ...(configData || {}) };
 
       // Estoque próprio e lotes são carregados depois do núcleo da gestão.
       // Assim uma RPC nova nunca impede estoque/pedidos/clientes de aparecerem.
 
-      try {
-        const calendarioRes = await supabaseClient
-          .from("loja_entrega_calendario")
-          .select("*")
-          .order("data", { ascending: true })
-          .order("cidade", { ascending: true });
-        database.loja_entrega_calendario = calendarioRes.data || [];
-      } catch { database.loja_entrega_calendario = []; }
-
-      try {
-        const recorrenciaRes = await supabaseClient
-          .from("loja_entrega_recorrencia")
-          .select("*")
-          .order("cidade", { ascending: true })
-          .order("dia_semana", { ascending: true });
-        database.loja_entrega_recorrencia = recorrenciaRes.data || [];
-      } catch { database.loja_entrega_recorrencia = []; }
-
-      try {
-        const configRes = await supabaseClient
-          .from("loja_delivery_config")
-          .select("*")
-          .eq("id", true)
-          .maybeSingle();
-        database.loja_config = { ...DEFAULT_LOJA_CONFIG, ...(configRes.data || {}) };
-      } catch { database.loja_config = { ...DEFAULT_LOJA_CONFIG }; }
-
 
       await syncClientsFromOrders();
+      ultimaRecargaCompleta = Date.now();
       renderAll();
 
       // Recursos novos não participam do caminho crítico da conexão principal.
@@ -1032,11 +1177,87 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     } catch (error) {
       console.error("Erro ao carregar dados do Supabase:", error);
       const detail = String(error?.message || error || "erro desconhecido").replace(/\s+/g, " ").slice(0, 180);
-      showSaveStatus(`Não foi possível carregar os dados. ${detail}`, false);
+      // Recarga de fundo que falha nao tem por que assustar quem esta digitando:
+      // os dados em tela continuam valendo e a proxima acao tenta de novo.
+      if (!silencioso) showSaveStatus(`Não foi possível carregar os dados. ${detail}`, false);
     } finally {
-      hideLoader();
+      if (!silencioso) hideLoader();
     }
   };
+  window.__sassesDebug = window.__sassesDebug || {};
+
+  // Depois de mexer num pedido, so aquele pedido e o estoque mudam de fato.
+  // Buscar essas duas coisas custa alguns KB, contra os 4 MB da recarga
+  // inteira que rodava a cada salvamento. O resto do banco e revalidado logo
+  // atras, em segundo plano, sem prender a tela.
+  const aplicarPedidoNoCache = (pedidoId, linha) => {
+    const id = String(pedidoId ?? "");
+    if (!id) return;
+    const lista = Array.isArray(database.pedidos) ? database.pedidos : [];
+    const posicao = lista.findIndex((pedido) => String(pedido?.id ?? "") === id);
+    if (!linha) {
+      if (posicao >= 0) database.pedidos = [...lista.slice(0, posicao), ...lista.slice(posicao + 1)];
+      return;
+    }
+    if (posicao >= 0) {
+      const copia = [...lista];
+      copia[posicao] = { ...copia[posicao], ...linha };
+      database.pedidos = copia;
+    } else {
+      database.pedidos = [linha, ...lista];
+    }
+  };
+
+  // A revalidação existe como rede de segurança para o que a sincronização
+  // rápida não cobre (massas da semana, lote de vendedor). Com a recarga
+  // incremental ela ficou barata, mas ainda vale espaçar: numa sequência de
+  // salvamentos ela roda uma vez só, em vez de uma por edição.
+  const INTERVALO_MINIMO_REVALIDACAO = 5000;
+  let revalidacaoAgendada = null;
+  let ultimaRecargaCompleta = 0;
+  const agendarRevalidacaoCompleta = (atraso = 1500) => {
+    if (revalidacaoAgendada) clearTimeout(revalidacaoAgendada);
+    const desdeAUltima = Date.now() - ultimaRecargaCompleta;
+    const espera = Math.max(atraso, INTERVALO_MINIMO_REVALIDACAO - desdeAUltima);
+    revalidacaoAgendada = setTimeout(async () => {
+      revalidacaoAgendada = null;
+      try {
+        await loadDataFromSupabase({ silencioso: true });
+      } catch (error) {
+        console.warn("Revalidação em segundo plano falhou:", error);
+      }
+    }, espera);
+  };
+
+  const sincronizarPedidoAlterado = async (pedidoId) => {
+    try {
+      const [pedidoRes, estoqueRes] = await Promise.all([
+        pedidoId
+          ? supabaseClient.from("pedidos").select("*").eq("id", pedidoId).maybeSingle()
+          : Promise.resolve({ data: null, error: null }),
+        supabaseClient.from("estoque").select("*").order("nome"),
+      ]);
+      if (estoqueRes?.data && !estoqueRes.error) database.estoque = estoqueRes.data;
+      if (pedidoId && !pedidoRes?.error) aplicarPedidoNoCache(pedidoId, pedidoRes?.data || null);
+      invalidarIndicePedidos();
+      renderAll();
+      agendarRevalidacaoCompleta();
+    } catch (error) {
+      // Qualquer imprevisto cai na recarga completa de sempre: melhor esperar
+      // do que seguir com a tela mostrando numero errado.
+      console.warn("Sincronização rápida falhou, recarregando tudo:", error);
+      await loadDataFromSupabase();
+    }
+  };
+  // Ganchos de diagnóstico, para medir ou forçar uma recarga pelo console do
+  // navegador sem ter que mexer no código.
+  Object.assign(window.__sassesDebug, {
+    recarregar: loadDataFromSupabase,
+    sincronizarPedido: sincronizarPedidoAlterado,
+    semana: getWeekStart,
+    lerPedidos: () => database.pedidos,
+  });
+
 
   const syncClientsFromOrders = async () => {
     const existingClientKeys = new Set(
@@ -1625,6 +1846,8 @@ Deseja adicionar esse frete ao Valor Final?`)) {
   };
 
   const renderAll = () => {
+    // A lista de pedidos pode ter mudado desde o último desenho.
+    invalidarIndicePedidos();
     applySellerProfileToForms(false);
     populateSelects();
     populateWeekSelector(undefined, { futureOnly: true, futureWeeks: 24, setCurrentDefault: true });
@@ -1675,15 +1898,16 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     pizzaEstoqueSelect.innerHTML = "";
     if (firstOption) pizzaEstoqueSelect.appendChild(firstOption);
 
-    database.estoque.forEach((p) => {
+    // Uma atribuição só, no fim: com `+=` a cada sabor o navegador reparseia a
+    // lista inteira 88 vezes, em cada redesenho.
+    pizzaEstoqueSelect.innerHTML += database.estoque.map((p) => {
       const label = p.tamanho ? `${p.nome} (${p.tamanho})` : p.nome;
       // Mostra o disponivel, e nao so o estoque fisico: era a mesma palavra
       // "Estoque" com numero diferente do que a tela de sobras mostrava.
       const disponivel = getPizzaSobraForWeek(p.id);
       const stockStyle = disponivel <= 0 ? "color:red;" : "";
-      pizzaEstoqueSelect.innerHTML += `<option value="${p.id}" style="${stockStyle}">${label} (disp. ${disponivel} · estoque ${p.qtd || 0})</option>`;
-    });
-    pizzaEstoqueSelect.innerHTML += '<option value="outro">Outro...</option>';
+      return `<option value="${p.id}" style="${stockStyle}">${label} (disp. ${disponivel} · estoque ${p.qtd || 0})</option>`;
+    }).join("") + '<option value="outro">Outro...</option>';
 
     if (!selectElementId) {
       ["producao-pizza-select", "receita-pizza-select"].forEach((id) => {
@@ -1692,19 +1916,19 @@ Deseja adicionar esse frete ao Valor Final?`)) {
         const firstOpt = sel.options[0];
         sel.innerHTML = "";
         if (firstOpt) sel.appendChild(firstOpt);
-        database.estoque.forEach((p) => {
+        sel.innerHTML += database.estoque.map((p) => {
           const label = p.tamanho ? `${p.nome} (${p.tamanho})` : p.nome;
-          sel.innerHTML += `<option value="${p.id}">${label}</option>`;
-        });
+          return `<option value="${p.id}">${label}</option>`;
+        }).join("");
       });
       const ingredienteReceitaSelect = document.getElementById("receita-ingrediente-select");
       if (!ingredienteReceitaSelect) return;
       const firstOpt = ingredienteReceitaSelect.options[0];
       ingredienteReceitaSelect.innerHTML = "";
       if (firstOpt) ingredienteReceitaSelect.appendChild(firstOpt);
-      database.ingredientes.forEach((i) => {
-        ingredienteReceitaSelect.innerHTML += `<option value="${i.id}">${i.nome}</option>`;
-      });
+      ingredienteReceitaSelect.innerHTML += database.ingredientes
+        .map((i) => `<option value="${i.id}">${i.nome}</option>`)
+        .join("");
     }
   };
 
@@ -1804,10 +2028,12 @@ Deseja adicionar esse frete ao Valor Final?`)) {
   const populateClienteDatalist = () => {
     const datalist = document.getElementById("clientes-list");
     if (!datalist) return;
-    datalist.innerHTML = "";
-    database.clientes.forEach((cliente) => {
-      datalist.innerHTML += `<option value="${escapeAttr(cliente.nome || "")}"></option>`;
-    });
+    // Monta a lista inteira e atribui de uma vez. Com `innerHTML +=` dentro do
+    // laço o navegador reparseia a lista a cada cliente, e com 759 clientes isso
+    // sozinho custava mais de um segundo em cada salvamento.
+    datalist.innerHTML = database.clientes
+      .map((cliente) => `<option value="${escapeAttr(cliente.nome || "")}"></option>`)
+      .join("");
   };
 
   const openTab = (tabId) => {
@@ -2732,7 +2958,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
               ? "Pedido cancelado."
               : "Pedido atualizado.";
       showSaveStatus(baseMessage + (emailQueued ? " E-mail do cliente enfileirado." : ""));
-      await loadDataFromSupabase();
+      await sincronizarPedidoAlterado(id);
     } catch (error) {
       showSaveStatus(formatSupabaseError(error, "Não foi possível atualizar o pedido"), false);
     } finally {
@@ -4630,7 +4856,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
             : "Pedido atualizado como encomenda para produção.";
       showSaveStatus(pedidoMessage + complementoAviso, !complementoAviso);
       closeModal("edit-modal");
-      await loadDataFromSupabase();
+      await sincronizarPedidoAlterado(originalPedido.id);
     } catch (error) {
       showSaveStatus(formatSupabaseError(error, "Erro ao atualizar pedido"), false);
     } finally {
@@ -5862,7 +6088,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
         if (error) throw error;
         showSaveStatus("Pedido marcado como pago.");
       }
-      await loadDataFromSupabase();
+      await sincronizarPedidoAlterado(id);
     } catch (error) {
       showSaveStatus(formatSupabaseError(error, "Não foi possível marcar como pago"), false);
     } finally {
@@ -6889,7 +7115,7 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
   };
   document.getElementById("print-producao")?.addEventListener("click", () => { const content=document.getElementById("producao")?.innerHTML||""; const w=window.open("","","width=900,height=700"); w.document.write(`<html><head><title>Produção</title><link rel="stylesheet" href="style.css"></head><body>${content}<script>window.print()<\/script></body></html>`); w.document.close(); });
 
-  const getPedidosDoCliente = (cliente) => database.pedidos.filter((pedido) => {
+  const getPedidosDoCliente = (cliente) => getPedidosCandidatosDoCliente(cliente).filter((pedido) => {
     const sameId = cliente.id && pedido.clienteId === cliente.id;
     const sameName = (pedido.cliente || "").toLowerCase() === (cliente.nome || "").toLowerCase();
     const sameCity = !cliente.cidade || !pedido.cidade || (pedido.cidade || "").toLowerCase() === (cliente.cidade || "").toLowerCase();
