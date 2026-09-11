@@ -952,6 +952,54 @@ document.addEventListener("DOMContentLoaded", async () => {
     return R * c;
   };
 
+  // Pedido de entrega da loja pode chegar sem localização (o cliente não é mais
+  // obrigado a confirmar o GPS). Aqui a equipe pede a sugestão pelo endereço:
+  // a distância sai do ponto de saída configurado na aba Loja.
+  const sugestoesFrete = new Map();
+
+  const getPontoDeSaida = () => {
+    const cfg = database.loja_config || {};
+    const lat = Number(cfg.latitude);
+    const lon = Number(cfg.longitude);
+    return Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0)
+      ? { lat, lon }
+      : MINHA_CASA;
+  };
+
+  const renderSugestaoFrete = (pedido) => {
+    if (!pedido?.endereco || pedido.distancia_km) return "";
+    const salva = sugestoesFrete.get(String(pedido.id));
+    if (salva) return `<br><small class="frete-sugerido">${escapeHTML(salva)}</small>`;
+    return `<br><button type="button" class="link-btn" onclick="window.sugerirFretePedido('${escapeAttr(pedido.id)}')">Sugerir frete pelo endereço</button>`;
+  };
+
+  window.sugerirFretePedido = async (pedidoId) => {
+    const pedido = database.pedidos.find((p) => String(p.id) === String(pedidoId));
+    if (!pedido) return;
+    const endereco = [pedido.endereco, pedido.cidade].filter(Boolean).join(", ");
+    if (!endereco) { showSaveStatus("Esse pedido não tem endereço para calcular.", false); return; }
+    showLoader();
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(endereco)}`);
+      const data = await res.json();
+      if (!data?.length) {
+        sugestoesFrete.set(String(pedidoId), "Endereço não encontrado no mapa — combine o frete com o cliente.");
+      } else {
+        const saida = getPontoDeSaida();
+        const km = getDistanceFromLatLonInKm(saida.lat, saida.lon, parseFloat(data[0].lat), parseFloat(data[0].lon));
+        const porKm = Number(database.loja_config?.taxa_por_km ?? VALOR_POR_KM) || VALOR_POR_KM;
+        const gratisAte = Number(database.loja_config?.entrega_gratis_km ?? 0) || 0;
+        const sugestao = km <= gratisAte ? 0 : km * porKm;
+        sugestoesFrete.set(String(pedidoId), `≈ ${km.toFixed(1).replace(".", ",")} km · sugestão ${formatCurrency(sugestao)}${km <= gratisAte ? " (dentro da faixa grátis)" : ""}`);
+      }
+      renderPedidos();
+    } catch {
+      showSaveStatus("Não foi possível falar com o mapa agora.", false);
+    } finally {
+      hideLoader();
+    }
+  };
+
   window.calcularFrete = async () => {
     const endereco = document.getElementById("pedido-endereco")?.value;
     const cidade = document.getElementById("pedido-cidade")?.value;
@@ -2638,7 +2686,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       const pedidoMeta = getPedidoStatusMeta(p);
       const atendimentoMeta = getAtendimentoStatusMeta(p);
       const metodoTag = normalizeMetodoEntrega(p) === "entrega" ? '<span class="payment-tag info">Entrega</span>' : '<span class="payment-tag muted">Retirada</span>';
-      const freteInfo = normalizeMetodoEntrega(p) === "entrega" ? `<br><small>Frete: ${formatCurrency(p.frete || 0)}${p.distancia_km ? ` · ${Number(p.distancia_km).toFixed(1).replace('.', ',')} km` : ''}</small>` : '';
+      const freteInfo = normalizeMetodoEntrega(p) === "entrega" ? `<br><small>Frete: ${formatCurrency(p.frete || 0)}${p.distancia_km ? ` · ${Number(p.distancia_km).toFixed(1).replace('.', ',')} km` : ''}</small>${renderSugestaoFrete(p)}` : '';
 
       row.innerHTML = `
                 <td data-label="Cliente">${escapeHTML(p.cliente)}<br><small>${escapeHTML(p.telefone || "N/A")}</small>${renderOrigemTag(p)}</td>

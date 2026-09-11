@@ -8438,3 +8438,20 @@ tr.linha-nao-cadastrada td:first-child {
   .evento-cal-dia { min-height: 78px; }
   .evento-mes-nav strong { min-width: 120px; font-size: .9rem; }
 }
+
+/* Sugestão de frete pelo endereço, nos pedidos de entrega que vieram da loja
+   sem localização confirmada. */
+.link-btn {
+  border: 0;
+  background: none;
+  padding: 0;
+  margin-top: 2px;
+  color: var(--accent-color);
+  font-family: inherit;
+  font-size: .72rem;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.link-btn:hover { color: var(--primary-color); }
+.frete-sugerido { color: var(--accent-color); font-weight: 700; }
