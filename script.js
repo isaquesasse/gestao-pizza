@@ -105,6 +105,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     loja_entrega_calendario: [],
     loja_entrega_recorrencia: [],
     loja_cupons: [],
+    loja_anuncios: [],
     loja_config: {},
     estoque_vendedor_painel: { ativo: false, estoque: [], sugestoes: [], movimentos: [] },
   };
@@ -1187,13 +1188,14 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       // tabela ainda nao existir num ambiente, a gestao inteira segue abrindo.
       // Mas elas nao dependem uma da outra, entao vao juntas: em fila eram seis
       // idas e voltas somadas ao tempo de cada salvamento.
-      const [caixaRes, eventosRes, vendedoresRes, calendarioRes, recorrenciaRes, configRes] = await Promise.allSettled([
+      const [caixaRes, eventosRes, vendedoresRes, calendarioRes, recorrenciaRes, configRes, anunciosRes] = await Promise.allSettled([
         supabaseClient.from("caixa_movimentos").select("*").order("data", { ascending: false }),
         supabaseClient.from("eventos").select("*").order("data", { ascending: false, nullsFirst: false }),
         supabaseClient.from("vendedores").select("*").order("nome"),
         supabaseClient.from("loja_entrega_calendario").select("*").order("data", { ascending: true }).order("cidade", { ascending: true }),
         supabaseClient.from("loja_entrega_recorrencia").select("*").order("cidade", { ascending: true }).order("dia_semana", { ascending: true }),
         supabaseClient.from("loja_delivery_config").select("*").eq("id", true).maybeSingle(),
+        supabaseClient.from("loja_anuncios").select("*").order("ordem", { ascending: true }).order("created_at", { ascending: false }),
       ]);
 
       // Tabela que faltar (ou consulta que falhar) vira lista vazia, como antes.
@@ -1203,6 +1205,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       database.vendedores = linhasDe(vendedoresRes);
       database.loja_entrega_calendario = linhasDe(calendarioRes);
       database.loja_entrega_recorrencia = linhasDe(recorrenciaRes);
+      database.loja_anuncios = linhasDe(anunciosRes);
       const configData = (configRes.status === "fulfilled" && !configRes.value?.error && configRes.value?.data) || null;
       database.loja_config = { ...DEFAULT_LOJA_CONFIG, ...(configData || {}) };
 
@@ -1737,6 +1740,186 @@ Deseja adicionar esse frete ao Valor Final?`)) {
   window.toggleLojaCupom = async (id, ativo) => { try { showLoader(); const { error } = await supabaseClient.from('loja_cupons').update({ ativo }).eq('id', id); if (error) throw error; await loadDataFromSupabase(); showSaveStatus(ativo ? 'Cupom ativado.' : 'Cupom pausado.'); } catch (error) { showSaveStatus(formatSupabaseError(error, 'Não foi possível atualizar o cupom'), false); } finally { hideLoader(); } };
   window.deleteLojaCupom = async (id) => { if (!confirm('Remover esse cupom?')) return; try { showLoader(); const { error } = await supabaseClient.from('loja_cupons').delete().eq('id', id); if (error) throw error; await loadDataFromSupabase(); showSaveStatus('Cupom removido.'); } catch (error) { showSaveStatus(formatSupabaseError(error, 'Não foi possível remover o cupom'), false); } finally { hideLoader(); } };
 
+  // ===== Anúncios do topo da loja =====
+  // Cada anúncio é uma imagem que entra no carrossel junto com a foto de
+  // sempre. Sem nenhum ativo, a loja nem vira carrossel.
+  const renderLojaAnuncios = () => {
+    const list = document.getElementById('loja-anuncios-list');
+    if (!list) return;
+    const anuncios = database.loja_anuncios || [];
+    if (!anuncios.length) {
+      list.innerHTML = '<div class="empty-state compact">Nenhum anúncio cadastrado. A loja está mostrando só a foto de sempre.</div>';
+      return;
+    }
+    const hoje = formatDateToYYYYMMDD(new Date());
+    list.innerHTML = anuncios.map((anuncio) => {
+      const periodo = [anuncio.inicio_em ? `de ${formatDateBR(anuncio.inicio_em)}` : '', anuncio.fim_em ? `até ${formatDateBR(anuncio.fim_em)}` : ''].filter(Boolean).join(' ');
+      const foraDoPeriodo = (anuncio.inicio_em && anuncio.inicio_em > hoje) || (anuncio.fim_em && anuncio.fim_em < hoje);
+      const noAr = anuncio.ativo !== false && !foraDoPeriodo;
+      const situacao = anuncio.ativo === false ? 'pausado' : foraDoPeriodo ? 'fora do período' : 'no ar';
+      return `<article class="coupon-admin-item anuncio-admin-item ${noAr ? '' : 'is-off'}">
+        <img class="anuncio-admin-thumb" src="${escapeAttr(anuncio.imagem_url || '')}" alt="">
+        <div><strong>${escapeHTML(anuncio.titulo || 'Sem título')}</strong><small>${escapeHTML(situacao)}${periodo ? ` · ${escapeHTML(periodo)}` : ''} · ordem ${Number(anuncio.ordem ?? 100)}${anuncio.link_url ? ' · com link' : ''}</small></div>
+        <div class="coupon-admin-buttons">
+          <button class="mini-btn" type="button" onclick="window.editLojaAnuncio('${anuncio.id}')">Editar</button>
+          <button class="mini-btn" type="button" onclick="window.toggleLojaAnuncio('${anuncio.id}', ${anuncio.ativo === false ? 'true' : 'false'})">${anuncio.ativo === false ? 'Ativar' : 'Pausar'}</button>
+          <button class="mini-btn danger" type="button" onclick="window.deleteLojaAnuncio('${anuncio.id}')">Remover</button>
+        </div>
+      </article>`;
+    }).join('');
+  };
+
+  const limparFormAnuncio = () => {
+    const form = document.getElementById('loja-anuncio-form');
+    if (!form) return;
+    form.reset();
+    document.getElementById('anuncio-id').value = '';
+    document.getElementById('anuncio-imagem-url').value = '';
+    document.getElementById('anuncio-ordem').value = '100';
+    document.getElementById('anuncio-ativo').checked = true;
+    mostrarImagemAnuncio('');
+    const status = document.getElementById('anuncio-imagem-status');
+    if (status) { status.textContent = ''; status.className = 'imagem-produto-status'; }
+  };
+
+  const mostrarImagemAnuncio = (url) => {
+    const preview = document.getElementById('anuncio-imagem-preview');
+    const vazio = document.getElementById('anuncio-imagem-vazio');
+    const remover = document.getElementById('anuncio-imagem-remover');
+    if (!preview || !vazio || !remover) return;
+    if (url) {
+      preview.src = url;
+      preview.hidden = false;
+      vazio.hidden = true;
+    } else {
+      preview.removeAttribute('src');
+      preview.hidden = true;
+      vazio.hidden = false;
+    }
+    remover.hidden = !url;
+  };
+
+  window.editLojaAnuncio = (id) => {
+    const anuncio = (database.loja_anuncios || []).find((item) => item.id === id);
+    if (!anuncio) return;
+    document.getElementById('anuncio-id').value = anuncio.id;
+    document.getElementById('anuncio-titulo').value = anuncio.titulo || '';
+    document.getElementById('anuncio-descricao').value = anuncio.descricao || '';
+    document.getElementById('anuncio-link').value = anuncio.link_url || '';
+    document.getElementById('anuncio-ordem').value = anuncio.ordem ?? 100;
+    document.getElementById('anuncio-inicio').value = anuncio.inicio_em || '';
+    document.getElementById('anuncio-fim').value = anuncio.fim_em || '';
+    document.getElementById('anuncio-ativo').checked = anuncio.ativo !== false;
+    document.getElementById('anuncio-imagem-url').value = anuncio.imagem_url || '';
+    mostrarImagemAnuncio(anuncio.imagem_url || '');
+    document.getElementById('anuncio-titulo').focus();
+  };
+
+  window.toggleLojaAnuncio = async (id, ativo) => {
+    try {
+      showLoader();
+      const { error } = await supabaseClient.from('loja_anuncios').update({ ativo }).eq('id', id);
+      if (error) throw error;
+      await loadDataFromSupabase();
+      showSaveStatus(ativo ? 'Anúncio no ar.' : 'Anúncio pausado.');
+    } catch (error) {
+      showSaveStatus(formatSupabaseError(error, 'Não foi possível atualizar o anúncio'), false);
+    } finally { hideLoader(); }
+  };
+
+  window.deleteLojaAnuncio = async (id) => {
+    if (!confirm('Remover esse anúncio?')) return;
+    try {
+      showLoader();
+      const { error } = await supabaseClient.from('loja_anuncios').delete().eq('id', id);
+      if (error) throw error;
+      await loadDataFromSupabase();
+      showSaveStatus('Anúncio removido.');
+    } catch (error) {
+      showSaveStatus(formatSupabaseError(error, 'Não foi possível remover o anúncio'), false);
+    } finally { hideLoader(); }
+  };
+
+  const setupLojaAnuncios = () => {
+    const form = document.getElementById('loja-anuncio-form');
+    if (!form || form.dataset.pronto) return;
+    form.dataset.pronto = '1';
+
+    const campoArquivo = document.getElementById('anuncio-imagem-arquivo');
+    const status = document.getElementById('anuncio-imagem-status');
+    const avisar = (texto, tom = '') => {
+      if (!status) return;
+      status.textContent = texto;
+      status.className = `imagem-produto-status${tom ? ` is-${tom}` : ''}`;
+    };
+
+    document.getElementById('anuncio-imagem-escolher')?.addEventListener('click', () => campoArquivo?.click());
+    document.getElementById('anuncio-imagem-remover')?.addEventListener('click', () => {
+      document.getElementById('anuncio-imagem-url').value = '';
+      mostrarImagemAnuncio('');
+      avisar('Imagem retirada. Salve o anúncio para valer.');
+    });
+    document.getElementById('anuncio-limpar')?.addEventListener('click', limparFormAnuncio);
+
+    campoArquivo?.addEventListener('change', async (evento) => {
+      const arquivo = evento.target.files?.[0];
+      if (!arquivo) return;
+      try {
+        avisar('Preparando a imagem…');
+        // Mesma esteira das fotos de produto: reduz e sobe em webp.
+        const { blob, extensao } = await comprimirImagem(arquivo);
+        const kb = Math.max(1, Math.round(blob.size / 1024));
+        avisar(`Enviando ${kb} KB…`);
+        const caminho = nomeArquivoImagem(`anuncio-${document.getElementById('anuncio-titulo').value || 'loja'}`, extensao);
+        const { error } = await supabaseClient.storage
+          .from(IMAGEM_BUCKET)
+          .upload(caminho, blob, { contentType: blob.type, cacheControl: '31536000', upsert: false });
+        if (error) throw new Error(error.message || 'Falha ao enviar.');
+        const { data } = supabaseClient.storage.from(IMAGEM_BUCKET).getPublicUrl(caminho);
+        document.getElementById('anuncio-imagem-url').value = data.publicUrl;
+        mostrarImagemAnuncio(data.publicUrl);
+        avisar(`Imagem pronta · ${kb} KB. Agora salve o anúncio.`, 'ok');
+      } catch (erro) {
+        avisar(erro.message || 'Não consegui enviar essa imagem.', 'erro');
+      } finally {
+        campoArquivo.value = '';
+      }
+    });
+
+    form.addEventListener('submit', async (evento) => {
+      evento.preventDefault();
+      const imagem = String(document.getElementById('anuncio-imagem-url').value || '').trim();
+      if (!imagem) { avisar('Escolha a imagem do anúncio antes de salvar.', 'erro'); return; }
+      const id = document.getElementById('anuncio-id').value;
+      const payload = {
+        titulo: String(document.getElementById('anuncio-titulo').value || '').trim().slice(0, 90),
+        descricao: String(document.getElementById('anuncio-descricao').value || '').trim().slice(0, 140) || null,
+        imagem_url: imagem,
+        link_url: String(document.getElementById('anuncio-link').value || '').trim().slice(0, 500) || null,
+        ordem: parseInt(document.getElementById('anuncio-ordem').value, 10) || 100,
+        inicio_em: document.getElementById('anuncio-inicio').value || null,
+        fim_em: document.getElementById('anuncio-fim').value || null,
+        ativo: document.getElementById('anuncio-ativo').checked,
+      };
+      if (payload.inicio_em && payload.fim_em && payload.fim_em < payload.inicio_em) {
+        showSaveStatus('A data final do anúncio é anterior à inicial.', false);
+        return;
+      }
+      try {
+        showLoader();
+        const { error } = id
+          ? await supabaseClient.from('loja_anuncios').update(payload).eq('id', id)
+          : await supabaseClient.from('loja_anuncios').insert(payload);
+        if (error) throw error;
+        limparFormAnuncio();
+        await loadDataFromSupabase();
+        showSaveStatus(id ? 'Anúncio atualizado.' : 'Anúncio criado.');
+      } catch (error) {
+        showSaveStatus(formatSupabaseError(error, 'Não foi possível salvar o anúncio'), false);
+      } finally { hideLoader(); }
+    });
+  };
+
   const renderLojaConfig = () => {
     const form = document.getElementById('loja-config-form');
     if (!form || form.dataset.dirty === 'true') return;
@@ -1824,6 +2007,8 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     renderLojaConfig();
     renderLojaCalendario();
     renderLojaCupons();
+    setupLojaAnuncios();
+    renderLojaAnuncios();
 
     const aguardando = database.pedidos
       // Pedido lançado manualmente pela gestão não precisa de confirmação da loja online.
@@ -4216,6 +4401,20 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
           </div>
           <p class="edit-note">Sabores ocultos não aparecem na loja.</p>
         </div>
+        <div class="edit-section">
+          <div class="edit-section-title"><span>Sugestão na loja</span><small>Para azeites: com quais pizzas este item combina</small></div>
+          <div class="edit-grid two">
+            <label class="edit-wide">Combina com
+              <input type="text" name="harmoniza_com" value="${escapeAttr(item.harmoniza_com || "")}" maxlength="300" placeholder="calabresa, bacon, carne, queijo">
+              <small class="campo-dica">Palavras separadas por vírgula. Quando o cliente escolher uma pizza com essas palavras no nome ou na descrição, a loja sugere este item.</small>
+            </label>
+            <label class="edit-wide">Frase da sugestão
+              <input type="text" name="harmoniza_frase" value="${escapeAttr(item.harmoniza_frase || "")}" maxlength="140" placeholder="um fio por cima antes de servir muda tudo">
+              <small class="campo-dica">Aparece embaixo do nome, no convite. Deixe em branco para usar "vai bem com essa pizza".</small>
+            </label>
+          </div>
+          <p class="edit-note">Só preencha nos azeites (ou em outro acompanhamento). Em pizza não faz efeito.</p>
+        </div>
         <div class="edit-actions">
           <button type="button" class="secondary-btn" onclick="closeModal('edit-modal')">Cancelar</button>
           <button type="submit">Salvar pizza</button>
@@ -4253,6 +4452,8 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
           destaque_loja: formData.get("destaque_loja") === "on",
           ordem_loja: parseInt(formData.get("ordem_loja")) || 1000,
           permitir_encomenda: formData.get("permitir_encomenda") === "on",
+          harmoniza_com: String(formData.get("harmoniza_com") || "").trim().slice(0, 300) || null,
+          harmoniza_frase: String(formData.get("harmoniza_frase") || "").trim().slice(0, 140) || null,
         };
         showLoader();
         const { error } = await supabaseClient.from("estoque").update(updatedData).eq("id", id);

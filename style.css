@@ -8455,3 +8455,30 @@ tr.linha-nao-cadastrada td:first-child {
 }
 .link-btn:hover { color: var(--primary-color); }
 .frete-sugerido { color: var(--accent-color); font-weight: 700; }
+
+/* Painel de anúncios do topo da loja (aba Loja). */
+.anuncio-imagem-campo { grid-column: 1 / -1; display: grid; gap: 8px; }
+.anuncio-imagem-linha { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.anuncio-imagem-preview {
+  width: 132px;
+  height: 88px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px dashed var(--border-color);
+  border-radius: 10px;
+  background: var(--subtle-bg-color);
+  color: var(--text-light-color);
+  font-size: .72rem;
+}
+.anuncio-imagem-preview img { width: 100%; height: 100%; object-fit: cover; }
+.anuncio-admin-item { grid-template-columns: auto 1fr auto; align-items: center; }
+.anuncio-admin-thumb {
+  width: 76px;
+  height: 50px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--subtle-bg-color);
+}
+.campo-dica { display: block; margin-top: 4px; color: var(--text-light-color); font-size: .72rem; line-height: 1.3; }
