@@ -2045,7 +2045,9 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     const avisar = (texto, tom = '') => {
       if (!status) return;
       status.textContent = texto;
-      status.className = `imagem-produto-status${tom ? ` is-${tom}` : ''}`;
+      // Sem o prefixo "is-": o CSS espera .ok e .erro, e com ele o aviso saía
+      // sempre cinza, mesmo quando era erro.
+      status.className = `imagem-produto-status${tom ? ` ${tom}` : ''}`;
     };
 
     document.getElementById('anuncio-imagem-escolher')?.addEventListener('click', () => campoArquivo?.click());
@@ -2061,8 +2063,12 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       if (!arquivo) return;
       try {
         avisar('Preparando a imagem…');
-        // Mesma esteira das fotos de produto: reduz e sobe em webp.
-        const { blob, extensao } = await comprimirImagem(arquivo);
+        // Banner sobe grande de propósito: ele aparece em 1240 px de largura,
+        // e em tela retina isso vira 2480. Foto de produto continua em 900.
+        const { blob, extensao, largura, altura } = await comprimirImagem(arquivo, {
+          ladoMax: ANUNCIO_LADO_MAX,
+          qualidade: ANUNCIO_QUALIDADE,
+        });
         const kb = Math.max(1, Math.round(blob.size / 1024));
         avisar(`Enviando ${kb} KB…`);
         const caminho = nomeArquivoImagem(`anuncio-${document.getElementById('anuncio-titulo').value || 'loja'}`, extensao);
@@ -2073,6 +2079,12 @@ Deseja adicionar esse frete ao Valor Final?`)) {
         const { data } = supabaseClient.storage.from(IMAGEM_BUCKET).getPublicUrl(caminho);
         document.getElementById('anuncio-imagem-url').value = data.publicUrl;
         mostrarImagemAnuncio(data.publicUrl);
+        // Arte pequena não é ampliada: some do jeito que veio e fica mole na
+        // tela. Melhor dizer isso agora do que deixar descobrir na loja.
+        if (largura < 1240) {
+          avisar(`Enviada, mas com só ${largura}×${altura} px: no banner ela aparece esticada e sem nitidez. O ideal é 1240×503 (ou 2480×1006).`, 'erro');
+          return;
+        }
         avisar(`Imagem pronta · ${kb} KB. Agora salve o anúncio.`, 'ok');
       } catch (erro) {
         avisar(erro.message || 'Não consegui enviar essa imagem.', 'erro');
@@ -4298,6 +4310,12 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
   const IMAGEM_BUCKET = "produtos";
   const IMAGEM_LADO_MAX = 900;
   const IMAGEM_QUALIDADE = 0.82;
+  // O banner do anúncio ocupa a largura inteira da loja (1240 px) e precisa do
+  // dobro disso para não ficar mole em tela retina. Reduzir a arte para 900,
+  // como se faz com foto de produto, era o que deixava o banner borrado: ela
+  // subia menor do que o espaço em que ia aparecer.
+  const ANUNCIO_LADO_MAX = 2480;
+  const ANUNCIO_QUALIDADE = 0.92;
   let descartarImagemPendente = null;
 
   const caminhoNoBucket = (url) => {
@@ -4341,23 +4359,27 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     });
   };
 
-  const gerarBlob = (canvas, tipo) => new Promise((resolve) => canvas.toBlob(resolve, tipo, IMAGEM_QUALIDADE));
+  const gerarBlob = (canvas, tipo, qualidade) => new Promise((resolve) => canvas.toBlob(resolve, tipo, qualidade));
 
-  const comprimirImagem = async (file) => {
+  const comprimirImagem = async (file, opcoes = {}) => {
+    const ladoMax = Number(opcoes.ladoMax) > 0 ? Number(opcoes.ladoMax) : IMAGEM_LADO_MAX;
+    const qualidade = Number(opcoes.qualidade) > 0 ? Number(opcoes.qualidade) : IMAGEM_QUALIDADE;
     const fonte = await carregarImagemDoArquivo(file);
     const largura = fonte.width || fonte.naturalWidth;
     const altura = fonte.height || fonte.naturalHeight;
     if (!largura || !altura) throw new Error("Não consegui ler as medidas dessa imagem.");
-    const escala = Math.min(1, IMAGEM_LADO_MAX / Math.max(largura, altura));
+    // Nunca amplia: arte pequena sobe como veio, e o aviso abaixo conta isso
+    // para quem enviou, em vez de entregar um borrão em silêncio.
+    const escala = Math.min(1, ladoMax / Math.max(largura, altura));
     const canvas = document.createElement("canvas");
     canvas.width = Math.round(largura * escala);
     canvas.height = Math.round(altura * escala);
     canvas.getContext("2d").drawImage(fonte, 0, 0, canvas.width, canvas.height);
     if (typeof fonte.close === "function") fonte.close();
-    let blob = await gerarBlob(canvas, "image/webp");
-    if (!blob || blob.type !== "image/webp") blob = await gerarBlob(canvas, "image/jpeg");
+    let blob = await gerarBlob(canvas, "image/webp", qualidade);
+    if (!blob || blob.type !== "image/webp") blob = await gerarBlob(canvas, "image/jpeg", qualidade);
     if (!blob) throw new Error("Não consegui preparar essa imagem.");
-    return { blob, extensao: blob.type === "image/webp" ? "webp" : "jpg" };
+    return { blob, extensao: blob.type === "image/webp" ? "webp" : "jpg", largura: canvas.width, altura: canvas.height };
   };
 
   const finalizarControleImagem = async (salvou) => {
