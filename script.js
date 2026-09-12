@@ -1319,6 +1319,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     sincronizarPedido: sincronizarPedidoAlterado,
     semana: getWeekStart,
     lerPedidos: () => database.pedidos,
+    lerConfig: () => database.loja_config,
   });
 
 
@@ -1475,6 +1476,137 @@ Deseja adicionar esse frete ao Valor Final?`)) {
   };
 
   const getLojaWeekdayLabel = (value) => (LOJA_WEEKDAYS.find((d) => d.value === Number(value))?.label || "Dia");
+
+  // ---------------------------------------------------------------------
+  // Painel de entrega: ligar/desligar e escolher os dias em um clique.
+  // A mesma informação existe no formulão de configurações e no calendário,
+  // mas ali são dois lugares diferentes e um formulário para submeter — e
+  // ligar/desligar entrega é decisão de fim de semana, feita do celular.
+  // ---------------------------------------------------------------------
+  const getCidadesDeEntrega = () => {
+    const cfg = getLojaConfig();
+    const daConfig = Array.isArray(cfg.cidades_atendidas) ? cfg.cidades_atendidas : [];
+    const daAgenda = (database.loja_entrega_recorrencia || []).map((e) => e.cidade);
+    const vistas = new Map();
+    [...daConfig, ...daAgenda]
+      .map((c) => String(c || "").trim())
+      .filter((c) => c.length >= 2)
+      .forEach((c) => { if (!vistas.has(normalizeCidadeKey(c))) vistas.set(normalizeCidadeKey(c), c); });
+    return Array.from(vistas.values());
+  };
+
+  const renderEntregaPainel = () => {
+    const botao = document.getElementById("entrega-switch");
+    const resumo = document.getElementById("entrega-resumo");
+    const caixaCidades = document.getElementById("entrega-cidades");
+    const freteResumo = document.getElementById("entrega-frete-resumo");
+    if (!botao || !resumo || !caixaCidades) return;
+
+    const cfg = getLojaConfig();
+    const ligada = cfg.aceita_entrega !== false;
+    botao.textContent = ligada ? "Entrega ligada" : "Entrega desligada";
+    botao.className = `entrega-switch ${ligada ? "is-on" : "is-off"}`;
+    botao.setAttribute("aria-pressed", String(ligada));
+    botao.title = ligada ? "Clique para parar de aceitar entrega na loja" : "Clique para voltar a aceitar entrega";
+    // onclick e não addEventListener: este render roda a cada atualização, e
+    // addEventListener empilharia um ouvinte novo em cada passagem.
+    botao.onclick = () => window.alternarEntrega();
+
+    const cidades = getCidadesDeEntrega();
+    const diasPorCidade = cidades.map((cidade) => {
+      const chave = normalizeCidadeKey(cidade);
+      const ativos = (database.loja_entrega_recorrencia || [])
+        .filter((e) => normalizeCidadeKey(e.cidade) === chave && e.ativo !== false)
+        .map((e) => Number(e.dia_semana))
+        .sort((a, b) => a - b);
+      return { cidade, chave, ativos };
+    });
+
+    if (!ligada) {
+      resumo.textContent = "A loja não está aceitando pedidos de entrega. Só retirada.";
+    } else {
+      const comDias = diasPorCidade.filter((c) => c.ativos.length);
+      resumo.textContent = comDias.length
+        ? comDias.map((c) => `${c.cidade}: ${c.ativos.map((d) => getLojaWeekdayLabel(d)).join(", ")}`).join(" · ")
+        : "Entrega ligada, mas nenhum dia marcado — o cliente não vê data para escolher.";
+    }
+
+    caixaCidades.innerHTML = diasPorCidade.map(({ cidade, ativos }) => `
+      <div class="entrega-cidade">
+        <strong>${escapeHTML(cidade)}</strong>
+        <div class="entrega-dias">
+          ${LOJA_WEEKDAYS.map((dia) => {
+            const on = ativos.includes(dia.value);
+            return `<button type="button" class="entrega-dia ${on ? "is-on" : ""}" aria-pressed="${on}"
+              title="${on ? `Não entregar mais ${dia.label.toLowerCase()} em ${escapeAttr(cidade)}` : `Passar a entregar ${dia.label.toLowerCase()} em ${escapeAttr(cidade)}`}"
+              onclick="window.alternarDiaDeEntrega('${escapeAttr(cidade)}', ${dia.value})">${dia.short}</button>`;
+          }).join("")}
+        </div>
+      </div>`).join("") || '<div class="empty-state compact">Nenhuma cidade de entrega cadastrada.</div>';
+
+    if (freteResumo) {
+      const porKm = Number(cfg.taxa_por_km ?? 1) || 0;
+      const minimo = Number(cfg.frete_minimo ?? 0) || 0;
+      const gratis = Number(cfg.entrega_gratis_km ?? 0) || 0;
+      freteResumo.textContent = cfg.frete_ativo === false
+        ? "Cobrança de frete desligada: a loja calcula a distância, mas não cobra taxa."
+        : `Frete: ${formatCurrency(porKm)}/km, mínimo de ${formatCurrency(minimo)}${gratis > 0 ? `, grátis até ${gratis} km` : ""}. O cliente só fecha o pedido depois que a taxa é calculada.`;
+    }
+  };
+
+  window.alternarEntrega = async () => {
+    const cfg = getLojaConfig();
+    const novoValor = cfg.aceita_entrega === false;
+    try {
+      showLoader();
+      const { error } = await supabaseClient
+        .from("loja_delivery_config")
+        .update({ aceita_entrega: novoValor })
+        .eq("id", true);
+      if (error) throw error;
+      database.loja_config = { ...getLojaConfig(), aceita_entrega: novoValor };
+      renderEntregaPainel();
+      renderLojaConfig();
+      showSaveStatus(novoValor ? "A loja voltou a aceitar entrega." : "Entrega desligada: a loja só aceita retirada.");
+    } catch (error) {
+      showSaveStatus(formatSupabaseError(error, "Não foi possível mudar a entrega"), false);
+    } finally {
+      hideLoader();
+    }
+  };
+
+  window.alternarDiaDeEntrega = async (cidade, diaSemana) => {
+    const chave = normalizeCidadeKey(cidade);
+    const dia = Number(diaSemana);
+    const existente = (database.loja_entrega_recorrencia || [])
+      .find((e) => normalizeCidadeKey(e.cidade) === chave && Number(e.dia_semana) === dia);
+    try {
+      showLoader();
+      let error;
+      if (existente && existente.ativo !== false) {
+        // Remove em vez de pausar: aqui o botão é liga/desliga, e linha pausada
+        // sobrando faria o calendário mostrar um estado que este painel não tem.
+        ({ error } = await supabaseClient.from("loja_entrega_recorrencia").delete().eq("id", existente.id));
+      } else if (existente) {
+        ({ error } = await supabaseClient.from("loja_entrega_recorrencia").update({ ativo: true }).eq("id", existente.id));
+      } else {
+        ({ error } = await supabaseClient.from("loja_entrega_recorrencia").insert({
+          cidade: String(cidade).trim(),
+          cidade_chave: chave,
+          dia_semana: dia,
+          ativo: true,
+        }));
+      }
+      if (error) throw error;
+      await loadDataFromSupabase({ silencioso: true });
+      renderEntregaPainel();
+      showSaveStatus(`${getLojaWeekdayLabel(dia)} em ${cidade}: ${existente && existente.ativo !== false ? "sem entrega" : "entrega ligada"}.`);
+    } catch (error) {
+      showSaveStatus(formatSupabaseError(error, "Não foi possível mudar o dia de entrega"), false);
+    } finally {
+      hideLoader();
+    }
+  };
   const populateLojaCalendarCityDatalist = () => {
     const datalist = document.getElementById("loja-cal-cidades-list");
     if (!datalist) return;
@@ -2016,6 +2148,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     const catalogList = document.getElementById("loja-catalogo-list");
     const proximosList = document.getElementById("loja-proximos-list");
     if (!kpis || !confirmList || !catalogList || !proximosList) return;
+    renderEntregaPainel();
     renderLojaConfig();
     renderLojaCalendario();
     renderLojaCupons();

@@ -8632,3 +8632,69 @@ body.com-modal-aberto .floating-alert-btn {
   align-items: end;
 }
 #mobile-app .m-add-pizza-box .m-btn { width: 100%; }
+
+/* ==========================================================================
+   Painel de entrega
+   Ligar e desligar entrega é decisão de fim de semana, tomada do celular:
+   precisa caber num toque, sem abrir formulário e sem submeter nada.
+   ========================================================================== */
+.entrega-card { display: grid; gap: 14px; }
+
+.entrega-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.entrega-head h3 { margin: 0 0 2px; border-bottom: 0; padding-bottom: 0; }
+
+.entrega-switch {
+  min-height: 44px;
+  padding: 10px 20px;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  font-weight: 800;
+  font-size: .9rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.entrega-switch.is-on { background: #1f7a4d; border-color: #1f7a4d; color: #fff; }
+.entrega-switch.is-off { background: #fdecec; border-color: #c0392b; color: #a3271b; }
+.entrega-switch:hover { filter: brightness(1.06); }
+
+.entrega-cidades { display: grid; gap: 10px; }
+
+.entrega-cidade {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border, #e2e2e2);
+  border-radius: 10px;
+}
+
+.entrega-dias { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.entrega-dia {
+  min-width: 46px;
+  min-height: 40px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #d8d8d8);
+  background: #fff;
+  font-weight: 700;
+  font-size: .82rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.entrega-dia.is-on { background: #1f7a4d; border-color: #1f7a4d; color: #fff; }
+.entrega-dia:hover { filter: brightness(0.97); }
+
+@media (max-width: 900px) {
+  .entrega-head { flex-direction: column; align-items: stretch; }
+  .entrega-switch { width: 100%; }
+  .entrega-dia { flex: 1 1 46px; }
+}
