@@ -105,6 +105,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     loja_entrega_calendario: [],
     loja_entrega_recorrencia: [],
     loja_cupons: [],
+    loja_cupons_uso: [],
     loja_anuncios: [],
     loja_config: {},
     estoque_vendedor_painel: { ativo: false, estoque: [], sugestoes: [], movimentos: [] },
@@ -1200,7 +1201,7 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       // tabela ainda nao existir num ambiente, a gestao inteira segue abrindo.
       // Mas elas nao dependem uma da outra, entao vao juntas: em fila eram seis
       // idas e voltas somadas ao tempo de cada salvamento.
-      const [caixaRes, eventosRes, vendedoresRes, calendarioRes, recorrenciaRes, configRes, anunciosRes] = await Promise.allSettled([
+      const [caixaRes, eventosRes, vendedoresRes, calendarioRes, recorrenciaRes, configRes, anunciosRes, cuponsRes, cuponsUsoRes] = await Promise.allSettled([
         supabaseClient.from("caixa_movimentos").select("*").order("data", { ascending: false }),
         supabaseClient.from("eventos").select("*").order("data", { ascending: false, nullsFirst: false }),
         supabaseClient.from("vendedores").select("*").order("nome"),
@@ -1208,6 +1209,8 @@ Deseja adicionar esse frete ao Valor Final?`)) {
         supabaseClient.from("loja_entrega_recorrencia").select("*").order("cidade", { ascending: true }).order("dia_semana", { ascending: true }),
         supabaseClient.from("loja_delivery_config").select("*").eq("id", true).maybeSingle(),
         supabaseClient.from("loja_anuncios").select("*").order("ordem", { ascending: true }).order("created_at", { ascending: false }),
+        supabaseClient.from("loja_cupons").select("*").order("created_at", { ascending: false }),
+        supabaseClient.rpc("loja_cupons_uso"),
       ]);
 
       // Tabela que faltar (ou consulta que falhar) vira lista vazia, como antes.
@@ -1218,6 +1221,10 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       database.loja_entrega_calendario = linhasDe(calendarioRes);
       database.loja_entrega_recorrencia = linhasDe(recorrenciaRes);
       database.loja_anuncios = linhasDe(anunciosRes);
+      database.loja_cupons = linhasDe(cuponsRes);
+      // Uso real por cupom, tirado dos pedidos: quantos usaram e quantos eram
+      // conta nova. O uso_total da tabela não sabe de pedido cancelado.
+      database.loja_cupons_uso = linhasDe(cuponsUsoRes);
       const configData = (configRes.status === "fulfilled" && !configRes.value?.error && configRes.value?.data) || null;
       database.loja_config = { ...DEFAULT_LOJA_CONFIG, ...(configData || {}) };
 
@@ -1856,12 +1863,56 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       list.innerHTML = '<div class="empty-state compact">Nenhum cupom cadastrado.</div>';
       return;
     }
+    // Cupom vencido não some da lista, mas também não pode se passar por ativo:
+    // a etiqueta diz em qual dos três estados ele está.
+    const hoje = new Date().toISOString().slice(0, 10);
+    const situacaoDoCupom = (cupom) => {
+      if (cupom.ativo === false) return { classe: 'is-off', selo: 'Pausado' };
+      if (cupom.inicio_em && cupom.inicio_em > hoje) return { classe: 'is-waiting', selo: `Começa ${formatDateBR(cupom.inicio_em)}` };
+      if (cupom.fim_em && cupom.fim_em < hoje) return { classe: 'is-off', selo: 'Vencido' };
+      if (cupom.uso_limite && Number(cupom.uso_total || 0) >= Number(cupom.uso_limite)) return { classe: 'is-off', selo: 'Esgotado' };
+      return { classe: 'is-on', selo: 'Ativo' };
+    };
+
+    const usoPorCodigo = new Map((database.loja_cupons_uso || [])
+      .map((linha) => [String(linha.codigo || '').trim().toUpperCase(), linha]));
+
     list.innerHTML = cupons.map((cupom) => {
       const valor = cupom.tipo === 'percentual' ? `${Number(cupom.valor || 0).toString().replace('.', ',')}%` : formatCurrency(cupom.valor || 0);
       const validade = [cupom.inicio_em ? `de ${formatDateBR(cupom.inicio_em)}` : '', cupom.fim_em ? `até ${formatDateBR(cupom.fim_em)}` : ''].filter(Boolean).join(' ');
-      const usos = cupom.uso_limite ? `${cupom.uso_total || 0}/${cupom.uso_limite} usos` : `${cupom.uso_total || 0} uso(s)`;
       const limitePorCliente = cupom.uso_limite_por_cliente ? ` · até ${cupom.uso_limite_por_cliente}x por cliente` : '';
-      return `<article class="coupon-admin-item ${cupom.ativo === false ? 'is-off' : ''}"><div><strong>${escapeHTML(cupom.codigo)}</strong><small>${escapeHTML(valor)}${cupom.minimo_pedido > 0 ? ` · mínimo ${formatCurrency(cupom.minimo_pedido)}` : ''}${validade ? ` · ${escapeHTML(validade)}` : ''} · ${escapeHTML(usos)}${limitePorCliente}</small></div><div class="coupon-admin-buttons"><button class="mini-btn" type="button" onclick="window.editLojaCupom('${cupom.id}')">Editar</button><button class="mini-btn" type="button" onclick="window.toggleLojaCupom('${cupom.id}', ${cupom.ativo === false ? 'true' : 'false'})">${cupom.ativo === false ? 'Ativar' : 'Pausar'}</button><button class="mini-btn danger" type="button" onclick="window.deleteLojaCupom('${cupom.id}')">Remover</button></div></article>`;
+      const { classe, selo } = situacaoDoCupom(cupom);
+
+      const uso = usoPorCodigo.get(String(cupom.codigo || '').trim().toUpperCase()) || {};
+      const pedidos = Number(uso.pedidos || 0);
+      const clientes = Number(uso.clientes || 0);
+      const novas = Number(uso.contas_novas || 0);
+      const desconto = Number(uso.desconto_total || 0);
+      const limite = cupom.uso_limite ? ` de ${cupom.uso_limite}` : '';
+      // Contas novas é a única métrica que diz se o cupom trouxe gente ou só
+      // deu desconto para quem já compraria.
+      const numeros = pedidos
+        ? `<div class="coupon-stats">
+             <span><b>${pedidos}</b>${escapeHTML(limite)} uso${pedidos === 1 ? '' : 's'}</span>
+             <span><b>${clientes}</b> cliente${clientes === 1 ? '' : 's'}</span>
+             <span class="${novas ? 'is-highlight' : ''}"><b>${novas}</b> conta${novas === 1 ? '' : 's'} nova${novas === 1 ? '' : 's'}</span>
+             <span>${escapeHTML(formatCurrency(desconto))} de desconto</span>
+             ${uso.ultimo_uso ? `<span>último em ${escapeHTML(formatDateBR(uso.ultimo_uso))}</span>` : ''}
+           </div>`
+        : '<div class="coupon-stats"><span class="small-muted">Ninguém usou ainda.</span></div>';
+
+      return `<article class="coupon-admin-item ${classe}">
+        <div class="coupon-admin-info">
+          <strong>${escapeHTML(cupom.codigo)} <span class="coupon-tag">${escapeHTML(selo)}</span></strong>
+          <small>${escapeHTML(valor)}${cupom.minimo_pedido > 0 ? ` · mínimo ${formatCurrency(cupom.minimo_pedido)}` : ''}${validade ? ` · ${escapeHTML(validade)}` : ''}${limitePorCliente}</small>
+          ${numeros}
+        </div>
+        <div class="coupon-admin-buttons">
+          <button class="mini-btn" type="button" onclick="window.editLojaCupom('${cupom.id}')">Editar</button>
+          <button class="mini-btn" type="button" onclick="window.toggleLojaCupom('${cupom.id}', ${cupom.ativo === false ? 'true' : 'false'})">${cupom.ativo === false ? 'Ativar' : 'Pausar'}</button>
+          <button class="mini-btn danger" type="button" onclick="window.deleteLojaCupom('${cupom.id}')">Remover</button>
+        </div>
+      </article>`;
     }).join('');
   };
 

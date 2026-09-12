@@ -8698,3 +8698,45 @@ body.com-modal-aberto .floating-alert-btn {
   .entrega-switch { width: 100%; }
   .entrega-dia { flex: 1 1 46px; }
 }
+
+/* ==========================================================================
+   Cupons: situação e números de uso
+   Saber que o cupom existe não basta — a pergunta é se ele está valendo hoje
+   e se trouxe cliente novo ou só deu desconto a quem já compraria.
+   ========================================================================== */
+.coupon-admin-info { display: grid; gap: 2px; }
+
+.coupon-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: .64rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.coupon-admin-item.is-on { border-left: 4px solid #1f7a4d; }
+.coupon-admin-item.is-on .coupon-tag { color: #1f7a4d; background: #e8f5ee; }
+.coupon-admin-item.is-waiting { border-left: 4px solid #b8860b; }
+.coupon-admin-item.is-waiting .coupon-tag { color: #8a6508; background: #fdf5e2; }
+.coupon-admin-item.is-off .coupon-tag { color: #6b7280; background: #f1f3f5; }
+
+.coupon-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 6px;
+  font-size: .78rem;
+  color: var(--text-light-color);
+}
+
+.coupon-stats b { color: var(--text-color); font-size: .92rem; }
+.coupon-stats .is-highlight b { color: #1f7a4d; }
+
+@media (max-width: 700px) {
+  .coupon-stats { gap: 4px 12px; }
+}
