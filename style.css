@@ -33,7 +33,26 @@ body {
   background-color: var(--background-color);
   color: var(--text-color);
   line-height: 1.6;
-  word-break: break-word;
+  /* overflow-wrap só parte a palavra quando ela realmente não cabe. O
+     word-break: break-word que estava aqui picotava qualquer texto apertado, e
+     era ele que deixava os botões do celular com uma letra por linha. */
+  overflow-wrap: break-word;
+}
+
+/* Rótulo de botão não se parte no meio da palavra: ou cabe, ou quebra entre
+   palavras. E nenhum botão encolhe abaixo do tamanho do próprio texto. */
+button,
+.action-btn,
+.mini-btn,
+.home-action,
+.primary-btn,
+.secondary-btn,
+.ghost-btn,
+input[type="submit"],
+input[type="button"] {
+  word-break: keep-all;
+  overflow-wrap: normal;
+  min-width: fit-content;
 }
 
 .loader-container {
@@ -3432,8 +3451,7 @@ button {
 
   input,
   select,
-  textarea,
-  button {
+  textarea {
     width: 100% !important;
     max-width: 100% !important;
     min-width: 0 !important;
@@ -3441,10 +3459,29 @@ button {
     font-size: 16px !important;
   }
 
+  /* Botão NÃO entra na regra acima. Com width:100% + min-width:0, cada botão de
+     uma linha de ações era espremido pelos irmãos e o rótulo descia letra por
+     letra ("V e r  p e d i d o s"). Aqui ele só ganha alvo de toque e a
+     garantia de nunca encolher abaixo do próprio texto. */
   button,
-  .action-btn {
+  .action-btn,
+  .mini-btn,
+  .home-action {
+    max-width: 100%;
+    min-height: 44px !important;
+    min-width: fit-content;
     padding: 10px 12px !important;
     border-radius: 14px !important;
+    white-space: nowrap;
+  }
+
+  /* Quem deve mesmo ocupar a linha inteira pede explicitamente. */
+  .btn-full-mobile,
+  .edit-actions button,
+  .modal-actions button,
+  form[id$="-form"] button[type="submit"] {
+    width: 100% !important;
+    white-space: normal;
   }
 
   /* Tabelas viram cards bons de tocar */
@@ -7603,7 +7640,16 @@ tr.linha-nao-cadastrada td:first-child {
 }
 .pending-alert[hidden] { display: none; }
 .pending-alert.is-visible { opacity: 1; transform: translate(-50%, 0); }
-.pending-alert-icon { color: var(--secondary-color); font-size: 1.6rem; flex: 0 0 auto; }
+/* Largura travada: se a fonte de ícones não carregar, o <span> mostra o nome do
+   ícone por extenso ("notifications_active") e empurrava o resto do aviso para
+   fora da tela. */
+.pending-alert-icon {
+  color: var(--secondary-color);
+  font-size: 1.6rem;
+  flex: 0 0 auto;
+  width: 1.6rem;
+  overflow: hidden;
+}
 .pending-alert-text { min-width: 0; flex: 1; }
 .pending-alert-text b { display: block; color: var(--primary-color); font-size: .95rem; }
 .pending-alert-text small { display: block; color: var(--text-light-color); margin-top: 2px; }
@@ -8482,3 +8528,107 @@ tr.linha-nao-cadastrada td:first-child {
   background: var(--subtle-bg-color);
 }
 .campo-dica { display: block; margin-top: 4px; color: var(--text-light-color); font-size: .72rem; line-height: 1.3; }
+
+/* ==========================================================================
+   Celular: aviso de pedidos aguardando confirmação
+   Em tela estreita ele virava um bloco alto com o botão espremido de lado.
+   Agora empilha: ícone + texto em cima, botão ocupando a linha inteira.
+   ========================================================================== */
+@media (max-width: 640px) {
+  .pending-alert {
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    bottom: 12px;
+    padding: 12px 14px;
+  }
+  .pending-alert-text { flex: 1 1 60%; }
+  .pending-alert-actions {
+    flex: 1 1 100%;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .pending-alert-cta {
+    flex: 1 1 auto;
+    min-height: 44px;
+    white-space: nowrap;
+  }
+  .pending-alert-close { flex: 0 0 auto; min-width: 44px; min-height: 44px; }
+}
+
+/* Com um modal aberto, o aviso flutuante sai da frente: ele tem z-index maior
+   que o modal e no celular cobria os botões de salvar. */
+body.com-modal-aberto .pending-alert,
+body.com-modal-aberto .floating-alert-btn {
+  display: none !important;
+}
+
+/* Caixas de marcar no celular: 13px é alvo pequeno demais para o dedo. */
+@media (max-width: 900px) {
+  input[type="checkbox"],
+  input[type="radio"] {
+    width: 22px !important;
+    height: 22px !important;
+    min-width: 22px !important;
+    min-height: 22px !important;
+    flex: 0 0 auto;
+    accent-color: var(--secondary-color);
+  }
+  /* A linha inteira do rótulo vira área de toque. */
+  .toggle-line,
+  .check-row,
+  label.toggle-mini {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    cursor: pointer;
+  }
+}
+
+/* ==========================================================================
+   App do celular: rótulos nos campos
+   Os campos viviam só de placeholder — sumia a referência assim que a pessoa
+   começava a digitar, e cinco deles (pagamento, data, método, sabor e
+   quantidade) não tinham dica nenhuma.
+   ========================================================================== */
+#mobile-app .m-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: #475569;
+  font-size: .74rem;
+  font-weight: 700;
+}
+#mobile-app .m-field > input,
+#mobile-app .m-field > select,
+#mobile-app .m-field > textarea {
+  width: 100%;
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+#mobile-app .m-field-title {
+  display: block;
+  margin-bottom: 2px;
+  color: #475569;
+  font-size: .74rem;
+  font-weight: 700;
+}
+
+/* Bloco de adicionar pizza: sabor larga, quantidade estreita, botão embaixo. */
+#mobile-app .m-add-pizza-box {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+#mobile-app .m-add-pizza-linha {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 84px;
+  gap: 8px;
+  align-items: end;
+}
+#mobile-app .m-add-pizza-box .m-btn { width: 100%; }

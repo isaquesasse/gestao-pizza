@@ -2479,6 +2479,10 @@ Deseja adicionar esse frete ao Valor Final?`)) {
 
     if (callback) callback();
     modal.style.display = "block";
+    // O aviso flutuante de pedidos pendentes tem z-index maior que o modal e,
+    // no celular, ficava por cima dos botões de salvar. Enquanto houver um
+    // modal aberto ele sai da frente.
+    document.body.classList.add("com-modal-aberto");
 
     const firstField = contentContainer?.querySelector("input:not([type='hidden']):not([readonly]), select:not([disabled]), textarea:not([readonly])");
     setTimeout(() => firstField?.focus(), 80);
@@ -2495,6 +2499,10 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       const contentContainer = document.getElementById(`${modalId}-content`);
       if (contentContainer) contentContainer.innerHTML = "";
     }
+    // Só libera o aviso quando não sobrou nenhum modal aberto.
+    const aindaAberto = Array.from(document.querySelectorAll(".modal"))
+      .some((el) => getComputedStyle(el).display !== "none");
+    document.body.classList.toggle("com-modal-aberto", aindaAberto);
   };
   window.closeModal = closeModal;
 
@@ -7835,30 +7843,36 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
     renderMobileShell(`<section class="m-section">
       <div class="m-card"><h2>Novo pedido</h2><p class="m-muted">Cadastro rápido otimizado para celular.</p></div>
       <div class="m-card"><form class="m-form" id="m-pedido-form">
-        <input id="m-pedido-cliente" placeholder="Cliente" list="clientes-list" required>
+        <label class="m-field">Cliente<input id="m-pedido-cliente" placeholder="Nome de quem está pedindo" list="clientes-list" required></label>
         <div class="m-form-pair">
-          <input id="m-pedido-telefone" placeholder="Telefone">
-          <input id="m-pedido-cidade" placeholder="Cidade" required>
+          <label class="m-field">Telefone<input id="m-pedido-telefone" placeholder="(47) 9..." inputmode="tel"></label>
+          <label class="m-field">Cidade<input id="m-pedido-cidade" placeholder="Massaranduba" required></label>
         </div>
-        <input id="m-pedido-endereco" placeholder="Endereço">
+        <label class="m-field">Endereço<input id="m-pedido-endereco" placeholder="Rua, número e bairro"></label>
         <div class="m-form-pair">
-          <input id="m-pedido-vendedor" placeholder="Vendedor" value="${escapeAttr(getMobileSellerName())}" required>
-          <select id="m-pedido-pagamento"><option value="Pix">Pix</option><option value="Dinheiro">Dinheiro</option><option value="Cartão de Crédito">Cartão de Crédito</option><option value="Cartão de Débito">Cartão de Débito</option></select>
+          <label class="m-field">Vendedor<input id="m-pedido-vendedor" placeholder="Quem atendeu" value="${escapeAttr(getMobileSellerName())}" required></label>
+          <label class="m-field">Pagamento<select id="m-pedido-pagamento"><option value="Pix">Pix</option><option value="Dinheiro">Dinheiro</option><option value="Cartão de Crédito">Cartão de Crédito</option><option value="Cartão de Débito">Cartão de Débito</option></select></label>
         </div>
         <div class="m-form-pair">
-          <input id="m-pedido-semana" type="date" value="${formatDateToYYYYMMDD(new Date())}" required>
-          <select id="m-pedido-metodo"><option value="retirada">Retirada</option><option value="entrega">Entrega</option></select>
+          <label class="m-field">Data de entrega<input id="m-pedido-semana" type="date" value="${formatDateToYYYYMMDD(new Date())}" required></label>
+          <label class="m-field">Entrega ou retirada<select id="m-pedido-metodo"><option value="retirada">Retirada</option><option value="entrega">Entrega</option></select></label>
         </div>
         <label class="m-order-big-toggle"><input type="checkbox" id="m-pedido-grande"> <span><b>Pedido grande</b><small>Separar pizzas por cliente</small></span></label>
-        <div id="m-pedido-grande-box" class="m-order-big-box hidden"><input id="m-pedido-secao" placeholder="Cliente da seção atual"><small>Troque o nome para adicionar pizzas em outra seção.</small></div>
-        <div class="m-two"><select id="m-pedido-pizza"><option value="">Pizza...</option>${mPizzaOptions()}</select><input id="m-pedido-qtd" type="number" min="1" value="1"></div>
-        <button type="button" id="m-add-pizza" class="m-btn secondary">Adicionar pizza</button>
+        <div id="m-pedido-grande-box" class="m-order-big-box hidden"><input id="m-pedido-secao" placeholder="Cliente da seção atual" aria-label="Cliente da seção atual"><small>Troque o nome para adicionar pizzas em outra seção.</small></div>
+        <div class="m-add-pizza-box">
+          <span class="m-field-title">Pizzas do pedido</span>
+          <div class="m-add-pizza-linha">
+            <label class="m-field m-field-sabor">Sabor<select id="m-pedido-pizza"><option value="">Escolha o sabor…</option>${mPizzaOptions()}</select></label>
+            <label class="m-field m-field-qtd">Qtd.<input id="m-pedido-qtd" type="number" min="1" value="1" inputmode="numeric"></label>
+          </div>
+          <button type="button" id="m-add-pizza" class="m-btn secondary">Adicionar pizza</button>
+        </div>
         <div id="m-pedido-carrinho" class="m-cart"></div>
         <div class="m-form-pair">
-          <input id="m-pedido-desconto" placeholder="Desconto %" inputmode="decimal">
-          <input id="m-pedido-valor-final" placeholder="Valor final" inputmode="decimal">
+          <label class="m-field">Desconto %<input id="m-pedido-desconto" placeholder="0" inputmode="decimal"></label>
+          <label class="m-field">Valor final<input id="m-pedido-valor-final" placeholder="Deixe em branco para o total" inputmode="decimal"></label>
         </div>
-        <textarea id="m-pedido-observacoes" rows="3" placeholder="Observações do pedido"></textarea>
+        <label class="m-field">Observações<textarea id="m-pedido-observacoes" rows="3" placeholder="Algum recado para a cozinha?"></textarea></label>
         <div class="m-total-sticky"><span>Total</span><b id="m-pedido-total">R$ 0,00</b></div>
         <button type="button" id="m-pedido-pix" class="m-btn secondary">Gerar QR Pix</button>
         <div id="m-pedido-pix-box" class="m-pix-box"></div>
