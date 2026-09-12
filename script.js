@@ -177,6 +177,18 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const ITEM_NAO_CADASTRADO_TAG = "não cadastrada";
 
+  // Item vendido sob encomenda (azeite e afins): tem linha no estoque só para
+  // ter preço e foto na loja, mas a casa não conta unidade nem produz. Ele não
+  // pode entrar em nada que diga o que a cozinha precisa fazer na semana, senão
+  // a tabela de produção manda assar azeite.
+  const ehLinhaSobEncomenda = (pizza) => pizza?.controla_estoque === false;
+
+  const ehItemSobEncomenda = (item) => {
+    const id = String(item?.pizzaId ?? item?.id ?? "").trim();
+    if (!id || id === "outro") return false;
+    return ehLinhaSobEncomenda((database.estoque || []).find((pizza) => String(pizza.id) === id));
+  };
+
   const getItemTamanho = (item) => {
     const direto = String(item?.tamanho ?? item?.pizzaTamanho ?? "").trim();
     if (direto) return direto;
@@ -4022,14 +4034,18 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       const custo = calculatePizzaCost(item.id);
       const lucro = item.precoVenda - custo;
       const row = tbody.insertRow();
-      if (item.qtd <= 0) row.classList.add("low-stock");
+      // Item sob encomenda vive com 0: pintar a linha de vermelho seria alarme
+      // falso em 27 azeites de uma vez.
+      const sobEncomenda = ehLinhaSobEncomenda(item);
+      if (item.qtd <= 0 && !sobEncomenda) row.classList.add("low-stock");
       // O selo de visibilidade é um botão: alternar visível/oculto era o ajuste
       // mais repetido da tela e exigia abrir o modal de edição só para isso.
       const disponivel = Number(item.qtd || 0) - Number(demandaSemana[item.id] || 0);
       const visivel = item.visivel_loja !== false;
       const lojaTag = `<button type="button" class="payment-tag toggle-tag ${visivel ? "paid" : "unpaid"}" onclick="window.toggleVisivelLoja('${item.id}')" title="${visivel ? "Clique para ocultar da loja" : "Clique para mostrar na loja"}" aria-pressed="${visivel}">${visivel ? "Visível" : "Oculto"}</button>`;
       const imgTag = item.imagem_url ? '<span class="payment-tag info">Imagem</span>' : '';
-      row.innerHTML = `<td data-label="Sabor da Pizza">${escapeHTML(item.nome)}</td><td data-label="Tamanho">${escapeHTML(item.tamanho || "N/A")}</td><td data-label="Qtd.">${item.qtd}</td><td data-label="Disponível" class="${disponivel < 0 ? "low-stock" : ""}"><b>${disponivel}</b></td><td data-label="Custo Produção" class="admin-only">${formatCurrency(custo)}</td><td data-label="Preço Venda">${formatCurrency(item.precoVenda)}</td><td data-label="Loja">${lojaTag}${imgTag}<small class="shop-meta-preview">${escapeHTML(item.categoria_loja || "Pizzas")}</small></td><td data-label="Lucro Bruto" class="admin-only" style="color:${lucro >= 0 ? "green" : "red"};font-weight:bold;">${formatCurrency(lucro)}</td><td data-label="Ações"><button class="action-btn edit-btn" onclick="window.editEstoque('${item.id}')">Editar</button><button class="action-btn remove-btn" onclick="window.removeEstoque('${item.id}')">Remover</button></td>`;
+      const encomendaTag = sobEncomenda ? '<span class="payment-tag info">Sob encomenda</span>' : '';
+      row.innerHTML = `<td data-label="Sabor da Pizza">${escapeHTML(item.nome)}</td><td data-label="Tamanho">${escapeHTML(item.tamanho || "N/A")}</td><td data-label="Qtd.">${sobEncomenda ? "—" : item.qtd}</td><td data-label="Disponível" class="${!sobEncomenda && disponivel < 0 ? "low-stock" : ""}"><b>${sobEncomenda ? "—" : disponivel}</b></td><td data-label="Custo Produção" class="admin-only">${formatCurrency(custo)}</td><td data-label="Preço Venda">${formatCurrency(item.precoVenda)}</td><td data-label="Loja">${lojaTag}${imgTag}${encomendaTag}<small class="shop-meta-preview">${escapeHTML(item.categoria_loja || "Pizzas")}</small></td><td data-label="Lucro Bruto" class="admin-only" style="color:${lucro >= 0 ? "green" : "red"};font-weight:bold;">${formatCurrency(lucro)}</td><td data-label="Ações"><button class="action-btn edit-btn" onclick="window.editEstoque('${item.id}')">Editar</button><button class="action-btn remove-btn" onclick="window.removeEstoque('${item.id}')">Remover</button></td>`;
     });
     updateSortHeaders("tabela-estoque", column, direction);
   };
@@ -4406,8 +4422,9 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
             <label class="check-row"><input type="checkbox" name="visivel_loja" ${item.visivel_loja === false ? "" : "checked"}> <span>Mostrar este sabor na loja</span></label>
             <label class="check-row"><input type="checkbox" name="permitir_encomenda" ${item.permitir_encomenda === false ? "" : "checked"}> <span>Permitir encomenda sem estoque</span></label>
             <label class="check-row"><input type="checkbox" name="destaque_loja" ${item.destaque_loja ? "checked" : ""}> <span>Destacar no topo do cardápio</span></label>
+            <label class="check-row"><input type="checkbox" name="sob_encomenda" ${item.controla_estoque === false ? "checked" : ""}> <span>Vender sob encomenda (sem contar estoque)</span></label>
           </div>
-          <p class="edit-note">Sabores ocultos não aparecem na loja.</p>
+          <p class="edit-note">Sabores ocultos não aparecem na loja. Item sob encomenda vende sempre, entra em pedido de pronta entrega e não aparece na produção da semana — é o caso dos azeites.</p>
         </div>
         <div class="edit-section">
           <div class="edit-section-title"><span>Sugestão na loja</span><small>Para azeites: com quais pizzas este item combina</small></div>
@@ -4460,6 +4477,9 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
           destaque_loja: formData.get("destaque_loja") === "on",
           ordem_loja: parseInt(formData.get("ordem_loja")) || 1000,
           permitir_encomenda: formData.get("permitir_encomenda") === "on",
+          // Marcado = a casa vende sem contar unidade. É o inverso do campo do
+          // banco, que diz se o item participa do controle de estoque.
+          controla_estoque: formData.get("sob_encomenda") !== "on",
           harmoniza_com: String(formData.get("harmoniza_com") || "").trim().slice(0, 300) || null,
           harmoniza_frase: String(formData.get("harmoniza_frase") || "").trim().slice(0, 140) || null,
         };
@@ -5165,6 +5185,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     filtrarPedidosDaDemanda(weekStart, options).forEach((p) => {
       (p.items || []).forEach((item) => {
         if (item.isCustom || !item.pizzaId) return;
+        if (ehItemSobEncomenda(item)) return;
         const qtd = Number(item.qtd || 0);
         if (!Number.isFinite(qtd) || qtd <= 0) return;
         demand[item.pizzaId] = (demand[item.pizzaId] || 0) + qtd;
@@ -5224,7 +5245,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       statuses,
       incluirAtrasados: false,
     });
-    return database.estoque.map((pizza) => {
+    return database.estoque.filter((pizza) => !ehLinhaSobEncomenda(pizza)).map((pizza) => {
       const pedidosSemana = Number(demandByPizza[pizza.id] || 0);
       const pedidosTotais = Number(totaisPorPizza[pizza.id] || 0);
       const abertosSemana = Number(abertosDaSemana[pizza.id] || 0);
@@ -7275,7 +7296,7 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
     });
     const previousWeeks = getPreviousWeekStarts(weekStart, 4).map((ws) => getWeeklyPizzaSales(ws));
 
-    return database.estoque.map((pizza) => {
+    return database.estoque.filter((pizza) => !ehLinhaSobEncomenda(pizza)).map((pizza) => {
       // aReservar = o que ainda precisa sair do estoque; pedidos = tudo que foi
       // pedido na semana, que é o número comparável com a média das 4 semanas.
       const aReservar = Number(demand[pizza.id] || 0);
