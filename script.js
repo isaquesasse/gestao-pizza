@@ -209,6 +209,30 @@ document.addEventListener("DOMContentLoaded", async () => {
     const tamanho = getItemTamanho(item);
     return tamanho ? `${nome} (${tamanho})` : nome;
   };
+
+  // Categoria da loja (Pizzas, Azeites, Utensílios...) de um item de pedido.
+  // Pizza fora do cadastro não tem categoria própria: vai para um grupo à
+  // parte em vez de inflar ou sumir de uma categoria real. O mapa por id é
+  // refeito só quando database.estoque é trocado, porque o dashboard pergunta
+  // isso para cada item de milhares de pedidos.
+  const CATEGORIA_FORA_DO_CADASTRO = "Fora do cadastro";
+  let mapaCategoriaProduto = { origem: null, porId: new Map() };
+  const getItemCategoria = (item) => {
+    if (isItemNaoCadastrado(item)) return CATEGORIA_FORA_DO_CADASTRO;
+    if (mapaCategoriaProduto.origem !== database.estoque) {
+      mapaCategoriaProduto = {
+        origem: database.estoque,
+        porId: new Map((database.estoque || []).map((p) => [String(p.id), String(p.categoria_loja || "").trim()])),
+      };
+    }
+    return mapaCategoriaProduto.porId.get(String(item?.pizzaId ?? "").trim()) || "Sem categoria";
+  };
+  // "Pizzas nos pedidos" conta só pizza: azeite e utensílio da loja entravam na
+  // mesma soma. Item fora do cadastro é sempre uma pizza diferente.
+  const isItemPizza = (item) => {
+    const categoria = getItemCategoria(item);
+    return categoria === "Pizzas" || categoria === CATEGORIA_FORA_DO_CADASTRO;
+  };
   // Nome já escapado + selo, para as listas de tela. Quem só quer o texto usa o
   // segundo argumento para trocar o selo.
   const marcarNomeNaoCadastrado = (textoHtml, tag = ITEM_NAO_CADASTRADO_TAG) =>
@@ -331,6 +355,28 @@ document.addEventListener("DOMContentLoaded", async () => {
     saveStatusTimeout = setTimeout(() => {
       SAVE_STATUS.className = "";
     }, 4000);
+  };
+
+  // Aviso com um botão (ex.: "Desfazer"). Fica mais tempo que o normal para
+  // dar tempo de tocar; qualquer showSaveStatus seguinte troca o texto e
+  // leva o botão junto.
+  const showSaveStatusComAcao = (message, rotulo, acao, duracao = 8000) => {
+    clearTimeout(saveStatusTimeout);
+    SAVE_STATUS.textContent = message;
+    const botao = document.createElement("button");
+    botao.type = "button";
+    botao.className = "save-status-acao";
+    botao.textContent = rotulo;
+    botao.addEventListener("click", () => {
+      clearTimeout(saveStatusTimeout);
+      SAVE_STATUS.className = "";
+      acao();
+    }, { once: true });
+    SAVE_STATUS.append(" ", botao);
+    SAVE_STATUS.className = "visible success";
+    saveStatusTimeout = setTimeout(() => {
+      SAVE_STATUS.className = "";
+    }, duracao);
   };
 
   const formatCurrency = (value) => {
@@ -2327,7 +2373,10 @@ Deseja adicionar esse frete ao Valor Final?`)) {
     // usuário digita ali dentro, senão o formulário aberto perderia o que foi
     // preenchido.
     if (isMobileViewport() && !document.body.classList.contains("force-desktop-mobile")) {
-      const digitando = document.getElementById("mobile-screen")?.contains(document.activeElement);
+      // Só campo de formulário conta: um botão tocado (ex.: "Pronto") também
+      // fica com o foco e travava a lista desatualizada na tela.
+      const ativo = document.activeElement;
+      const digitando = ativo?.matches?.("input, select, textarea") && document.getElementById("mobile-screen")?.contains(ativo);
       if (!digitando) renderMobileApp();
     }
   };
@@ -3285,13 +3334,13 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       ? `<button class="action-btn confirm-btn" type="button" disabled title="Fica pendente até a semana de entrega para preservar o estoque atual">Agendado</button>`
       : `<button class="action-btn confirm-btn" onclick="window.updatePedidoStatus('${pedido.id}', 'Confirmado')">Confirmar</button>`;
     const rejeitarBtn = `<button class="action-btn reject-btn" onclick="window.updatePedidoStatus('${pedido.id}', 'Negado')">Rejeitar</button>`;
-    const prontoBtn = `<button class="action-btn" style="background-color:var(--accent-color)" onclick="window.updatePedidoStatus('${pedido.id}', 'Pronto')">Marcar pronto</button>`;
+    const prontoBtn = `<button class="action-btn pronto-rapido-btn" onclick="window.marcarProntoRapido('${pedido.id}', this)" title="Pedido embalado: marca como pronto para entrega/retirada">✓ Pronto</button>`;
     const concluirBtn = `<button class="action-btn complete-btn" onclick="window.updatePedidoStatus('${pedido.id}', 'Concluído')">Concluir</button>`;
     switch (pedido.status) {
       case "Pendente":
         return `${confirmarBtn}${rejeitarBtn}${editarBtn}${pagoBtn}${pixBtn}${printBtn}${cancelarBtn}`;
       case "Confirmado":
-        return `${editarBtn}${prontoBtn}${pagoBtn}${pixBtn}${printBtn}${cancelarBtn}`;
+        return `${prontoBtn}${editarBtn}${pagoBtn}${pixBtn}${printBtn}${cancelarBtn}`;
       case "Pronto":
         return `${editarBtn}${isPedidoPago(pedido) ? concluirBtn : pagoBtn}${pixBtn}${printBtn}${cancelarBtn}`;
       case "Concluído":
@@ -3412,6 +3461,66 @@ Deseja adicionar esse frete ao Valor Final?`)) {
       showSaveStatus(formatSupabaseError(error, "Não foi possível atualizar o pedido"), false);
     } finally {
       hideLoader();
+    }
+  };
+
+  // Um toque para quando o pedido é embalado. Sem a caixa de confirmação de
+  // updatePedidoStatus, que travava a fila na hora de embalar; um toque errado
+  // se corrige pelo "Desfazer" do aviso. Pedido já pago vai direto para
+  // Concluído, igual ao botão antigo.
+  const prontoRapidoEmAndamento = new Set();
+
+  const desfazerProntoRapido = async (id, nome) => {
+    showLoader();
+    try {
+      const { error } = await supabaseClient.rpc("atualizar_status_pedido_seguro", {
+        p_pedido_id: id,
+        p_novo_status: "Confirmado",
+        p_pago: null,
+        p_motivo: null,
+      });
+      if (error) throw error;
+      showSaveStatus(`${nome}: voltou para Confirmado.`);
+      await sincronizarPedidoAlterado(id);
+    } catch (error) {
+      showSaveStatus(formatSupabaseError(error, "Não foi possível desfazer"), false);
+    } finally {
+      hideLoader();
+    }
+  };
+
+  window.marcarProntoRapido = async (id, botao) => {
+    if (prontoRapidoEmAndamento.has(id)) return;
+    const pedido = database.pedidos.find((p) => p.id === id);
+    if (!pedido) { showSaveStatus("Esse pedido não existe mais.", false); return; }
+    const statusAtual = normalizePedidoStatusValue(pedido.status) || "Pendente";
+    if (statusAtual !== "Confirmado") { showSaveStatus(`Esse pedido já está como "${statusAtual}".`, false); return; }
+    const alvo = isPedidoPago(pedido) ? "Concluído" : "Pronto";
+    const nome = pedido.cliente || "Cliente";
+    const textoOriginal = botao?.textContent;
+    prontoRapidoEmAndamento.add(id);
+    if (botao) { botao.disabled = true; botao.textContent = "Salvando…"; }
+    try {
+      const { error } = await supabaseClient.rpc("atualizar_status_pedido_seguro", {
+        p_pedido_id: id,
+        p_novo_status: alvo,
+        p_pago: alvo === "Concluído" ? true : null,
+        p_motivo: null,
+      });
+      if (error) throw error;
+      // Dentro de um modal a lista não é redesenhada: o botão fica como recibo.
+      if (botao) botao.textContent = "Pronto ✓";
+      showSaveStatusComAcao(
+        alvo === "Concluído" ? `${nome}: pronto e concluído (já estava pago).` : `${nome}: pronto para entrega.`,
+        "Desfazer",
+        () => desfazerProntoRapido(id, nome)
+      );
+      await sincronizarPedidoAlterado(id);
+    } catch (error) {
+      if (botao) { botao.disabled = false; botao.textContent = textoOriginal; }
+      showSaveStatus(formatSupabaseError(error, "Não foi possível marcar como pronto"), false);
+    } finally {
+      prontoRapidoEmAndamento.delete(id);
     }
   };
 
@@ -5966,7 +6075,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       if (!dateValue) return;
       const ws = getWeekStart(dateValue);
       if (Object.prototype.hasOwnProperty.call(weeksMap, ws)) {
-        const qty = (p.items || []).reduce((acc, it) => acc + Number(it.qtd || 0), 0);
+        const qty = (p.items || []).reduce((acc, it) => acc + (isItemPizza(it) ? Number(it.qtd || 0) : 0), 0);
         weeksMap[ws] += qty;
       }
     });
@@ -6033,42 +6142,91 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     });
   };
 
-  const renderPizzasMaisVendidasList = (pedidos) => {
+  // Totais do período separados pelas categorias da loja (Pizzas, Azeites,
+  // Utensílios...). Cada bloco filtra o ranking de baixo, para ver o que mais
+  // vende dentro de cada categoria. Valor = preço do item × quantidade, antes
+  // de desconto e frete.
+  const CATEGORIA_TODAS = "";
+  let categoriaMaisVendidos = "Pizzas";
+  let pedidosMaisVendidos = [];
+
+  const renderPizzasMaisVendidasList = (pedidos = pedidosMaisVendidos) => {
+    pedidosMaisVendidos = pedidos;
     const container = document.getElementById("pizzas-mais-vendidas-list");
     if (!container) return;
 
-    const contagem = pedidos
-      .flatMap((p) => p.items || [])
-      .reduce((acc, item) => {
-        if (!item.isCustom && item.pizzaNome) {
-          // Com o tamanho no nome, a Calabresa G da loja para de virar a mesma
-          // linha da Calabresa P lançada pela gestão.
-          const nome = getItemNomeExibicao(item);
-          acc[nome] = (acc[nome] || 0) + Number(item.qtd || 0);
-        }
-        return acc;
-      }, {});
+    const categorias = new Map();
+    pedidos.forEach((p) => (p.items || []).forEach((item) => {
+      if (!item?.pizzaNome) return;
+      const qtd = Number(item.qtd || 0);
+      if (!qtd) return;
+      const valor = Number(item.preco || 0) * qtd;
+      const categoria = getItemCategoria(item);
+      if (!categorias.has(categoria)) categorias.set(categoria, { unidades: 0, valor: 0, itens: new Map() });
+      const cat = categorias.get(categoria);
+      cat.unidades += qtd;
+      cat.valor += valor;
+      // Com o tamanho no nome, a Calabresa G da loja para de virar a mesma
+      // linha da Calabresa P lançada pela gestão.
+      const nome = getItemNomeExibicao(item);
+      const linha = cat.itens.get(nome) || { unidades: 0, valor: 0, naoCadastrado: categoria === CATEGORIA_FORA_DO_CADASTRO };
+      linha.unidades += qtd;
+      linha.valor += valor;
+      cat.itens.set(nome, linha);
+    }));
 
-    const ordenado = Object.keys(contagem).sort((a, b) => contagem[b] - contagem[a]);
-
-    container.innerHTML = "";
-    if (ordenado.length === 0) {
-      container.innerHTML = "<p style='color:#777; text-align:center;'>Nenhuma pizza vendida no período.</p>";
+    if (!categorias.size) {
+      container.innerHTML = "<p style='color:#777; text-align:center;'>Nenhum item vendido no período.</p>";
       return;
     }
 
-    let html = "<ul class='spotify-ranking-list'>";
-    ordenado.forEach((nome, index) => {
-      html += `
+    // Categoria que sumiu do período (ex.: nenhum utensílio na semana) volta
+    // para "Todas" em vez de mostrar uma lista vazia.
+    if (categoriaMaisVendidos !== CATEGORIA_TODAS && !categorias.has(categoriaMaisVendidos)) {
+      categoriaMaisVendidos = categorias.has("Pizzas") ? "Pizzas" : CATEGORIA_TODAS;
+    }
+
+    const ordemCategorias = [...categorias.entries()].sort((a, b) => b[1].valor - a[1].valor || b[1].unidades - a[1].unidades);
+    const totalUnidades = ordemCategorias.reduce((acc, [, c]) => acc + c.unidades, 0);
+    const totalValor = ordemCategorias.reduce((acc, [, c]) => acc + c.valor, 0);
+    const pct = (parte, total) => (total > 0 ? Math.round((parte / total) * 100) : 0);
+
+    const bloco = (chave, rotulo, unidades, valor) => {
+      const ativo = categoriaMaisVendidos === chave;
+      const share = chave === CATEGORIA_TODAS ? 100 : pct(valor, totalValor);
+      return `<button type="button" class="categoria-resumo-item${ativo ? " active" : ""}" data-categoria-vendidos="${escapeAttr(chave)}" aria-pressed="${ativo}">
+        <span class="categoria-resumo-nome">${escapeHTML(rotulo)}</span>
+        <b>${unidades} un.</b>
+        <small>${formatCurrency(valor)}${chave === CATEGORIA_TODAS ? "" : ` · ${share}% do valor`}</small>
+        <span class="categoria-resumo-barra"><span style="width:${share}%"></span></span>
+      </button>`;
+    };
+
+    const resumoHtml = `<div class="categoria-resumo" role="group" aria-label="Filtrar por categoria">
+      ${ordemCategorias.map(([nome, c]) => bloco(nome, nome, c.unidades, c.valor)).join("")}
+      ${ordemCategorias.length > 1 ? bloco(CATEGORIA_TODAS, "Todas", totalUnidades, totalValor) : ""}
+    </div>`;
+
+    const linhas = [];
+    ordemCategorias.forEach(([nomeCategoria, c]) => {
+      if (categoriaMaisVendidos !== CATEGORIA_TODAS && categoriaMaisVendidos !== nomeCategoria) return;
+      c.itens.forEach((linha, nome) => linhas.push({ nome, categoria: nomeCategoria, ...linha }));
+    });
+    linhas.sort((a, b) => b.unidades - a.unidades || b.valor - a.valor || a.nome.localeCompare(b.nome));
+    const mostrarCategoria = categoriaMaisVendidos === CATEGORIA_TODAS;
+
+    const listaHtml = `<ul class='spotify-ranking-list'>${linhas.map((linha, index) => `
                 <li>
                     <div class="rank-pos" style="font-size:1.1rem; width:30px;">${index + 1}</div>
-                    <div class="rank-name">${escapeHTML(nome)}</div>
-                    <div class="rank-status" style="background:var(--accent-color); color:white; font-weight:bold;">${contagem[nome]} un.</div>
-                </li>
-            `;
-    });
-    html += "</ul>";
-    container.innerHTML = html;
+                    <div class="rank-name">${linha.naoCadastrado ? marcarNomeNaoCadastrado(escapeHTML(linha.nome)) : escapeHTML(linha.nome)}<small class="rank-detalhe">${mostrarCategoria ? `${escapeHTML(linha.categoria)} · ` : ""}${formatCurrency(linha.valor)}</small></div>
+                    <div class="rank-status" style="background:var(--accent-color); color:white; font-weight:bold;">${linha.unidades} un.</div>
+                </li>`).join("")}</ul>`;
+
+    container.innerHTML = resumoHtml + listaHtml;
+    container.querySelectorAll("[data-categoria-vendidos]").forEach((btn) => btn.addEventListener("click", () => {
+      categoriaMaisVendidos = btn.dataset.categoriaVendidos;
+      renderPizzasMaisVendidasList();
+    }));
   };
 
   const renderPizzaRanking = (filterRange = "all") => {
@@ -6159,7 +6317,9 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
       const vendas = {};
       orders.forEach(p => {
         p.items?.forEach(i => {
-          if (!i.isCustom && i.pizzaNome) {
+          // "Top 10 pizzas": azeite e utensílio têm o próprio ranking na lista
+          // de mais vendidos por categoria.
+          if (!i.isCustom && i.pizzaNome && getItemCategoria(i) === "Pizzas") {
             const nome = getItemNomeExibicao(i);
             vendas[nome] = (vendas[nome] || 0) + Number(i.qtd || 0);
           }
@@ -7802,7 +7962,7 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
     if (!box) return;
     const getStats = (pedidos) => {
       const receita = pedidos.filter((p) => isPedidoPago(p)).reduce((a,p) => a + Number(p.valorFinal || p.valorTotal || 0), 0);
-      const pizzas = pedidos.reduce((a,p) => a + (p.items || []).reduce((n,it) => n + Number(it.qtd || 0), 0), 0);
+      const pizzas = pedidos.reduce((a,p) => a + (p.items || []).reduce((n,it) => n + (isItemPizza(it) ? Number(it.qtd || 0) : 0), 0), 0);
       const pendencias = pedidos.filter((p) => isPedidoAtivoFinanceiro(p) && !isPedidoPago(p)).reduce((a,p) => a + Number(p.valorFinal || p.valorTotal || 0), 0);
       return { pedidos: pedidos.length, receita, pizzas, pendencias };
     };
@@ -8039,8 +8199,19 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
     const atrasados = database.pedidos.filter((p) => isPedidoAtrasado(p) && getPedidoWeekStart(p) !== week);
     const pendentes = [...atrasados, ...pendentesSemana];
     const receitaPaga = pedidosSemana.filter(isPedidoPago).reduce((a, p) => a + Number(p.valorFinal || p.valorTotal || 0), 0);
-    const pizzasSemana = pedidosSemana.reduce((a, p) => a + (p.items || []).reduce((n, it) => n + Number(it.qtd || 0), 0), 0);
+    const pizzasSemana = pedidosSemana.reduce((a, p) => a + (p.items || []).reduce((n, it) => n + (isItemPizza(it) ? Number(it.qtd || 0) : 0), 0), 0);
     const prod = getProductionSuggestion(week).filter((x) => x.produzirPedidos > 0).slice(0, 5);
+    // Fila de embalagem: tudo que já foi confirmado e ainda não está pronto,
+    // na ordem de entrega. Pedido de semana futura nunca está confirmado.
+    const paraEmbalar = database.pedidos
+      .filter((p) => normalizePedidoStatusValue(p.status) === "Confirmado")
+      .sort((a, b) => `${getPedidoDataEntrega(a) || ""} ${a.horario_preferencia || ""} ${a.cliente || ""}`.localeCompare(`${getPedidoDataEntrega(b) || ""} ${b.horario_preferencia || ""} ${b.cliente || ""}`));
+    const LIMITE_EMBALAR = 20;
+    const itensEmbalar = paraEmbalar.slice(0, LIMITE_EMBALAR).map((p) => {
+      const atrasado = isPedidoAtrasado(p);
+      return `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(p.cliente || "Cliente")}</b><span class="m-badge ${atrasado ? "bad" : "muted"}">${atrasado ? "Atrasado" : escapeHTML(getMetodoEntregaLabel(p))}</span></div><div class="m-line">${escapeHTML(formatPedidoAgenda(p))} · ${escapeHTML(p.cidade || "-")}</div><div class="m-line">${summarizeMobileItems(p.items, 4)}</div><button type="button" class="m-btn m-pronto-btn" data-pronto-rapido="${escapeAttr(p.id)}">✓ Pronto</button></div>`;
+    }).join("");
+    const embalarMais = paraEmbalar.length > LIMITE_EMBALAR ? `<p class="m-muted">Mais ${paraEmbalar.length - LIMITE_EMBALAR} em Mais › Pedidos completos.</p>` : "";
     // Pizza diferente encabeça o "Produzir agora" do celular: nenhuma conta
     // automática a enxerga, então ela precisa ser vista aqui.
     const prodNaoCadastradas = getItensNaoCadastradosDaSemana(week).slice(0, 5)
@@ -8059,11 +8230,13 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
         <div class="m-kpi"><span>Alertas</span><b>${alerts.total}</b></div>
       </div>
       <div class="m-actions"><button class="m-btn" data-mobile-page-go="venda">Venda rápida</button><button class="m-btn secondary" data-mobile-page-go="pedido">Novo pedido</button></div>
+      <div class="m-card m-embalar"><div class="m-card-heading"><h3>Para embalar</h3><span class="m-badge ${paraEmbalar.length ? "warn" : "ok"}">${paraEmbalar.length}</span></div><p class="m-muted">Embalou? Toque em Pronto.</p><div class="m-list">${itensEmbalar || `<p class="m-muted">Nada esperando embalagem.</p>`}</div>${embalarMais}</div>
       <div class="m-card"><div class="m-card-heading"><h3>Disponíveis para retirada</h3><button type="button" class="m-mini-btn" id="m-home-copy-sobras">Copiar</button></div><div class="m-list">${disponiveis.map((pizza) => `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(pizza.nome)} (${escapeHTML(pizza.tamanho || "")})</b><span class="m-badge ok">${pizza.sobraProj}</span></div><div class="m-line">Estoque ${pizza.estoqueAtual} · falta separar ${pizza.pedidosSemana}</div></div>`).join("") || `<p class="m-muted">Sem pizzas disponíveis nesta semana.</p>`}</div></div>
       <div class="m-card"><h3>Pedidos pendentes${atrasados.length ? ` · ${atrasados.length} atrasado(s)` : ""}</h3><div class="m-list">${buildPedidoGrupos(pendentes).slice(0, 5).map((grupo) => { const p = grupo.principal; const lote = isGrupoLote(grupo); const items = lote ? grupo.pedidos.flatMap((x) => x.items || []) : (p.items || []); const resumo = lote ? escapeHTML(grupo.pedidos.map((x) => x.cliente || "Cliente").join(" · ")) : items.slice(0, 2).map(renderItemPedidoTexto).join(" · ") + (items.length > 2 ? ` · +${items.length - 2} item(ns)` : ""); const atrasado = grupo.pedidos.some(isPedidoAtrasado); const status = lote ? getGrupoStatus(grupo) : (p.status || "Pendente"); const valor = lote ? getGrupoValor(grupo) : Number(p.valorFinal || p.valorTotal || 0); return `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(getGrupoTitulo(grupo))}</b><span class="m-badge ${atrasado ? "bad" : "warn"}">${atrasado ? "Atrasado" : escapeHTML(status)}</span></div><div class="m-line">${resumo}</div><div class="m-line"><b>${formatCurrency(valor)}</b>${lote ? `<small class="origem-tag">Loja online · ${grupo.pedidos.length} cliente(s)</small>` : renderOrigemTag(p)}</div></div>`; }).join("") || `<p class="m-muted">Sem pedidos pendentes.</p>`}</div></div>
       <div class="m-card"><h3>Produzir agora</h3><div class="m-list">${(prodNaoCadastradas + prod.map((x) => `<div class="m-item"><div class="m-item-head"><b>${escapeHTML(x.pizza.nome)} (${escapeHTML(x.pizza.tamanho)})</b><span class="m-badge bad">${x.produzirPedidos}</span></div><div class="m-line">Pedidos: ${x.pedidos} · Estoque: ${x.estoque} · Sobra: ${x.sobra}</div></div>`).join("")) || `<p class="m-muted">Nada urgente para produzir.</p>`}</div></div>
     </section>`);
     document.getElementById("m-home-copy-sobras")?.addEventListener("click", () => copyTextToClipboard(generateSobrasMessage(week)));
+    document.querySelectorAll("[data-pronto-rapido]").forEach((btn) => btn.addEventListener("click", () => window.marcarProntoRapido(btn.dataset.prontoRapido, btn)));
   };
 
   const renderMobilePedido = () => {
