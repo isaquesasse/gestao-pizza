@@ -231,7 +231,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   // mesma soma. Item fora do cadastro é sempre uma pizza diferente.
   const isItemPizza = (item) => {
     const categoria = getItemCategoria(item);
-    return categoria === "Pizzas" || categoria === CATEGORIA_FORA_DO_CADASTRO;
+    // "Pizza", "pizzas" e afins digitados no cadastro valem como Pizzas.
+    return /^pizzas?$/i.test(categoria) || categoria === CATEGORIA_FORA_DO_CADASTRO;
   };
   // Nome já escapado + selo, para as listas de tela. Quem só quer o texto usa o
   // segundo argumento para trocar o selo.
@@ -3587,7 +3588,7 @@ Deseja lançar mesmo assim como encomenda/produção pendente?`);
     });
 
     container.innerHTML = Array.from(grupos.entries()).map(([secao, entries]) => {
-      const titulo = possuiSecoes ? `<div class="pedido-secao-title"><span>${escapeHTML(secao)}</span><small>${entries.reduce((total, entry) => total + Number(entry.item.qtd || 0), 0)} pizza(s)</small></div>` : "";
+      const titulo = possuiSecoes ? `<div class="pedido-secao-title"><span>${escapeHTML(secao)}</span><small>${entries.reduce((total, entry) => total + (isItemPizza(entry.item) ? Number(entry.item.qtd || 0) : 0), 0)} pizza(s)</small></div>` : "";
       const itemsHtml = entries.map(({ item, index }) => {
         const unitPrice = getPrecoPorPagamento(item.preco, pagamento);
         return `<div class="carrinho-item"><p><span>${item.qtd}x</span> ${escapeHTML(item.pizzaNome || "Item")} ${item.isCustom ? '<b class="item-pedido-outro">(Outro)</b>' : ""}<small>${formatCurrency(unitPrice)} un.</small></p><button type="button" class="btn-remove-item" onclick="window.removeItemPedido(${index})">X</button></div>`;
@@ -7887,7 +7888,7 @@ const pixCRC16 = (payload) => { let crc=0xFFFF; for(let i=0;i<payload.length;i++
     const pendentes = [...atrasados, ...pendentesSemana];
     const pagosSemana = pedidosSemana.filter((p) => isPedidoPago(p));
     const faturamentoSemana = pagosSemana.reduce((a, p) => a + Number(p.valorFinal || p.valorTotal || 0), 0);
-    const quantidadeSemana = pedidosSemana.reduce((a, p) => a + (p.items || []).reduce((n, it) => n + Number(it.qtd || 0), 0), 0);
+    const quantidadeSemana = pedidosSemana.reduce((a, p) => a + (p.items || []).reduce((n, it) => n + (isItemPizza(it) ? Number(it.qtd || 0) : 0), 0), 0);
     const sugerida = getProductionSuggestion(week);
     const precisaProduzir = sugerida.filter((x) => x.produzirPedidos > 0);
     const sobras = getPizzaWeekStats(week)
